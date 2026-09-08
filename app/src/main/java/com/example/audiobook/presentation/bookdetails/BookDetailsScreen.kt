@@ -42,7 +42,7 @@ import com.example.audiobook.presentation.theme.AppSpacing
 import java.util.UUID
 
 @Composable
-fun BookDetailsScreen(onBack: () -> Unit = {}) {
+fun BookDetailsScreen(onBack: () -> Unit = {}, onPlay: () -> Unit = {}) {
     val manager = remember { BookDetailsManagement() }
     val authorId = remember { UUID.randomUUID() }
     var book by remember {
@@ -65,6 +65,7 @@ fun BookDetailsScreen(onBack: () -> Unit = {}) {
         }
         Text(book.title, style = MaterialTheme.typography.displaySmall)
         Text("${book.coverSource} · ${if (book.isCoverUserSelected) "غلاف يدوي محمي" else "غلاف تلقائي"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(onClick = onPlay) { Text("تشغيل الإصدار الافتراضي") }
 
         Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
             FilterChip(activeTab == "overview", { activeTab = "overview" }, label = { Text("البيانات") })

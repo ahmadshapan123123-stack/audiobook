@@ -42,6 +42,8 @@ class ExoPlaybackController @Inject constructor(
     private var timeline: EditionTimeline = EditionTimeline(emptyList())
     private var lastOriginalIndex = -1
     private var saveJob: Job? = null
+    private var sleepJob: Job? = null
+    private var sleepRemainingMs: Long? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -93,7 +95,14 @@ class ExoPlaybackController @Inject constructor(
         player.setPlaybackSpeed(progress?.playbackSpeed ?: 1f)
         seekToGlobal(progress?.currentPositionMs ?: 0L)
         lastOriginalIndex = files.indexOfFirst { it.id == playableFiles.firstOrNull()?.id }
-        mutableState.value = PlaybackState(editionId, false, progress?.currentPositionMs ?: 0L, timeline.durationMs, progress?.playbackSpeed ?: 1f, if (missingFirst) "الجزء الأول مفقود؛ بدأ التشغيل من أول ملف متاح" else null)
+        mutableState.value = PlaybackState(
+            editionId = editionId,
+            isPlaying = false,
+            positionMs = progress?.currentPositionMs ?: 0L,
+            durationMs = timeline.durationMs,
+            speed = progress?.playbackSpeed ?: 1f,
+            missingFileMessage = if (missingFirst) "الجزء الأول مفقود؛ بدأ التشغيل من أول ملف متاح" else null
+        )
     }
 
     override fun play() { player.play() }
@@ -123,9 +132,38 @@ class ExoPlaybackController @Inject constructor(
         saveProgress()
     }
 
+    override fun setSleepTimer(minutes: Int) {
+        sleepJob?.cancel()
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
+        sleepRemainingMs = minutes * 60_000L
+        sleepJob = scope.launch {
+            while (isActive && (sleepRemainingMs ?: 0L) > 0L) {
+                delay(1_000)
+                sleepRemainingMs = ((sleepRemainingMs ?: 0L) - 1_000L).coerceAtLeast(0L)
+                mutableState.value = mutableState.value.copy(sleepRemainingMs = sleepRemainingMs)
+            }
+            if ((sleepRemainingMs ?: 0L) == 0L) {
+                pause()
+                sleepRemainingMs = null
+                mutableState.value = mutableState.value.copy(sleepRemainingMs = null)
+            }
+        }
+        mutableState.value = mutableState.value.copy(sleepRemainingMs = sleepRemainingMs)
+    }
+
+    override fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepRemainingMs = null
+        mutableState.value = mutableState.value.copy(sleepRemainingMs = null)
+    }
+
     override fun release() {
         saveProgress()
         saveJob?.cancel()
+        sleepJob?.cancel()
         mediaSession.release()
         player.release()
         scope.cancel()
