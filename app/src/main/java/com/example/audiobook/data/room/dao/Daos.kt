@@ -1,0 +1,156 @@
+package com.example.audiobook.data.room.dao
+
+import androidx.room.*
+import com.example.audiobook.data.room.entity.*
+import kotlinx.coroutines.flow.Flow
+import java.util.UUID
+
+interface CrudDao<T> {
+    suspend fun insert(entity: T)
+    suspend fun update(entity: T)
+    suspend fun delete(entity: T)
+}
+
+@Dao
+interface LibraryRootDao : CrudDao<LibraryRootEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: LibraryRootEntity)
+    @Update override suspend fun update(entity: LibraryRootEntity)
+    @Delete override suspend fun delete(entity: LibraryRootEntity)
+    @Query("SELECT * FROM library_roots WHERE id = :id") suspend fun getById(id: UUID): LibraryRootEntity?
+    @Query("SELECT * FROM library_roots ORDER BY displayName") fun observeAll(): Flow<List<LibraryRootEntity>>
+        @Query("UPDATE library_roots SET isPriority = 0 WHERE id != :id") suspend fun clearPriorityExcept(id: UUID)
+        @Query("UPDATE library_roots SET isPriority = :isPriority WHERE id = :id") suspend fun setPriority(id: UUID, isPriority: Boolean)
+        @Query("UPDATE library_roots SET isEnabled = :isEnabled WHERE id = :id") suspend fun setEnabled(id: UUID, isEnabled: Boolean)
+        @Query("UPDATE library_roots SET scanStatus = :status WHERE id = :id") suspend fun setScanStatus(id: UUID, status: ScanStatus)
+        @Query("UPDATE library_roots SET lastScanAt = :timestamp, scanStatus = :status WHERE id = :id") suspend fun markScanFinished(id: UUID, timestamp: Long, status: ScanStatus)
+        @Query("SELECT * FROM library_roots WHERE isEnabled = 1 AND isPriority = 0 ORDER BY displayName") suspend fun getEnabledBackgroundRoots(): List<LibraryRootEntity>
+        @Query("SELECT * FROM library_roots WHERE isEnabled = 1 AND isPriority = 1 ORDER BY displayName") suspend fun getEnabledPriorityRoots(): List<LibraryRootEntity>
+}
+
+@Dao
+interface AuthorDao : CrudDao<AuthorEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: AuthorEntity)
+    @Update override suspend fun update(entity: AuthorEntity)
+    @Delete override suspend fun delete(entity: AuthorEntity)
+    @Query("SELECT * FROM authors WHERE id = :id") suspend fun getById(id: UUID): AuthorEntity?
+    @Query("SELECT * FROM authors WHERE name = :name LIMIT 1") suspend fun getByName(name: String): AuthorEntity?
+}
+
+@Dao
+interface SeriesDao : CrudDao<SeriesEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: SeriesEntity)
+    @Update override suspend fun update(entity: SeriesEntity)
+    @Delete override suspend fun delete(entity: SeriesEntity)
+    @Query("SELECT * FROM series WHERE id = :id") suspend fun getById(id: UUID): SeriesEntity?
+    @Query("SELECT * FROM series WHERE authorId = :authorId ORDER BY name") suspend fun getByParent(authorId: UUID): List<SeriesEntity>
+}
+
+@Dao
+interface BookDao : CrudDao<BookEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: BookEntity)
+    @Update override suspend fun update(entity: BookEntity)
+    @Delete override suspend fun delete(entity: BookEntity)
+    @Query("SELECT * FROM books WHERE id = :id") suspend fun getById(id: UUID): BookEntity?
+    @Query("SELECT * FROM books WHERE authorId = :authorId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getByParent(authorId: UUID): List<BookEntity>
+    @Query("SELECT * FROM books WHERE seriesId = :seriesId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getBySeries(seriesId: UUID): List<BookEntity>
+    @Query("SELECT * FROM books WHERE authorId = :authorId AND title = :title LIMIT 1") suspend fun getByAuthorAndTitle(authorId: UUID, title: String): BookEntity?
+}
+
+@Dao
+interface EditionDao : CrudDao<EditionEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: EditionEntity)
+    @Update override suspend fun update(entity: EditionEntity)
+    @Delete override suspend fun delete(entity: EditionEntity)
+    @Query("SELECT * FROM editions WHERE id = :id") suspend fun getById(id: UUID): EditionEntity?
+    @Query("SELECT * FROM editions WHERE bookId = :bookId ORDER BY label") suspend fun getByParent(bookId: UUID): List<EditionEntity>
+    @Query("SELECT * FROM editions WHERE libraryRootId = :rootId AND sourceFolderPath = :folderPath LIMIT 1") suspend fun getByRootAndFolder(rootId: UUID, folderPath: String): EditionEntity?
+}
+
+@Dao
+interface AudioFileDao : CrudDao<AudioFileEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: AudioFileEntity)
+    @Update override suspend fun update(entity: AudioFileEntity)
+    @Delete override suspend fun delete(entity: AudioFileEntity)
+    @Query("SELECT * FROM audio_files WHERE id = :id") suspend fun getById(id: UUID): AudioFileEntity?
+    @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<AudioFileEntity>
+    @Query("SELECT * FROM audio_files WHERE fileUri = :fileUri LIMIT 1") suspend fun getByUri(fileUri: String): AudioFileEntity?
+    @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
+}
+
+@Dao
+interface ChapterDao : CrudDao<ChapterEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: ChapterEntity)
+    @Update override suspend fun update(entity: ChapterEntity)
+    @Delete override suspend fun delete(entity: ChapterEntity)
+    @Query("SELECT * FROM chapters WHERE id = :id") suspend fun getById(id: UUID): ChapterEntity?
+    @Query("SELECT * FROM chapters WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<ChapterEntity>
+    @Query("DELETE FROM chapters WHERE editionId = :editionId AND createdFrom = 'IMPORTED'") suspend fun deleteImported(editionId: UUID)
+}
+
+@Dao
+interface BookmarkDao : CrudDao<BookmarkEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: BookmarkEntity)
+    @Update override suspend fun update(entity: BookmarkEntity)
+    @Delete override suspend fun delete(entity: BookmarkEntity)
+    @Query("SELECT * FROM bookmarks WHERE id = :id") suspend fun getById(id: UUID): BookmarkEntity?
+    @Query("SELECT * FROM bookmarks WHERE editionId = :editionId ORDER BY positionMs") suspend fun getByParent(editionId: UUID): List<BookmarkEntity>
+}
+
+@Dao
+interface ProgressDao : CrudDao<ListeningProgressEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: ListeningProgressEntity)
+    @Update override suspend fun update(entity: ListeningProgressEntity)
+    @Delete override suspend fun delete(entity: ListeningProgressEntity)
+    @Query("SELECT * FROM listening_progress WHERE id = :id") suspend fun getById(id: UUID): ListeningProgressEntity?
+    @Query("SELECT * FROM listening_progress WHERE editionId = :editionId") suspend fun getByParent(editionId: UUID): ListeningProgressEntity?
+}
+
+@Dao
+interface CollectionDao : CrudDao<CollectionEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: CollectionEntity)
+    @Update override suspend fun update(entity: CollectionEntity)
+    @Delete override suspend fun delete(entity: CollectionEntity)
+    @Query("SELECT * FROM collections WHERE id = :id") suspend fun getById(id: UUID): CollectionEntity?
+}
+
+@Dao
+interface CollectionBookCrossRefDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(entity: CollectionBookCrossRef)
+    @Update suspend fun update(entity: CollectionBookCrossRef)
+    @Query("SELECT * FROM collection_book_cross_ref WHERE collectionId = :collectionId AND bookId = :bookId") suspend fun getById(collectionId: UUID, bookId: UUID): CollectionBookCrossRef?
+    @Query("DELETE FROM collection_book_cross_ref WHERE collectionId = :collectionId AND bookId = :bookId") suspend fun delete(collectionId: UUID, bookId: UUID)
+    @Query("SELECT * FROM collection_book_cross_ref WHERE collectionId = :collectionId") suspend fun getByParent(collectionId: UUID): List<CollectionBookCrossRef>
+}
+
+@Dao
+interface FavoriteBookDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(entity: FavoriteBook)
+    @Update suspend fun update(entity: FavoriteBook)
+    @Query("DELETE FROM favorite_books WHERE bookId = :bookId") suspend fun delete(bookId: UUID)
+    @Query("SELECT * FROM favorite_books WHERE bookId = :bookId") suspend fun getById(bookId: UUID): FavoriteBook?
+    @Query("SELECT * FROM favorite_books WHERE bookId = :bookId") suspend fun getByParent(bookId: UUID): FavoriteBook?
+}
+
+@Dao
+interface ListeningSessionDao : CrudDao<ListeningSessionEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: ListeningSessionEntity)
+    @Update override suspend fun update(entity: ListeningSessionEntity)
+    @Delete override suspend fun delete(entity: ListeningSessionEntity)
+    @Query("SELECT * FROM listening_sessions WHERE id = :id") suspend fun getById(id: UUID): ListeningSessionEntity?
+    @Query("SELECT * FROM listening_sessions WHERE editionId = :editionId ORDER BY startedAt DESC") suspend fun getByParent(editionId: UUID): List<ListeningSessionEntity>
+    @Query("SELECT * FROM listening_sessions WHERE sessionState = 'ACTIVE'") suspend fun getActiveSessions(): List<ListeningSessionEntity>
+}
+
+@Dao
+interface EditionMatchDecisionDao : CrudDao<EditionMatchDecisionEntity> {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: EditionMatchDecisionEntity)
+    @Update override suspend fun update(entity: EditionMatchDecisionEntity)
+    @Delete override suspend fun delete(entity: EditionMatchDecisionEntity)
+    @Query("SELECT * FROM edition_match_decisions WHERE id = :id") suspend fun getById(id: UUID): EditionMatchDecisionEntity?
+    @Query("SELECT * FROM edition_match_decisions WHERE subjectEditionId = :editionId ORDER BY createdAt DESC") suspend fun getByParent(editionId: UUID): List<EditionMatchDecisionEntity>
+}
+
+@Dao
+interface StatisticsDao {
+    @Query("SELECT * FROM listening_sessions WHERE sessionState = 'COMPLETED' ORDER BY startedAt DESC") suspend fun getCompletedSessions(): List<ListeningSessionEntity>
+}
