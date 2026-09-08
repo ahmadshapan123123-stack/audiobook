@@ -84,6 +84,7 @@ interface ChapterDao : CrudDao<ChapterEntity> {
     @Delete override suspend fun delete(entity: ChapterEntity)
     @Query("SELECT * FROM chapters WHERE id = :id") suspend fun getById(id: UUID): ChapterEntity?
     @Query("SELECT * FROM chapters WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<ChapterEntity>
+    @Query("SELECT * FROM chapters WHERE editionId = :editionId ORDER BY startPositionMs") fun observeByParent(editionId: UUID): Flow<List<ChapterEntity>>
     @Query("DELETE FROM chapters WHERE editionId = :editionId AND createdFrom = 'IMPORTED'") suspend fun deleteImported(editionId: UUID)
 }
 
@@ -94,6 +95,7 @@ interface BookmarkDao : CrudDao<BookmarkEntity> {
     @Delete override suspend fun delete(entity: BookmarkEntity)
     @Query("SELECT * FROM bookmarks WHERE id = :id") suspend fun getById(id: UUID): BookmarkEntity?
     @Query("SELECT * FROM bookmarks WHERE editionId = :editionId ORDER BY positionMs") suspend fun getByParent(editionId: UUID): List<BookmarkEntity>
+    @Query("SELECT * FROM bookmarks WHERE editionId = :editionId ORDER BY positionMs") fun observeByParent(editionId: UUID): Flow<List<BookmarkEntity>>
 }
 
 @Dao

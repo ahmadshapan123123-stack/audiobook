@@ -48,17 +48,23 @@ import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AppThemeMode
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
+import com.example.audiobook.domain.usecases.MarksCoordinator
+import com.example.audiobook.data.room.entity.BookmarkType
 import java.util.UUID
 
 @Composable
 fun PlayerScreen(
     controller: PlaybackController,
     editionId: UUID? = null,
+    marks: MarksCoordinator? = null,
     themeMode: AppThemeMode = AppThemeMode.DARK,
     onBack: () -> Unit = {}
 ) {
     val playback by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val storedChapters by (if (editionId != null && marks != null) marks.chapters(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
+    val storedBookmarks by (if (editionId != null && marks != null) marks.bookmarks(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
     var timeline by remember {
         mutableStateOf(
             PlayerTimelineState(
@@ -80,6 +86,10 @@ fun PlayerScreen(
             timeline = timeline.copy(durationMs = playback.durationMs)
         }
     }
+    val renderedTimeline = timeline.copy(
+        chapters = if (marks == null) timeline.chapters else storedChapters.map { PlayerChapter(it.id, it.title ?: "فصل", it.startPositionMs) },
+        bookmarks = if (marks == null) timeline.bookmarks else storedBookmarks.map { PlayerBookmark(it.id, it.positionMs, it.noteText) }
+    )
 
     val gradient = PlayerGradientResolver.resolve(
         mode = themeMode,
@@ -116,17 +126,21 @@ fun PlayerScreen(
             )
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                FilterChip(selected = timeline.level == TimelineLevel.OVERVIEW, onClick = { timeline = PlayerTimelineEditor.overview(timeline) }, label = { Text("نظرة عامة") })
-                FilterChip(selected = timeline.level == TimelineLevel.ZOOMED, onClick = { timeline = PlayerTimelineEditor.zoom(timeline, playback.positionMs) }, label = { Text("تكبير ٣٠–٦٠ دقيقة") })
+                FilterChip(selected = renderedTimeline.level == TimelineLevel.OVERVIEW, onClick = { timeline = PlayerTimelineEditor.overview(timeline) }, label = { Text("نظرة عامة") })
+                FilterChip(selected = renderedTimeline.level == TimelineLevel.ZOOMED, onClick = { timeline = PlayerTimelineEditor.zoom(timeline, playback.positionMs) }, label = { Text("تكبير ٣٠–٦٠ دقيقة") })
                 TextButton(onClick = { editing = !editing }) { Text(if (editing) "إنهاء التحرير" else "تحرير الفصول") }
             }
 
             AnimatedContent(targetState = timeline.level, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "timeline-level") { level ->
-                TimelineView(timeline, playback.positionMs, level, editing) { id, position -> timeline = PlayerTimelineEditor.moveChapter(timeline, id, position) }
+                TimelineView(renderedTimeline, playback.positionMs, level, editing) { id, position ->
+                    val stored = storedChapters.firstOrNull { it.id == id }
+                    if (marks != null && stored != null) scope.launch { marks.updateChapter(stored, position) }
+                    else timeline = PlayerTimelineEditor.moveChapter(timeline, id, position)
+                }
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("الفصل ${currentChapterNumber(timeline, playback.positionMs)}", style = MaterialTheme.typography.titleMedium)
+                Text("الفصل ${currentChapterNumber(renderedTimeline, playback.positionMs)}", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = {
                     timeline = PlayerTimelineEditor.markNow(timeline, playback.positionMs)
                     showMarkChoices = true
@@ -134,8 +148,16 @@ fun PlayerScreen(
             }
             if (showMarkChoices && timeline.markCaptureMs != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    TextButton(onClick = { timeline = PlayerTimelineEditor.consumeMark(timeline, "Bookmark", false); showMarkChoices = false }) { Text("Bookmark") }
-                    TextButton(onClick = { timeline = PlayerTimelineEditor.consumeMark(timeline, "فصل جديد", true); showMarkChoices = false }) { Text("Chapter") }
+                    TextButton(onClick = {
+                        val captured = timeline.markCaptureMs!!
+                        if (marks != null && editionId != null) scope.launch { marks.addBookmark(editionId, captured) }
+                        timeline = PlayerTimelineEditor.consumeMark(timeline, "Bookmark", false); showMarkChoices = false
+                    }) { Text("Bookmark") }
+                    TextButton(onClick = {
+                        val captured = timeline.markCaptureMs!!
+                        if (marks != null && editionId != null) scope.launch { marks.addChapter(editionId, captured) }
+                        timeline = PlayerTimelineEditor.consumeMark(timeline, "فصل جديد", true); showMarkChoices = false
+                    }) { Text("Chapter") }
                     Text("تم التقاط ${formatTime(timeline.markCaptureMs!!)} فورًا", style = MaterialTheme.typography.bodySmall)
                 }
             }

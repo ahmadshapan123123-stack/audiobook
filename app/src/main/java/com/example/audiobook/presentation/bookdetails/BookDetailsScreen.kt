@@ -24,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -38,11 +40,14 @@ import com.example.audiobook.domain.usecases.BookDetailsManagement
 import com.example.audiobook.domain.usecases.CoverCandidate
 import com.example.audiobook.domain.usecases.CoverCandidateSource
 import com.example.audiobook.domain.usecases.CoverPolicy
+import com.example.audiobook.domain.usecases.MarksCoordinator
 import com.example.audiobook.presentation.theme.AppSpacing
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 @Composable
-fun BookDetailsScreen(onBack: () -> Unit = {}, onPlay: () -> Unit = {}) {
+fun BookDetailsScreen(editionId: UUID, marks: MarksCoordinator, onBack: () -> Unit = {}, onPlay: () -> Unit = {}, onBookmarks: () -> Unit = {}) {
+    val scope = rememberCoroutineScope()
     val manager = remember { BookDetailsManagement() }
     val authorId = remember { UUID.randomUUID() }
     var book by remember {
@@ -54,8 +59,8 @@ fun BookDetailsScreen(onBack: () -> Unit = {}, onPlay: () -> Unit = {}) {
     var narrator by remember { mutableStateOf("محمد خضير") }
     val editions = remember { mutableStateListOf(sampleEdition("الإصدار المحلي"), sampleEdition("إصدار الراوي الثاني")) }
     var defaultEditionId by remember { mutableStateOf(editions.first().id) }
-    val chapters = remember { mutableStateListOf("الباب الأول", "الباب الثاني", "الباب الثالث") }
-    val bookmarks = remember { mutableStateListOf("00:14:20 · فكرة مهمة", "01:05:10 · ملاحظة") }
+    val chapters by marks.chapters(editionId).collectAsState(initial = emptyList())
+    val bookmarks by marks.bookmarks(editionId).collectAsState(initial = emptyList())
     var activeTab by remember { mutableStateOf("overview") }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
@@ -93,10 +98,16 @@ fun BookDetailsScreen(onBack: () -> Unit = {}, onPlay: () -> Unit = {}) {
             "editions" -> EditionManagement(editions, defaultEditionId, manager, { defaultEditionId = it }, { editions.clear(); editions.addAll(it) })
             "content" -> {
                 SectionTitle("الفصول (${chapters.size})")
-                chapters.forEachIndexed { index, chapter -> Text("${index + 1}. $chapter · ${if (index == 0) "IMPORTED" else ChapterCreatedFrom.MANUAL}") }
+                chapters.sortedBy { it.startPositionMs }.forEachIndexed { index, chapter ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${index + 1}. ${chapter.title ?: "فصل"} · ${chapter.startPositionMs / 1000}s")
+                        TextButton(onClick = { scope.launch { marks.deleteChapter(chapter) } }) { Text("حذف") }
+                    }
+                }
                 Divider()
                 SectionTitle("Bookmarks و Notes (${bookmarks.size})")
-                bookmarks.forEach { Text(it) }
+                bookmarks.forEach { Text("${it.positionMs / 1000}s · ${it.noteText ?: if (it.type == BookmarkType.NOTE) "Note" else "Bookmark"}") }
+                TextButton(onClick = onBookmarks) { Text("فتح شاشة Bookmarks") }
                 Text("Bookmark وNote محفوظان كموضع مستقلين عن Chapter.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             "stats" -> {
