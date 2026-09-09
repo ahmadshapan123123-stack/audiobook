@@ -5,6 +5,7 @@ import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.localfilesystem.DocumentTreeFileSource
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.MediaAudioMetadataReader
+import com.example.audiobook.data.preferences.ScanSettings
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,4 +23,8 @@ object ScanModule {
     @Provides
     @Singleton
     fun provideAudioMetadataReader(@ApplicationContext context: Context): AudioMetadataReader = MediaAudioMetadataReader(context)
+
+    @Provides
+    @Singleton
+    fun provideScanSettings(@ApplicationContext context: Context): ScanSettings = ScanSettings(context)
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.audiobook.data.repository.*
 import com.example.audiobook.data.room.AppDatabase
+import com.example.audiobook.data.room.DATABASE_MIGRATIONS
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,7 +18,9 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "audiobook.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, "audiobook.db")
+            .addMigrations(*DATABASE_MIGRATIONS)
+            .build()
 
     @Provides fun provideBookDao(db: AppDatabase) = db.bookDao()
     @Provides fun provideEditionDao(db: AppDatabase) = db.editionDao()
@@ -29,6 +32,11 @@ object DatabaseModule {
     @Provides fun provideStatisticsDao(db: AppDatabase) = db.statisticsDao()
     @Provides fun provideLibraryRootDao(db: AppDatabase) = db.libraryRootDao()
     @Provides fun provideSessionDao(db: AppDatabase) = db.listeningSessionDao()
+    @Provides fun provideAuthorDao(db: AppDatabase) = db.authorDao()
+    @Provides fun provideSeriesDao(db: AppDatabase) = db.seriesDao()
+    @Provides fun provideAudioFileDao(db: AppDatabase) = db.audioFileDao()
+    @Provides fun provideAudioFileAggregateDao(db: AppDatabase) = db.audioFileAggregateDao()
+    @Provides fun provideFavoriteBookDao(db: AppDatabase) = db.favoriteBookDao()
 
     @Provides fun provideBookRepository(dao: com.example.audiobook.data.room.dao.BookDao): BookRepository = LocalOnlyBookRepository(dao)
     @Provides fun provideEditionRepository(dao: com.example.audiobook.data.room.dao.EditionDao): EditionRepository = LocalOnlyEditionRepository(dao)

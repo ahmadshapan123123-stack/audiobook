@@ -40,12 +40,15 @@ data class EditionManagementState(
 )
 
 class BookDetailsManagement {
+    /** تعديل يدوي من المستخدم → يُعلَّم العنوان isTitleUserConfirmed (User Override Wins). */
     fun updateMetadata(book: BookEntity, title: String, genre: String?, seriesId: UUID?): BookEntity =
-        book.copy(title = title, genre = genre, seriesId = seriesId)
+        book.copy(title = title, genre = genre, seriesId = seriesId, isTitleUserConfirmed = true)
 
-    fun renameEdition(edition: EditionEntity, label: String): EditionEntity = edition.copy(label = label)
+    /** إعادة تسمية يدوية → تُعلَّم isLabelUserConfirmed فلا يكتب عليها Scan لاحق. */
+    fun renameEdition(edition: EditionEntity, label: String): EditionEntity = edition.copy(label = label, isLabelUserConfirmed = true)
 
-    fun changeNarrator(edition: EditionEntity, narrator: String?): EditionEntity = edition.copy(narratorName = narrator)
+    /** تغيير الراوي يدويًا → يُعلَّم isNarratorUserConfirmed. */
+    fun changeNarrator(edition: EditionEntity, narrator: String?): EditionEntity = edition.copy(narratorName = narrator, isNarratorUserConfirmed = true)
 
     fun moveEdition(edition: EditionEntity, libraryRootId: UUID, folderPath: String): EditionEntity =
         edition.copy(libraryRootId = libraryRootId, sourceFolderPath = folderPath)
@@ -53,12 +56,29 @@ class BookDetailsManagement {
     fun setDefaultEdition(state: EditionManagementState, editionId: UUID): EditionManagementState =
         state.copy(defaultEditionId = editionId)
 
+    /** تقسيم/نسخ إصدار → قرار مستخدم نهائي. */
     fun splitEdition(state: EditionManagementState, editionId: UUID): EditionManagementState {
         val original = state.editions.firstOrNull { it.id == editionId } ?: return state
         val split = original.copy(id = UUID.randomUUID(), label = "${original.label} - مفصول", isUserConfirmed = true)
         return state.copy(editions = state.editions + split)
     }
 
-    fun mergeEditions(state: EditionManagementState, subjectId: UUID, comparedId: UUID): EditionManagementState =
-        state.copy(editions = state.editions.filterNot { it.id == comparedId }, defaultEditionId = if (state.defaultEditionId == comparedId) subjectId else state.defaultEditionId)
+    /** دمج إصدارين → قرار مستخدم نهائي على المحتفظ به. */
+    fun mergeEditions(state: EditionManagementState, subjectId: UUID, comparedId: UUID): EditionManagementState {
+        val subject = state.editions.firstOrNull { it.id == subjectId }
+        val kept = subject?.copy(isUserConfirmed = true)?.let { kept -> state.editions.map { if (it.id == kept.id) kept else it } } ?: state.editions
+        return state.copy(editions = kept.filterNot { it.id == comparedId }, defaultEditionId = if (state.defaultEditionId == comparedId) subjectId else state.defaultEditionId)
+    }
+
+    /** Reset Metadata / إعادة الاكتشاف: يرفع حماية User Override Wins ليعيد الفحص الاكتشاف. */
+    fun resetMetadata(book: BookEntity): BookEntity = book.copy(
+        isTitleUserConfirmed = false,
+        isCoverUserSelected = false
+    )
+
+    fun resetEditionMetadata(edition: EditionEntity): EditionEntity = edition.copy(
+        isNarratorUserConfirmed = false,
+        isLabelUserConfirmed = false,
+        isUserConfirmed = false
+    )
 }

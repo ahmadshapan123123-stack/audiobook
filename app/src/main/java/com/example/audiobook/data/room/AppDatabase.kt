@@ -3,8 +3,20 @@ package com.example.audiobook.data.room
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.audiobook.data.room.dao.*
 import com.example.audiobook.data.room.entity.*
+
+private val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE books ADD COLUMN isTitleUserConfirmed INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE editions ADD COLUMN isNarratorUserConfirmed INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE editions ADD COLUMN isLabelUserConfirmed INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2)
 
 @Database(
 	entities = [
@@ -13,7 +25,7 @@ import com.example.audiobook.data.room.entity.*
 		ListeningProgressEntity::class, CollectionEntity::class, CollectionBookCrossRef::class,
 		FavoriteBook::class, ListeningSessionEntity::class, EditionMatchDecisionEntity::class
 	],
-	version = 1,
+	version = 2,
 	exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
@@ -33,4 +45,5 @@ abstract class AppDatabase : RoomDatabase() {
 	abstract fun statisticsDao(): StatisticsDao
 	abstract fun listeningSessionDao(): ListeningSessionDao
 	abstract fun editionMatchDecisionDao(): EditionMatchDecisionDao
+	abstract fun audioFileAggregateDao(): AudioFileAggregateDao
 }

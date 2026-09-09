@@ -36,8 +36,8 @@ class MarksCoordinatorIntegrationTest {
         val bookId = UUID.randomUUID()
         database.libraryRootDao().insert(LibraryRootEntity(rootId, "content://integration", "Integration", true, true, null, ScanStatus.IDLE))
         database.authorDao().insert(AuthorEntity(authorId, "Author", null))
-        database.bookDao().insert(BookEntity(bookId, "Book", authorId, null, null, null, null, CoverSource.PLACEHOLDER, false, editionId, null, SyncStatus.LOCAL_ONLY))
-        database.editionDao().insert(EditionEntity(editionId, bookId, "Narrator", "Edition", 120_000, "M4B", rootId, "/book", 1f, true, null, SyncStatus.LOCAL_ONLY))
+        database.bookDao().insert(BookEntity(id = bookId, title = "Book", authorId = authorId, seriesId = null, orderInSeries = null, genre = null, coverImagePath = null, coverSource = CoverSource.PLACEHOLDER, isCoverUserSelected = false, isTitleUserConfirmed = false, defaultEditionId = editionId, remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY))
+        database.editionDao().insert(EditionEntity(id = editionId, bookId = bookId, narratorName = "Narrator", label = "Edition", totalDurationMs = 120_000, fileFormat = "M4B", libraryRootId = rootId, sourceFolderPath = "/book", confidenceScore = 1f, isUserConfirmed = true, isNarratorUserConfirmed = false, isLabelUserConfirmed = false, remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY))
         coordinator = MarksCoordinator(database)
     }
 

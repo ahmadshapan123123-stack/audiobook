@@ -34,6 +34,7 @@ interface AuthorDao : CrudDao<AuthorEntity> {
     @Delete override suspend fun delete(entity: AuthorEntity)
     @Query("SELECT * FROM authors WHERE id = :id") suspend fun getById(id: UUID): AuthorEntity?
     @Query("SELECT * FROM authors WHERE name = :name LIMIT 1") suspend fun getByName(name: String): AuthorEntity?
+    @Query("SELECT * FROM authors") fun observeAll(): Flow<List<AuthorEntity>>
 }
 
 @Dao
@@ -43,6 +44,7 @@ interface SeriesDao : CrudDao<SeriesEntity> {
     @Delete override suspend fun delete(entity: SeriesEntity)
     @Query("SELECT * FROM series WHERE id = :id") suspend fun getById(id: UUID): SeriesEntity?
     @Query("SELECT * FROM series WHERE authorId = :authorId ORDER BY name") suspend fun getByParent(authorId: UUID): List<SeriesEntity>
+    @Query("SELECT * FROM series") fun observeAll(): Flow<List<SeriesEntity>>
 }
 
 @Dao
@@ -50,7 +52,10 @@ interface BookDao : CrudDao<BookEntity> {
     @Insert(onConflict = OnConflictStrategy.REPLACE) override suspend fun insert(entity: BookEntity)
     @Update override suspend fun update(entity: BookEntity)
     @Delete override suspend fun delete(entity: BookEntity)
+    @Query("SELECT * FROM books ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getAll(): List<BookEntity>
+    @Query("SELECT * FROM books ORDER BY COALESCE(orderInSeries, 2147483647), title") fun observeAll(): Flow<List<BookEntity>>
     @Query("SELECT * FROM books WHERE id = :id") suspend fun getById(id: UUID): BookEntity?
+    @Query("SELECT * FROM books WHERE id = :id") fun observeById(id: UUID): Flow<BookEntity?>
     @Query("SELECT * FROM books WHERE authorId = :authorId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getByParent(authorId: UUID): List<BookEntity>
     @Query("SELECT * FROM books WHERE seriesId = :seriesId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getBySeries(seriesId: UUID): List<BookEntity>
     @Query("SELECT * FROM books WHERE authorId = :authorId AND title = :title LIMIT 1") suspend fun getByAuthorAndTitle(authorId: UUID, title: String): BookEntity?
@@ -62,7 +67,10 @@ interface EditionDao : CrudDao<EditionEntity> {
     @Update override suspend fun update(entity: EditionEntity)
     @Delete override suspend fun delete(entity: EditionEntity)
     @Query("SELECT * FROM editions WHERE id = :id") suspend fun getById(id: UUID): EditionEntity?
+    @Query("SELECT * FROM editions WHERE id = :id") fun observeById(id: UUID): Flow<EditionEntity?>
     @Query("SELECT * FROM editions WHERE bookId = :bookId ORDER BY label") suspend fun getByParent(bookId: UUID): List<EditionEntity>
+    @Query("SELECT * FROM editions WHERE bookId = :bookId ORDER BY label") fun observeByParent(bookId: UUID): Flow<List<EditionEntity>>
+    @Query("SELECT * FROM editions ORDER BY label") fun observeAll(): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId AND sourceFolderPath = :folderPath LIMIT 1") suspend fun getByRootAndFolder(rootId: UUID, folderPath: String): EditionEntity?
 }
 
@@ -73,8 +81,20 @@ interface AudioFileDao : CrudDao<AudioFileEntity> {
     @Delete override suspend fun delete(entity: AudioFileEntity)
     @Query("SELECT * FROM audio_files WHERE id = :id") suspend fun getById(id: UUID): AudioFileEntity?
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<AudioFileEntity>
+    @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") fun observeByParent(editionId: UUID): Flow<List<AudioFileEntity>>
     @Query("SELECT * FROM audio_files WHERE fileUri = :fileUri LIMIT 1") suspend fun getByUri(fileUri: String): AudioFileEntity?
     @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
+}
+
+data class AudioFileAggregateRow(val editionId: UUID, val totalDurationMs: Long, val fileCount: Int)
+
+@Dao
+interface AudioFileAggregateDao {
+    @Query(
+        "SELECT editionId, SUM(durationMs) AS totalDurationMs, COUNT(*) AS fileCount " +
+            "FROM audio_files WHERE fileStatus = 'AVAILABLE' GROUP BY editionId"
+    )
+    fun observeAggregates(): Flow<List<AudioFileAggregateRow>>
 }
 
 @Dao
@@ -105,6 +125,8 @@ interface ProgressDao : CrudDao<ListeningProgressEntity> {
     @Delete override suspend fun delete(entity: ListeningProgressEntity)
     @Query("SELECT * FROM listening_progress WHERE id = :id") suspend fun getById(id: UUID): ListeningProgressEntity?
     @Query("SELECT * FROM listening_progress WHERE editionId = :editionId") suspend fun getByParent(editionId: UUID): ListeningProgressEntity?
+    @Query("SELECT * FROM listening_progress WHERE editionId = :editionId") fun observeByParent(editionId: UUID): Flow<ListeningProgressEntity?>
+    @Query("SELECT * FROM listening_progress") fun observeAll(): Flow<List<ListeningProgressEntity>>
 }
 
 @Dao
@@ -113,6 +135,8 @@ interface CollectionDao : CrudDao<CollectionEntity> {
     @Update override suspend fun update(entity: CollectionEntity)
     @Delete override suspend fun delete(entity: CollectionEntity)
     @Query("SELECT * FROM collections WHERE id = :id") suspend fun getById(id: UUID): CollectionEntity?
+    @Query("SELECT * FROM collections WHERE name = :name LIMIT 1") suspend fun getByName(name: String): CollectionEntity?
+    @Query("SELECT * FROM collections") fun observeAll(): Flow<List<CollectionEntity>>
 }
 
 @Dao
@@ -122,6 +146,7 @@ interface CollectionBookCrossRefDao {
     @Query("SELECT * FROM collection_book_cross_ref WHERE collectionId = :collectionId AND bookId = :bookId") suspend fun getById(collectionId: UUID, bookId: UUID): CollectionBookCrossRef?
     @Query("DELETE FROM collection_book_cross_ref WHERE collectionId = :collectionId AND bookId = :bookId") suspend fun delete(collectionId: UUID, bookId: UUID)
     @Query("SELECT * FROM collection_book_cross_ref WHERE collectionId = :collectionId") suspend fun getByParent(collectionId: UUID): List<CollectionBookCrossRef>
+    @Query("SELECT * FROM collection_book_cross_ref") fun observeAll(): Flow<List<CollectionBookCrossRef>>
 }
 
 @Dao
@@ -130,7 +155,8 @@ interface FavoriteBookDao {
     @Update suspend fun update(entity: FavoriteBook)
     @Query("DELETE FROM favorite_books WHERE bookId = :bookId") suspend fun delete(bookId: UUID)
     @Query("SELECT * FROM favorite_books WHERE bookId = :bookId") suspend fun getById(bookId: UUID): FavoriteBook?
-    @Query("SELECT * FROM favorite_books WHERE bookId = :bookId") suspend fun getByParent(bookId: UUID): FavoriteBook?
+    @Query("SELECT * FROM favorite_books WHERE bookId = :bookId") fun observeById(bookId: UUID): Flow<FavoriteBook?>
+    @Query("SELECT * FROM favorite_books") fun observeAll(): Flow<List<FavoriteBook>>
 }
 
 @Dao
@@ -150,6 +176,7 @@ interface EditionMatchDecisionDao : CrudDao<EditionMatchDecisionEntity> {
     @Delete override suspend fun delete(entity: EditionMatchDecisionEntity)
     @Query("SELECT * FROM edition_match_decisions WHERE id = :id") suspend fun getById(id: UUID): EditionMatchDecisionEntity?
     @Query("SELECT * FROM edition_match_decisions WHERE subjectEditionId = :editionId ORDER BY createdAt DESC") suspend fun getByParent(editionId: UUID): List<EditionMatchDecisionEntity>
+    @Query("SELECT * FROM edition_match_decisions ORDER BY createdAt DESC") suspend fun getAll(): List<EditionMatchDecisionEntity>
 }
 
 @Dao

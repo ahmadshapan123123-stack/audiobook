@@ -64,6 +64,7 @@ data class BookEntity(
     val coverImagePath: String?,
     val coverSource: CoverSource,
     val isCoverUserSelected: Boolean,
+    val isTitleUserConfirmed: Boolean = false,
     val defaultEditionId: UUID?,
     val remoteId: UUID?,
     val syncStatus: SyncStatus
@@ -88,6 +89,8 @@ data class EditionEntity(
     val sourceFolderPath: String,
     val confidenceScore: Float,
     val isUserConfirmed: Boolean,
+    val isNarratorUserConfirmed: Boolean = false,
+    val isLabelUserConfirmed: Boolean = false,
     val remoteId: UUID?,
     val syncStatus: SyncStatus
 )

@@ -50,17 +50,21 @@ import com.example.audiobook.presentation.theme.AppThemeMode
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import com.example.audiobook.domain.usecases.MarksCoordinator
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.data.room.entity.BookmarkType
 import java.util.UUID
 
 @Composable
 fun PlayerScreen(
     controller: PlaybackController,
-    editionId: UUID? = null,
+    themeMode: AppThemeMode,
     marks: MarksCoordinator? = null,
-    themeMode: AppThemeMode = AppThemeMode.DARK,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    viewModel: PlayerViewModel = hiltViewModel()
 ) {
+    val playerUi by viewModel.uiState.collectAsStateWithLifecycle()
+    val editionId: UUID? = playerUi.edition?.id ?: controller.state.value.editionId
     val playback by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
     val storedChapters by (if (editionId != null && marks != null) marks.chapters(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
@@ -93,9 +97,9 @@ fun PlayerScreen(
 
     val gradient = PlayerGradientResolver.resolve(
         mode = themeMode,
-        seriesColor = Color(0xFF356B68),
-        authorColor = Color(0xFF49647A),
-        coverColor = Color(0xFF6D5A83)
+        seriesColor = playerUi.seriesColor,
+        authorColor = playerUi.authorColor,
+        coverColor = playerUi.coverColor
     )
 
     Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(gradient.start, gradient.end)))) {
@@ -103,8 +107,8 @@ fun PlayerScreen(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع") }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("ما وراء الطبيعة", style = MaterialTheme.typography.titleLarge)
-                    Text("أحمد خالد توفيق", style = MaterialTheme.typography.bodySmall)
+                    Text(playerUi.title.ifBlank { "كتاب" }, style = MaterialTheme.typography.titleLarge)
+                    Text(playerUi.authorName, style = MaterialTheme.typography.bodySmall)
                 }
                 Box {
                     IconButton(onClick = { showMore = true }) { Icon(Icons.Outlined.MoreVert, "المزيد") }
@@ -116,8 +120,8 @@ fun PlayerScreen(
                 }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(AppSpacing.xs)).background(Color(0xFF356B68)), contentAlignment = Alignment.Center) {
-                Text("غلاف الكتاب", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+            Box(modifier = Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(AppSpacing.xs)).background(gradient.start), contentAlignment = Alignment.Center) {
+                Text(playerUi.title.ifBlank { "غلاف الكتاب" }, color = Color.White, style = MaterialTheme.typography.headlineSmall)
             }
             Text("${formatTime(playback.positionMs)} / ${formatTime(playback.durationMs)}", style = MaterialTheme.typography.bodyMedium)
             LinearProgressIndicator(
