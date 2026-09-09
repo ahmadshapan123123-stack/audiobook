@@ -30,6 +30,7 @@ object DatabaseModule {
     @Provides fun provideCollectionDao(db: AppDatabase) = db.collectionDao()
     @Provides fun provideCollectionCrossRefDao(db: AppDatabase) = db.collectionBookCrossRefDao()
     @Provides fun provideStatisticsDao(db: AppDatabase) = db.statisticsDao()
+    @Provides fun provideChapterCompletionDao(db: AppDatabase) = db.chapterCompletionDao()
     @Provides fun provideLibraryRootDao(db: AppDatabase) = db.libraryRootDao()
     @Provides fun provideSessionDao(db: AppDatabase) = db.listeningSessionDao()
     @Provides fun provideAuthorDao(db: AppDatabase) = db.authorDao()
@@ -44,6 +45,9 @@ object DatabaseModule {
     @Provides fun provideBookmarkRepository(dao: com.example.audiobook.data.room.dao.BookmarkDao): BookmarkRepository = LocalOnlyBookmarkRepository(dao)
     @Provides fun provideProgressRepository(dao: com.example.audiobook.data.room.dao.ProgressDao): ProgressRepository = LocalOnlyProgressRepository(dao)
     @Provides fun provideCollectionRepository(dao: com.example.audiobook.data.room.dao.CollectionDao, crossRef: com.example.audiobook.data.room.dao.CollectionBookCrossRefDao): CollectionRepository = LocalOnlyCollectionRepository(dao, crossRef)
-    @Provides fun provideStatisticsRepository(dao: com.example.audiobook.data.room.dao.StatisticsDao): StatisticsRepository = LocalOnlyStatisticsRepository(dao)
+    @Provides fun provideStatisticsRepository(
+        dao: com.example.audiobook.data.room.dao.StatisticsDao,
+        clock: com.example.audiobook.playback.SleepTimerClock
+    ): StatisticsRepository = LocalOnlyStatisticsRepository(dao, clock)
     @Provides fun provideLibraryRootRepository(dao: com.example.audiobook.data.room.dao.LibraryRootDao): LibraryRootRepository = LocalOnlyLibraryRootRepository(dao)
 }

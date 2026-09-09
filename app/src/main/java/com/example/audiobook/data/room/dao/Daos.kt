@@ -182,4 +182,16 @@ interface EditionMatchDecisionDao : CrudDao<EditionMatchDecisionEntity> {
 @Dao
 interface StatisticsDao {
     @Query("SELECT * FROM listening_sessions WHERE sessionState = 'COMPLETED' ORDER BY startedAt DESC") suspend fun getCompletedSessions(): List<ListeningSessionEntity>
+    @Query("SELECT * FROM listening_sessions WHERE startedAt >= :startMillis AND startedAt < :endMillis ORDER BY startedAt ASC") suspend fun getSessionsBetween(startMillis: Long, endMillis: Long): List<ListeningSessionEntity>
+    @Query("SELECT * FROM listening_sessions ORDER BY startedAt ASC") suspend fun getAllSessions(): List<ListeningSessionEntity>
+    @Query("SELECT DISTINCT editionId FROM listening_progress WHERE status = 'FINISHED'") suspend fun getCompletedBooks(): List<UUID>
+    @Query("SELECT playbackSpeed FROM listening_progress") suspend fun getPlaybackSpeeds(): List<Float>
+    @Query("SELECT COUNT(*) FROM chapter_completions") suspend fun countCompletedChapters(): Int
+}
+
+@Dao
+interface ChapterCompletionDao {
+    /** IGNORE يحافظ على أول وقت اكتمال: التسجيل "مرة واحدة فقط لكل فصل". */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(entity: ChapterCompletionEntity)
+    @Query("DELETE FROM chapter_completions WHERE editionId = :editionId") suspend fun deleteForEdition(editionId: UUID)
 }

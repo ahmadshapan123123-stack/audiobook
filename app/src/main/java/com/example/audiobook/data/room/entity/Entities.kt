@@ -129,6 +129,24 @@ data class ChapterEntity(
     val createdFrom: ChapterCreatedFrom
 )
 
+/**
+ * سجل اكتمال فصل (قاعدة الـ90% الحرفية). المفتاح الأساسي هو chapterId نفسه
+ * فيستحيل تسجيل الفصل نفسه مرتين — "مرة واحدة فقط لكل فصل، لا تكرار".
+ */
+@Entity(
+    tableName = "chapter_completions",
+    foreignKeys = [
+        ForeignKey(entity = ChapterEntity::class, parentColumns = ["id"], childColumns = ["chapterId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = EditionEntity::class, parentColumns = ["id"], childColumns = ["editionId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index("editionId")]
+)
+data class ChapterCompletionEntity(
+    @androidx.room.PrimaryKey val chapterId: UUID,
+    val editionId: UUID,
+    val completedAtMs: Long
+)
+
 @Entity(
     tableName = "bookmarks",
     foreignKeys = [ForeignKey(entity = EditionEntity::class, parentColumns = ["id"], childColumns = ["editionId"], onDelete = ForeignKey.CASCADE)],
