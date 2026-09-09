@@ -69,6 +69,8 @@ private enum class LibraryLayout { GRID, LIST }
 fun LibraryScreen(
     onBookSelected: (UUID) -> Unit,
     onManageRoots: () -> Unit = {},
+    onStatistics: () -> Unit = {},
+    onHistory: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -97,7 +99,11 @@ fun LibraryScreen(
         Text("كل ما تريد الاستماع إليه، في مكان هادئ وواضح", style = MaterialTheme.typography.bodySmall)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${uiState.books.size} كتاب في المكتبة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onManageRoots) { Text("مجلدات المكتبة") }
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                TextButton(onClick = onHistory) { Text("السجل") }
+                TextButton(onClick = onStatistics) { Text("الإحصائيات") }
+                TextButton(onClick = onManageRoots) { Text("مجلدات المكتبة") }
+            }
         }
         Spacer(Modifier.height(AppSpacing.md))
         OutlinedTextField(

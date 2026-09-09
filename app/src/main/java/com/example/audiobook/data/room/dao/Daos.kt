@@ -179,6 +179,16 @@ interface EditionMatchDecisionDao : CrudDao<EditionMatchDecisionEntity> {
     @Query("SELECT * FROM edition_match_decisions ORDER BY createdAt DESC") suspend fun getAll(): List<EditionMatchDecisionEntity>
 }
 
+/** صف عرض سجل الاستماع: جلسة مصحوبة باسم الكتاب (مع بقاء الصف حتى لو حُذفت النسخة). */
+data class ListeningHistoryRow(
+    val sessionId: UUID,
+    val bookTitle: String?,
+    val editionLabel: String?,
+    val startedAt: Long,
+    val durationListenedMs: Long,
+    val endReason: SessionEndReason?
+)
+
 @Dao
 interface StatisticsDao {
     @Query("SELECT * FROM listening_sessions WHERE sessionState = 'COMPLETED' ORDER BY startedAt DESC") suspend fun getCompletedSessions(): List<ListeningSessionEntity>
@@ -187,6 +197,15 @@ interface StatisticsDao {
     @Query("SELECT DISTINCT editionId FROM listening_progress WHERE status = 'FINISHED'") suspend fun getCompletedBooks(): List<UUID>
     @Query("SELECT playbackSpeed FROM listening_progress") suspend fun getPlaybackSpeeds(): List<Float>
     @Query("SELECT COUNT(*) FROM chapter_completions") suspend fun countCompletedChapters(): Int
+    @Query(
+        "SELECT s.id AS sessionId, b.title AS bookTitle, e.label AS editionLabel, " +
+            "s.startedAt AS startedAt, s.durationListenedMs AS durationListenedMs, s.endReason AS endReason " +
+            "FROM listening_sessions s " +
+            "LEFT JOIN editions e ON e.id = s.editionId " +
+            "LEFT JOIN books b ON b.id = e.bookId " +
+            "ORDER BY s.startedAt DESC"
+    )
+    suspend fun getHistory(): List<ListeningHistoryRow>
 }
 
 @Dao

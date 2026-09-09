@@ -67,7 +67,9 @@ class MainActivity : ComponentActivity() {
                         composable("library") {
                             LibraryScreen(
                                 onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
-                                onManageRoots = { navController.navigate("library_roots") }
+                                onManageRoots = { navController.navigate("library_roots") },
+                                onStatistics = { navController.navigate("statistics") },
+                                onHistory = { navController.navigate("history") }
                             )
                         }
                         composable(
@@ -107,6 +109,12 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("library_roots") {
                             LibraryRootsScreen(libraryRootsViewModel)
+                        }
+                        composable("statistics") {
+                            com.example.audiobook.presentation.statistics.StatisticsScreen(onBack = { navController.popBackStack() })
+                        }
+                        composable("history") {
+                            com.example.audiobook.presentation.statistics.HistoryScreen(onBack = { navController.popBackStack() })
                         }
                     }
                 }

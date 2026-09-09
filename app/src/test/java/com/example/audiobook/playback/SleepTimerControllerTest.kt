@@ -31,6 +31,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /**
  * [R3] اختبارات مؤقت النوم الذكي كاملة بالـFake Clock — لا انتظار وقت حقيقي إطلاقًا.
@@ -40,15 +41,26 @@ import java.util.UUID
 class SleepTimerControllerTest {
 
     private lateinit var database: AppDatabase
+    private lateinit var dbExecutor: java.util.concurrent.ExecutorService
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        // SQLite في الذاكرة: اتصال واحد لكل خيط، ولأن runLoop ينفّذ الإدراج من خيط خلفي
+        // أحيانًا، منفّذ واحد وحيد الخيط يضمن اتصالًا واحدًا — قراءة الكتابة بعد التوقف دائمًا تراها.
+        dbExecutor = Executors.newSingleThreadExecutor()
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .setQueryExecutor(dbExecutor)
+            .setTransactionExecutor(dbExecutor)
+            .build()
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() {
+        database.close()
+        dbExecutor.shutdown()
+    }
 
     private fun controller(clock: FakeClock, playback: FakePlayback) =
         SleepTimerController(clock, playback, database.listeningSessionDao())
@@ -57,8 +69,10 @@ class SleepTimerControllerTest {
 
     @Test
     fun stateMachineAdvancesThroughExactPhasesAndStopsWithPause() = runBlocking {
+        val editionId = UUID.randomUUID()
+        seedEditionChain(editionId)
         val clock = FakeClock()
-        val playback = FakePlayback(clock = clock)
+        val playback = FakePlayback(editionId = editionId, clock = clock)
         val controller = controller(clock, playback)
 
         assertEquals(SleepTimerPhase.IDLE, controller.uiState.value.phase)
@@ -81,6 +95,11 @@ class SleepTimerControllerTest {
         assertEquals(SleepTimerPhase.STOPPED, controller.uiState.value.phase)
         assertTrue("انتهى، يجب أن يتوقف التشغيل", playback.paused)
         assertTrue("الحفظ الفوري يمر عبر pause الحالية", playback.paused)
+
+        val sessions = database.listeningSessionDao().getByParent(editionId)
+        assertEquals("كتابة الجلسة نجحت فعلًا (لا FK صامتة): سجل واحد بعد التوقف", 1, sessions.size)
+        assertEquals(SessionEndReason.SLEEP_TIMER, sessions.first().endReason)
+        assertEquals(SessionState.COMPLETED, sessions.first().sessionState)
     }
 
     // ---- النقطة 2+3: 6 نبضات بالضبط عند التوقيتات الست بالضبط عبر Duck ثم استعادة ----

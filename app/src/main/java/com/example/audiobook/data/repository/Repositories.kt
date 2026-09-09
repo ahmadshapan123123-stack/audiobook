@@ -80,6 +80,9 @@ interface StatisticsRepository {
 
     /** متوسط [ListeningProgressEntity.playbackSpeed] عبر النسخ المسجَّلة (0f عند غياب بيانات). */
     suspend fun averageSpeed(): Float
+
+    /** أحدث الجلسات بترتيب زمني تنازلي مع اسم الكتاب (شاشة History). */
+    suspend fun history(): List<ListeningHistoryRow>
 }
 
 interface LibraryRootRepository {
@@ -171,6 +174,8 @@ class LocalOnlyStatisticsRepository(
         val speeds = dao.getPlaybackSpeeds()
         return if (speeds.isEmpty()) 0f else speeds.sum() / speeds.size
     }
+
+    override suspend fun history(): List<ListeningHistoryRow> = dao.getHistory()
 }
 
 class LocalOnlyLibraryRootRepository(private val dao: LibraryRootDao) : LibraryRootRepository {
