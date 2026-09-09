@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +65,9 @@ private enum class LibrarySection(val label: String) {
 
 private enum class LibraryLayout { GRID, LIST }
 
+private fun Modifier.minTouchTarget(): Modifier =
+    sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+
 @Composable
 fun LibraryScreen(
     onBookSelected: (UUID) -> Unit,
@@ -100,9 +103,9 @@ fun LibraryScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${uiState.books.size} كتاب في المكتبة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                TextButton(onClick = onHistory) { Text("السجل") }
-                TextButton(onClick = onStatistics) { Text("الإحصائيات") }
-                TextButton(onClick = onManageRoots) { Text("مجلدات المكتبة") }
+                TextButton(onClick = onHistory, modifier = Modifier.minTouchTarget()) { Text("السجل") }
+                TextButton(onClick = onStatistics, modifier = Modifier.minTouchTarget()) { Text("الإحصائيات") }
+                TextButton(onClick = onManageRoots, modifier = Modifier.minTouchTarget()) { Text("مجلدات المكتبة") }
             }
         }
         Spacer(Modifier.height(AppSpacing.md))
@@ -122,53 +125,55 @@ fun LibraryScreen(
                 uiState.collections.forEach { collection ->
                     AssistChip(onClick = { selectedCollection = collection.name }, label = { Text(collection.name) })
                 }
-                OutlinedButton(onClick = { showCollectionDialog = true }) { Text("+ مجموعة") }
+                OutlinedButton(onClick = { showCollectionDialog = true }, modifier = Modifier.minTouchTarget()) { Text("+ مجموعة") }
             }
             Spacer(Modifier.height(AppSpacing.md))
         }
-        LazyColumn(horizontalAlignment = Alignment.Start) {
-            item {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(if (layout == LibraryLayout.GRID) 2 else 1),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                     LibrarySection.entries.forEach { section ->
-                        FilterChip(selected = section == selectedSection, onClick = { selectedSection = section }, label = { Text(section.label, maxLines = 1) })
-                    }
-                }
-                Spacer(Modifier.height(AppSpacing.md))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${sectionBooks.size} كتب", style = MaterialTheme.typography.titleMedium)
-                    Row {
-                        IconButton(onClick = { layout = LibraryLayout.GRID }) { Icon(Icons.Outlined.GridView, "عرض شبكي") }
-                        IconButton(onClick = { layout = LibraryLayout.LIST }) { Icon(Icons.Outlined.List, "عرض قائمة") }
+                        FilterChip(selected = section == selectedSection, onClick = { selectedSection = section }, label = { Text(section.label, maxLines = 1) }, modifier = Modifier.minTouchTarget())
                     }
                 }
             }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    FilterChip(selected = status == LibraryStatusFilter.ALL, onClick = { status = LibraryStatusFilter.ALL; viewModel.updateStatus(LibraryStatusFilter.ALL) }, label = { Text("الكل") })
-                    FilterChip(selected = status == LibraryStatusFilter.IN_PROGRESS, onClick = { status = LibraryStatusFilter.IN_PROGRESS; viewModel.updateStatus(LibraryStatusFilter.IN_PROGRESS) }, label = { Text("قيد الاستماع") })
-                    FilterChip(selected = status == LibraryStatusFilter.FINISHED, onClick = { status = LibraryStatusFilter.FINISHED; viewModel.updateStatus(LibraryStatusFilter.FINISHED) }, label = { Text("مكتملة") })
-                    FilterChip(selected = genre == "رواية", onClick = { genre = if (genre == "رواية") null else "رواية"; viewModel.updateGenre(genre) }, label = { Text("رواية") })
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("${sectionBooks.size} كتب", style = MaterialTheme.typography.titleMedium)
+                    Row {
+                        IconButton(onClick = { layout = LibraryLayout.GRID }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(Icons.Outlined.GridView, contentDescription = "عرض شبكي") }
+                        IconButton(onClick = { layout = LibraryLayout.LIST }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(Icons.Outlined.List, contentDescription = "عرض قائمة") }
+                    }
                 }
-                Spacer(Modifier.height(AppSpacing.xs))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    AssistChip(onClick = { viewModel.updateSort(LibrarySort.NAME) }, label = { Text("الاسم") })
-                    AssistChip(onClick = { viewModel.updateSort(LibrarySort.ADDED_DATE) }, label = { Text("الأحدث") })
-                    AssistChip(onClick = { viewModel.updateSort(LibrarySort.LAST_PLAYED) }, label = { Text("آخر استماع") })
-                    AssistChip(onClick = { viewModel.updateSort(LibrarySort.PROGRESS) }, label = { Text("الإنجاز") })
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        FilterChip(selected = status == LibraryStatusFilter.ALL, onClick = { status = LibraryStatusFilter.ALL; viewModel.updateStatus(LibraryStatusFilter.ALL) }, label = { Text("الكل") }, modifier = Modifier.minTouchTarget())
+                        FilterChip(selected = status == LibraryStatusFilter.IN_PROGRESS, onClick = { status = LibraryStatusFilter.IN_PROGRESS; viewModel.updateStatus(LibraryStatusFilter.IN_PROGRESS) }, label = { Text("قيد الاستماع") }, modifier = Modifier.minTouchTarget())
+                        FilterChip(selected = status == LibraryStatusFilter.FINISHED, onClick = { status = LibraryStatusFilter.FINISHED; viewModel.updateStatus(LibraryStatusFilter.FINISHED) }, label = { Text("مكتملة") }, modifier = Modifier.minTouchTarget())
+                        FilterChip(selected = genre == "رواية", onClick = { genre = if (genre == "رواية") null else "رواية"; viewModel.updateGenre(genre) }, label = { Text("رواية") }, modifier = Modifier.minTouchTarget())
+                    }
+                    Spacer(Modifier.height(AppSpacing.xs))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+AssistChip(onClick = { viewModel.updateSort(LibrarySort.NAME) }, label = { Text("الاسم") }, modifier = Modifier.minTouchTarget())
+                        AssistChip(onClick = { viewModel.updateSort(LibrarySort.ADDED_DATE) }, label = { Text("الأحدث") }, modifier = Modifier.minTouchTarget())
+                        AssistChip(onClick = { viewModel.updateSort(LibrarySort.LAST_PLAYED) }, label = { Text("آخر استماع") }, modifier = Modifier.minTouchTarget())
+                        AssistChip(onClick = { viewModel.updateSort(LibrarySort.PROGRESS) }, label = { Text("الإنجاز") }, modifier = Modifier.minTouchTarget())
+                    }
+                    Spacer(Modifier.height(AppSpacing.sm))
                 }
-                Spacer(Modifier.height(AppSpacing.sm))
+            }
+            items(sectionBooks, key = { it.book.id }) { book ->
                 if (layout == LibraryLayout.GRID) {
-                    LazyVerticalGrid(columns = GridCells.Fixed(2), verticalArrangement = Arrangement.spacedBy(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), modifier = Modifier.height(600.dp)) {
-                        items(sectionBooks, key = { it.book.id }) { book ->
-                            BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
-                        }
-                    }
+                    BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                        sectionBooks.forEach { book ->
-                            BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
-                        }
-                    }
+                    BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
                 }
             }
         }
@@ -197,11 +202,11 @@ private fun ContinueListeningCard(book: LibraryBookUi) {
 
 @Composable
 private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onBookSelected).padding(AppSpacing.xxs), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+    Column(modifier = Modifier.fillMaxWidth().sizeIn(minWidth = 48.dp, minHeight = 48.dp).clickable(onClick = onBookSelected).padding(AppSpacing.xxs), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
         CoverBlock(book, Modifier.fillMaxWidth().aspectRatio(.72f))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(book.book.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            IconButton(onClick = onFavoriteToggle) { Icon(if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "المفضلة") }
+            IconButton(onClick = onFavoriteToggle, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة") }
         }
         Text(book.authorName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         LinearProgressIndicator(progress = { book.progressFraction }, modifier = Modifier.fillMaxWidth())
@@ -210,14 +215,14 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
 
 @Composable
 private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onBookSelected).padding(vertical = AppSpacing.xs), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().sizeIn(minWidth = 48.dp, minHeight = 48.dp).clickable(onClick = onBookSelected).padding(vertical = AppSpacing.xs), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
         CoverBlock(book, Modifier.size(64.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(book.book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(book.authorName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("${(book.progressFraction * 100).toInt()}٪", style = MaterialTheme.typography.labelLarge)
-        IconButton(onClick = onFavoriteToggle) { Icon(if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "المفضلة") }
+        IconButton(onClick = onFavoriteToggle, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة") }
     }
 }
 
