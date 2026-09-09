@@ -42,6 +42,11 @@ class ExoPlaybackController @Inject constructor(
     private var lastOriginalIndex = -1
     private var saveJob: Job? = null
 
+    private val chapterCompletionObserver = ChapterCompletionObserver(
+        clock = { System.currentTimeMillis() },
+        writer = { database.chapterCompletionDao().insert(it) }
+    )
+
     init {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -166,7 +171,23 @@ class ExoPlaybackController @Inject constructor(
     }
 
     private fun updateState() {
-        mutableState.value = mutableState.value.copy(isPlaying = player.isPlaying, positionMs = currentGlobalPosition(), durationMs = timeline.durationMs, editionId = editionId, speed = player.playbackParameters.speed)
+        val position = currentGlobalPosition()
+        mutableState.value = mutableState.value.copy(isPlaying = player.isPlaying, positionMs = position, durationMs = timeline.durationMs, editionId = editionId, speed = player.playbackParameters.speed)
+        observeChapterCompletion(position)
+    }
+
+    /**
+     * [R4-النقطة 2] مراقب اكتمال الفصل: عند كل تحديث موضع يفحص الفصل الحالي
+     * (من قاعدة البيانات حتى تظهر الفصول المضافة أثناء التشغيل فورًا) ويسجل
+     * الاكتمال بمجرد تجاوز 90% — مرة واحدة لكل فصل (P.K + IGNORE).
+     */
+    private fun observeChapterCompletion(positionMs: Long) {
+        val id = editionId ?: return
+        if (timeline.durationMs <= 0L) return
+        scope.launch(Dispatchers.IO) {
+            val chapters = database.chapterDao().getByParent(id)
+            chapterCompletionObserver.onPositionUpdate(id, positionMs, chapters, timeline.durationMs)
+        }
     }
 
     private fun stopAtMissingBoundaryIfNeeded() {
