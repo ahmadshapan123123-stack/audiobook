@@ -89,8 +89,8 @@ class MarksCoordinatorIntegrationTest {
         override suspend fun previousChapter() = Unit
         override suspend fun nextChapter() = Unit
         override fun setSpeed(speed: Float) = Unit
-        override fun setSleepTimer(minutes: Int) = Unit
-        override fun cancelSleepTimer() = Unit
+        override fun getVolume(): Float = 1f
+        override fun setVolume(volume: Float) = Unit
         override fun release() = Unit
     }
 

@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaSession
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AudioFileEntity
 import com.example.audiobook.data.room.entity.FileStatus
@@ -31,8 +30,8 @@ class ExoPlaybackController @Inject constructor(
     @ApplicationContext context: Context,
     private val database: AppDatabase
 ) : PlaybackController {
-    private val player = ExoPlayer.Builder(context.applicationContext).build()
-    val mediaSession: MediaSession = MediaSession.Builder(context.applicationContext, player).build()
+    /** كائن ExoPlayer الفعلي؛ يُكشَف فقط لبناء MediaSession في PlaybackService. */
+    internal val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
     private val mutableState = MutableStateFlow(PlaybackState())
     override val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
@@ -42,8 +41,6 @@ class ExoPlaybackController @Inject constructor(
     private var timeline: EditionTimeline = EditionTimeline(emptyList())
     private var lastOriginalIndex = -1
     private var saveJob: Job? = null
-    private var sleepJob: Job? = null
-    private var sleepRemainingMs: Long? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -93,6 +90,7 @@ class ExoPlaybackController @Inject constructor(
         }
         player.setMediaItems(playableFiles.map { MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString()).build() })
         player.setPlaybackSpeed(progress?.playbackSpeed ?: 1f)
+        player.volume = 1f
         seekToGlobal(progress?.currentPositionMs ?: 0L)
         lastOriginalIndex = files.indexOfFirst { it.id == playableFiles.firstOrNull()?.id }
         mutableState.value = PlaybackState(
@@ -132,39 +130,15 @@ class ExoPlaybackController @Inject constructor(
         saveProgress()
     }
 
-    override fun setSleepTimer(minutes: Int) {
-        sleepJob?.cancel()
-        if (minutes <= 0) {
-            cancelSleepTimer()
-            return
-        }
-        sleepRemainingMs = minutes * 60_000L
-        sleepJob = scope.launch {
-            while (isActive && (sleepRemainingMs ?: 0L) > 0L) {
-                delay(1_000)
-                sleepRemainingMs = ((sleepRemainingMs ?: 0L) - 1_000L).coerceAtLeast(0L)
-                mutableState.value = mutableState.value.copy(sleepRemainingMs = sleepRemainingMs)
-            }
-            if ((sleepRemainingMs ?: 0L) == 0L) {
-                pause()
-                sleepRemainingMs = null
-                mutableState.value = mutableState.value.copy(sleepRemainingMs = null)
-            }
-        }
-        mutableState.value = mutableState.value.copy(sleepRemainingMs = sleepRemainingMs)
-    }
+    override fun getVolume(): Float = player.volume
 
-    override fun cancelSleepTimer() {
-        sleepJob?.cancel()
-        sleepRemainingMs = null
-        mutableState.value = mutableState.value.copy(sleepRemainingMs = null)
+    override fun setVolume(volume: Float) {
+        player.volume = volume.coerceIn(0f, 1f)
     }
 
     override fun release() {
         saveProgress()
         saveJob?.cancel()
-        sleepJob?.cancel()
-        mediaSession.release()
         player.release()
         scope.cancel()
     }

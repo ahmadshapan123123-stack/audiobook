@@ -26,6 +26,7 @@ import com.example.audiobook.presentation.theme.AudiobookTheme
 import com.example.audiobook.presentation.theme.ThemePreference
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.playback.PlaybackController
+import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.domain.usecases.EnsureDemoEdition
 import com.example.audiobook.domain.usecases.MarksCoordinator
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var recoverInterruptedSession: RecoverInterruptedSession
     @Inject lateinit var scanScheduler: ScanScheduler
     @Inject lateinit var playbackController: PlaybackController
+    @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var marksCoordinator: MarksCoordinator
     @Inject lateinit var ensureDemoEdition: EnsureDemoEdition
     private val libraryRootsViewModel: com.example.audiobook.presentation.libraryroots.LibraryRootsViewModel by viewModels()
@@ -90,6 +92,7 @@ class MainActivity : ComponentActivity() {
                                 controller = playbackController,
                                 themeMode = themePreference.mode,
                                 marks = marksCoordinator,
+                                sleepTimer = sleepTimerController,
                                 onBack = { navController.popBackStack() }
                             )
                         }

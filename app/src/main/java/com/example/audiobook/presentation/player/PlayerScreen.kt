@@ -45,10 +45,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.audiobook.playback.PlaybackController
+import com.example.audiobook.playback.SleepTimerController
+import com.example.audiobook.playback.SleepTimerPhase
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AppThemeMode
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.example.audiobook.domain.usecases.MarksCoordinator
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,12 +65,24 @@ fun PlayerScreen(
     controller: PlaybackController,
     themeMode: AppThemeMode,
     marks: MarksCoordinator? = null,
+    sleepTimer: SleepTimerController,
     onBack: () -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val playerUi by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val editionId: UUID? = playerUi.edition?.id ?: controller.state.value.editionId
     val playback by controller.state.collectAsState()
+val sleepUi by sleepTimer.uiState.collectAsState()
+    var sleepMinutes by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        sleepTimer.messages.distinctUntilChanged().collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(sleepUi.phase) {
+        if (sleepUi.phase == SleepTimerPhase.IDLE || sleepUi.phase == SleepTimerPhase.STOPPED) sleepMinutes = 0
+    }
     val scope = rememberCoroutineScope()
     val storedChapters by (if (editionId != null && marks != null) marks.chapters(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
     val storedBookmarks by (if (editionId != null && marks != null) marks.bookmarks(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
@@ -81,7 +98,6 @@ fun PlayerScreen(
     var editing by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableStateOf(playback.speed) }
-    var sleepMinutes by remember { mutableStateOf(0) }
     var showMarkChoices by remember { mutableStateOf(false) }
 
     LaunchedEffect(editionId) { editionId?.let { controller.openEdition(it) } }
@@ -178,9 +194,26 @@ fun PlayerScreen(
                 Text("Speed ${"%.2f".format(selectedSpeed)}x")
                 Slider(value = selectedSpeed, onValueChange = { selectedSpeed = it; controller.setSpeed(it) }, valueRange = .5f..3f, modifier = Modifier.weight(1f))
                 TextButton(onClick = {
-                    sleepMinutes = if (sleepMinutes == 60) 0 else sleepMinutes + 15
-                    if (sleepMinutes == 0) controller.cancelSleepTimer() else controller.setSleepTimer(sleepMinutes)
-                }) { Text(if (sleepMinutes == 0) "Sleep" else "${sleepMinutes}m") }
+                    sleepMinutes = when {
+                        sleepMinutes == 0 -> 15
+                        sleepMinutes == 60 -> 0
+                        else -> sleepMinutes + 15
+                    }
+                    if (sleepMinutes == 0) sleepTimer.cancel() else sleepTimer.start(sleepMinutes)
+                }) {
+                    val label = when (sleepUi.phase) {
+                        SleepTimerPhase.IDLE, SleepTimerPhase.STOPPED -> "Sleep"
+                        else -> formatTime(sleepUi.remainingMs ?: 0L)
+                    }
+                    Text(label)
+                }
+            }
+            if (sleepUi.isExtendWindowVisible) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                    Text("مؤقت النوم سينتهي قريبًا", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { sleepTimer.extendBy(15) }) { Text("+15m") }
+                    TextButton(onClick = { sleepTimer.extendBy(30) }) { Text("+30m") }
+                }
             }
             playback.missingFileMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }

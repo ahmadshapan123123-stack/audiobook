@@ -10,7 +10,6 @@ data class PlaybackState(
 	val positionMs: Long = 0L,
 	val durationMs: Long = 0L,
 	val speed: Float = 1f,
-	val sleepRemainingMs: Long? = null,
 	val missingFileMessage: String? = null
 )
 
@@ -26,8 +25,8 @@ interface PlaybackController {
 	suspend fun previousChapter()
 	suspend fun nextChapter()
 	fun setSpeed(speed: Float)
-	fun setSleepTimer(minutes: Int)
-	fun cancelSleepTimer()
+	fun getVolume(): Float
+	fun setVolume(volume: Float)
 	fun release()
 }
 
