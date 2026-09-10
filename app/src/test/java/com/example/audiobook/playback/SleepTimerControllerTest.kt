@@ -96,6 +96,7 @@ class SleepTimerControllerTest {
         assertTrue("انتهى، يجب أن يتوقف التشغيل", playback.paused)
         assertTrue("الحفظ الفوري يمر عبر pause الحالية", playback.paused)
 
+        awaitSessionCount(editionId, 1)
         val sessions = database.listeningSessionDao().getByParent(editionId)
         assertEquals("كتابة الجلسة نجحت فعلًا (لا FK صامتة): سجل واحد بعد التوقف", 1, sessions.size)
         assertEquals(SessionEndReason.SLEEP_TIMER, sessions.first().endReason)
@@ -308,6 +309,7 @@ class SleepTimerControllerTest {
         controller.tickClock()
 
         assertEquals(SleepTimerPhase.STOPPED, controller.uiState.value.phase)
+        awaitSessionCount(editionId, 1)
         val sessions = database.listeningSessionDao().getByParent(editionId)
         assertEquals("يجب وجود سجل جلسة واحد بعد انتهاء المؤقت", 1, sessions.size)
         val session = sessions.first()
@@ -318,6 +320,17 @@ class SleepTimerControllerTest {
     }
 
     // ---- دوال مساعدة ----
+
+    /** الإدراج غير متزامن (executor وحيد الخيط) — ننتظر حتى يظهر السجل. */
+    private suspend fun awaitSessionCount(editionId: UUID, expected: Int) {
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (true) {
+            val n = database.listeningSessionDao().getByParent(editionId).size
+            if (n == expected) return
+            if (System.currentTimeMillis() > deadline) assertEquals("الجلسات المسجلة", expected, n)
+            Thread.sleep(5)
+        }
+    }
 
     private suspend fun seedEditionChain(editionId: UUID) {
         val root = LibraryRootEntity(uri = "content://test/root", displayName = "test", isPriority = false, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)
@@ -372,11 +385,14 @@ class SleepTimerControllerTest {
             PlaybackState(editionId = editionId, positionMs = positionMs, durationMs = 10_000L)
         )
         override val state: StateFlow<PlaybackState> = mutableState
+        @Volatile
         var currentVolume = 1f
         var paused = false
-        val volumeEvents = mutableListOf<Pair<Long, Float>>()
+        val volumeEvents: MutableList<Pair<Long, Float>> = java.util.Collections.synchronizedList(mutableListOf())
 
-        fun duckEvents(): List<Pair<Long, Float>> = volumeEvents.filter { it.second == SLEEP_DUCK_VOLUME_RATIO }
+        fun duckEvents(): List<Pair<Long, Float>> = synchronized(volumeEvents) {
+            volumeEvents.filter { it.second == SLEEP_DUCK_VOLUME_RATIO }
+        }
 
         override suspend fun openEdition(editionId: UUID) = Unit
         override fun play() = Unit
@@ -390,7 +406,7 @@ class SleepTimerControllerTest {
         override fun getVolume(): Float = currentVolume
         override fun setVolume(volume: Float) {
             currentVolume = volume
-            volumeEvents += clock.nowMillis() to volume
+            synchronized(volumeEvents) { volumeEvents += clock.nowMillis() to volume }
         }
         override fun release() = Unit
     }

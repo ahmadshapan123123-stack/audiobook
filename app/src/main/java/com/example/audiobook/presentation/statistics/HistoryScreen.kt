@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.data.room.dao.ListeningHistoryRow
+import com.example.audiobook.presentation.theme.minTouchTarget
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -41,7 +42,7 @@ fun HistoryScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) { Text("رجوع") }
+            TextButton(onClick = onBack, modifier = Modifier.minTouchTarget()) { Text("رجوع") }
             Text("السجل", style = MaterialTheme.typography.headlineSmall)
         }
         if (history.sessions.isEmpty()) {

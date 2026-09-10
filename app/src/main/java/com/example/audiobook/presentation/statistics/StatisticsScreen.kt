@@ -18,6 +18,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.presentation.theme.AppBookCard
 import com.example.audiobook.presentation.theme.AppSpacing
+import com.example.audiobook.presentation.theme.minTouchTarget
 
 /**
  * [R4-النقطة 3] شاشة Statistics الحقيقية المربوطة بـ[StatisticsViewModel]:
@@ -37,7 +38,7 @@ fun StatisticsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) { Text("رجوع") }
+            TextButton(onClick = onBack, modifier = Modifier.minTouchTarget()) { Text("رجوع") }
             Text("الإحصائيات", style = MaterialTheme.typography.headlineSmall)
         }
         AppBookCard("الاستماع اليوم", formatDuration(state.listeningTodayMs))
