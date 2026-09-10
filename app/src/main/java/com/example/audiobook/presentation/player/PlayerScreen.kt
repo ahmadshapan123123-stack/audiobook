@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +51,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.presentation.theme.minTouchTarget
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -121,13 +122,13 @@ val sleepUi by sleepTimer.uiState.collectAsState()
     Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(gradient.start, gradient.end)))) {
         Column(modifier = Modifier.fillMaxSize().padding(AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع") }
+                IconButton(onClick = onBack, modifier = Modifier.minTouchTarget()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "رجوع") }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(playerUi.title.ifBlank { "كتاب" }, style = MaterialTheme.typography.titleLarge)
                     Text(playerUi.authorName, style = MaterialTheme.typography.bodySmall)
                 }
                 Box {
-                    IconButton(onClick = { showMore = true }) { Icon(Icons.Outlined.MoreVert, "المزيد") }
+                    IconButton(onClick = { showMore = true }, modifier = Modifier.minTouchTarget()) { Icon(Icons.Outlined.MoreVert, "المزيد") }
                     DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                         DropdownMenuItem(text = { Text("معلومات الكتاب") }, onClick = { showMore = false })
                         DropdownMenuItem(text = { Text("تغيير الإصدار") }, onClick = { showMore = false })
@@ -136,7 +137,7 @@ val sleepUi by sleepTimer.uiState.collectAsState()
                 }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(AppSpacing.xs)).background(gradient.start), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 210.dp).clip(RoundedCornerShape(AppSpacing.xs)).background(gradient.start), contentAlignment = Alignment.Center) {
                 Text(playerUi.title.ifBlank { "غلاف الكتاب" }, color = Color.White, style = MaterialTheme.typography.headlineSmall)
             }
             Text("${formatTime(playback.positionMs)} / ${formatTime(playback.durationMs)}", style = MaterialTheme.typography.bodyMedium)
@@ -146,9 +147,9 @@ val sleepUi by sleepTimer.uiState.collectAsState()
             )
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                FilterChip(selected = renderedTimeline.level == TimelineLevel.OVERVIEW, onClick = { timeline = PlayerTimelineEditor.overview(timeline) }, label = { Text("نظرة عامة") })
-                FilterChip(selected = renderedTimeline.level == TimelineLevel.ZOOMED, onClick = { timeline = PlayerTimelineEditor.zoom(timeline, playback.positionMs) }, label = { Text("تكبير ٣٠–٦٠ دقيقة") })
-                TextButton(onClick = { editing = !editing }) { Text(if (editing) "إنهاء التحرير" else "تحرير الفصول") }
+                FilterChip(selected = renderedTimeline.level == TimelineLevel.OVERVIEW, onClick = { timeline = PlayerTimelineEditor.overview(timeline) }, label = { Text("نظرة عامة") }, modifier = Modifier.minTouchTarget())
+                FilterChip(selected = renderedTimeline.level == TimelineLevel.ZOOMED, onClick = { timeline = PlayerTimelineEditor.zoom(timeline, playback.positionMs) }, label = { Text("تكبير ٣٠–٦٠ دقيقة") }, modifier = Modifier.minTouchTarget())
+                TextButton(onClick = { editing = !editing }, modifier = Modifier.minTouchTarget()) { Text(if (editing) "إنهاء التحرير" else "تحرير الفصول") }
             }
 
             AnimatedContent(targetState = timeline.level, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "timeline-level") { level ->
@@ -164,7 +165,7 @@ val sleepUi by sleepTimer.uiState.collectAsState()
                 Button(onClick = {
                     timeline = PlayerTimelineEditor.markNow(timeline, playback.positionMs)
                     showMarkChoices = true
-                }) { Text("Mark") }
+                }, modifier = Modifier.minTouchTarget()) { Text("Mark") }
             }
             if (showMarkChoices && timeline.markCaptureMs != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
@@ -172,22 +173,22 @@ val sleepUi by sleepTimer.uiState.collectAsState()
                         val captured = timeline.markCaptureMs!!
                         if (marks != null && editionId != null) scope.launch { marks.addBookmark(editionId, captured) }
                         timeline = PlayerTimelineEditor.consumeMark(timeline, "Bookmark", false); showMarkChoices = false
-                    }) { Text("Bookmark") }
+                    }, modifier = Modifier.minTouchTarget()) { Text("Bookmark") }
                     TextButton(onClick = {
                         val captured = timeline.markCaptureMs!!
                         if (marks != null && editionId != null) scope.launch { marks.addChapter(editionId, captured) }
                         timeline = PlayerTimelineEditor.consumeMark(timeline, "فصل جديد", true); showMarkChoices = false
-                    }) { Text("Chapter") }
+                    }, modifier = Modifier.minTouchTarget()) { Text("Chapter") }
                     Text("تم التقاط ${formatTime(timeline.markCaptureMs!!)} فورًا", style = MaterialTheme.typography.bodySmall)
                 }
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { scope.launch { controller.previousChapter() } }) { Text("السابق") }
-                TextButton(onClick = controller::skipBack15Seconds) { Text("-15s") }
-                Button(onClick = { if (playback.isPlaying) controller.pause() else controller.play() }) { Text(if (playback.isPlaying) "إيقاف" else "تشغيل") }
-                TextButton(onClick = controller::skipForward15Seconds) { Text("+15s") }
-                TextButton(onClick = { scope.launch { controller.nextChapter() } }) { Text("التالي") }
+                TextButton(onClick = { scope.launch { controller.previousChapter() } }, modifier = Modifier.minTouchTarget()) { Text("السابق") }
+                TextButton(onClick = controller::skipBack15Seconds, modifier = Modifier.minTouchTarget()) { Text("-15s") }
+                Button(onClick = { if (playback.isPlaying) controller.pause() else controller.play() }, modifier = Modifier.minTouchTarget()) { Text(if (playback.isPlaying) "إيقاف" else "تشغيل") }
+                TextButton(onClick = controller::skipForward15Seconds, modifier = Modifier.minTouchTarget()) { Text("+15s") }
+                TextButton(onClick = { scope.launch { controller.nextChapter() } }, modifier = Modifier.minTouchTarget()) { Text("التالي") }
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -200,7 +201,7 @@ val sleepUi by sleepTimer.uiState.collectAsState()
                         else -> sleepMinutes + 15
                     }
                     if (sleepMinutes == 0) sleepTimer.cancel() else sleepTimer.start(sleepMinutes)
-                }) {
+                }, modifier = Modifier.minTouchTarget()) {
                     val label = when (sleepUi.phase) {
                         SleepTimerPhase.IDLE, SleepTimerPhase.STOPPED -> "Sleep"
                         else -> formatTime(sleepUi.remainingMs ?: 0L)
@@ -211,8 +212,8 @@ val sleepUi by sleepTimer.uiState.collectAsState()
             if (sleepUi.isExtendWindowVisible) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
                     Text("مؤقت النوم سينتهي قريبًا", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { sleepTimer.extendBy(15) }) { Text("+15m") }
-                    TextButton(onClick = { sleepTimer.extendBy(30) }) { Text("+30m") }
+                    TextButton(onClick = { sleepTimer.extendBy(15) }, modifier = Modifier.minTouchTarget()) { Text("+15m") }
+                    TextButton(onClick = { sleepTimer.extendBy(30) }, modifier = Modifier.minTouchTarget()) { Text("+30m") }
                 }
             }
             playback.missingFileMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -224,7 +225,7 @@ val sleepUi by sleepTimer.uiState.collectAsState()
 private fun TimelineView(state: PlayerTimelineState, positionMs: Long, level: TimelineLevel, editing: Boolean, onChapterMoved: (UUID, Long) -> Unit) {
     val visibleStart = if (level == TimelineLevel.ZOOMED) (state.zoomCenterMs - 30 * 60_000L).coerceAtLeast(0L) else 0L
     val visibleEnd = if (level == TimelineLevel.ZOOMED) (state.zoomCenterMs + 30 * 60_000L).coerceAtMost(state.durationMs) else state.durationMs
-    Column(modifier = Modifier.fillMaxWidth().height(88.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = .75f), RoundedCornerShape(AppSpacing.xs)).padding(AppSpacing.sm)) {
+    Column(modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp, max = 176.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = .75f), RoundedCornerShape(AppSpacing.xs)).padding(AppSpacing.sm)) {
         Text(if (level == TimelineLevel.OVERVIEW) "Timeline · الإصدار بالكامل" else "Timeline · ${formatTime(visibleStart)} – ${formatTime(visibleEnd)}", style = MaterialTheme.typography.bodySmall)
         Box(modifier = Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))) {
             state.bookmarks.forEach { bookmark -> Marker(x = markerFraction(bookmark.positionMs, visibleStart, visibleEnd), color = MaterialTheme.colorScheme.secondary, label = "•") }
