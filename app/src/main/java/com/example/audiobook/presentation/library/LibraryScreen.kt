@@ -72,6 +72,8 @@ fun LibraryScreen(
     onManageRoots: () -> Unit = {},
     onStatistics: () -> Unit = {},
     onHistory: () -> Unit = {},
+    onReviewMatches: () -> Unit = {},
+    reviewBadgeCount: Int = 0,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -103,6 +105,7 @@ fun LibraryScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 TextButton(onClick = onHistory, modifier = Modifier.minTouchTarget()) { Text("السجل") }
                 TextButton(onClick = onStatistics, modifier = Modifier.minTouchTarget()) { Text("الإحصائيات") }
+                TextButton(onClick = onReviewMatches, modifier = Modifier.minTouchTarget()) { Text(if (reviewBadgeCount > 0) "مراجعة المطابقات ($reviewBadgeCount)" else "مراجعة المطابقات") }
                 TextButton(onClick = onManageRoots, modifier = Modifier.minTouchTarget()) { Text("مجلدات المكتبة") }
             }
         }

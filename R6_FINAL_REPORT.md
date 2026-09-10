@@ -50,6 +50,41 @@ BUILD SUCCESSFUL in 56s
 ### The 13 original unit-test files from Phases 0–12 all execute in this same run
 `RoomDataTest`, `StatisticsRepositoryIntegrationTest`, `StatisticsRulesTest`, `ArabicSearchNormalizerTest`, `BookDetailsManagementTest`, `CoverPolicyTest`, `EditionIntelligenceTest`, `MarksCoordinatorIntegrationTest`, `ScanRootTest`, `ChapterCompletionObserverTest`, `EditionTimelineTest`, `PlaybackNavigationTest`, `SleepTimerControllerTest`.
 
+---
+
+## R7 Addendum — شاشة مراجعة المطابقات (Review Matches) أُنجزت بعد تقرير R6
+
+فجوة R6 الموثّقة (القسم 4.2 أدناه) عولجت في R7 بترقية كاملة وبنفس مصدر الحقيقة (plan.md؛ لا يوجد ملف `AUDIOBOOK_APP_SPEC.md`). لا قيم مختلقة: كل الأرقام على الشاشة تُحسب فعلًا من Room بعد آخر Scan.
+
+الملفات المضافة/المعدّلة:
+- `app/src/main/java/com/example/audiobook/presentation/reviewmatches/ReviewMatchesViewModel.kt` — يجلب فعلًا من Room حالات الثقة المتوسطة/المنخفضة المعلّقة، الملخص الرقمي الحقيقي (`files/books/series/authors/suspectCases`)، ويكتب القرارات حقيقية في `EditionMatchDecisionEntity` (نفس Dao) مع تأثير حقيقي: دمج عبر `EditionMerge` الحالي، أو إبقاء إصدارين، أو فصل كتاب.
+- `app/src/main/java/com/example/audiobook/presentation/reviewmatches/ReviewMatchesScreen.kt` — بطاقات ملخص حقيقية + قائمة الحالات + إشارات مقروءة + أزرار القرار الثلاثة.
+- `MainActivity.kt` — route `review_matches` + شارة المكتبة؛ `LibraryScreen.kt` — زر دخول + عدّاد؛ `Daos.kt` — `AudioFileDao.countAll()`.
+- الحدّ الفاصل: ثابت مسمّى موثّق `REVIEW_CASE_MAX_CONFIDENCE = 0.60f` (= `EditionIntelligence.REVIEW_LOW_CONFIDENCE_MAX`)؛ لا تُعرض الحالات عالية الثقة أبدًا (المرجع = أعلى ثقة داخل نفس الكتاب).
+- اختبارات جديدة: `ReviewMatchesViewModelTest` (4) + `ReviewMatchesScreenAccessibilityTest` (3).
+
+تشغيل حرفي إجباري R7 (نفس أسلوب R6: حذف المخرجات السابقة + intermediates أولًا):
+```
+gradlew.bat --no-daemon --console=plain testDebugUnitTest
+```
+Verbatim tail (`r7-gradlew-test-fresh.log`):
+```
+> Task :app:transformDebugUnitTestClassesWithAsm
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 1m 5s
+38 actionable tasks: 3 executed, 35 up-to-date
+```
+
+| Metric | Literal value (R7) |
+|---|---|
+| Test classes (`TEST-*.xml`) | **33** |
+| Tests | **124** |
+| Failures | **0** |
+| Errors | **0** |
+| Skipped | **0** |
+
+ملاحظة أمانة: أثناء كتابة اختبارات الشاشة سُجّل فشلان محليان أولًا (`assertCountEquals(4)` على "1" ثم `"55٪"`)، وثبّت الفشلان/إصلاحهما القيم الفعلية الحقيقية: بطاقات الملخص تعرض فعليًا `4,2,1,1,1` و"الثقة" نصًا مقترنًا بجملته. الشهادة على الشاشة الآن حرفية: `reportsRealSummaryAndShowsOnlyMediumAndLowCases` يثبّت `4`,`2`,`1`,`1`,`1` وغياب الإصدارين المؤكدين، و`choosingSameEditionAppliesRealMergeAndRemovesCaseFromList` يثبّت انقر "نفس الإصدار" → اختفاء الحالة → `الحالات المشكوك فيها = 0`، و`decisionButtonsMeetMin48DpTouchTarget` يثبّت ارتفاع ≥48dp للأزرار الأربعة.
+
 ## 3. Explicit re-verification of every critical constraint (R6 targets)
 
 Each constraint below has a dedicated test method; all passed inside the fresh 117/0 run above.
@@ -94,7 +129,7 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 | Strict: فرق مدة > 15 % → لا auto-merge | مكتمل | اختبار وحدة — `canAutoMerge_durationDifferenceAbove15PercentBlocksAllLevels` |
 | ثلاثة مستويات Conservative/Balanced/Aggressive | مكتمل | مراجعة كود + اختبار وحدة (طبقات Evaluation) |
 | EditionMatchDecision سجل JSON (subject/compared) | مكتمل | مراجعة كود + اختبار وحدة (`balancedScanAutoMergesSameBookAcrossTwoFoldersAndRecordsDecision`) |
-| **شاشة مراجعة المطابقات** (رفض/دمج/تقسيم/حذف/رفع أولوية + تصويت) | **غير مكتمل** | لم يُعثر على أي شاشة/ViewModel/Screen باسم Review* (glob: NONE FOUND). لا دليل على وجودها إلا في مسار الفحص automerge |
+| **شاشة مراجعة المطابقات** (رفض/دمج/تقسيم + ملخص حقيقي + حدّ موثّق) | **مكتمل (R7)** | اختبار وحدة + مراجعة كود — `ReviewMatchesViewModelTest` (4) + `ReviewMatchesScreenAccessibilityTest` (3)؛ تفاصيل وحذف التشغيل في R7 Addendum أعلاه. القرارات تُكتب حقيقيًا في `EditionMatchDecisionEntity` عبر Dao نفسه |
 | M4B فصول تُستورد بـ `createdFrom = IMPORTED` | مكتمل | مراجعة كود — `ScanRoot.kt:290-292` يحذف ويعيد إدراج فصول `ChapterCreatedFrom.IMPORTED` |
 | كشف ترتيب الملفات / series / `قــ` arabic digits | مكتمل | اختبار وحدة — `EditionIntelligenceTest.*` (series/narrator/order/confidence) |
 | Metadata Cache (size+lastModified+uri) | مكتمل | اختبار وحدة — `repeatedScanUsesCacheThenMissingAndRestorePreserveListeningData` |
@@ -163,7 +198,7 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 
 | بند | الحالة الفعلية | نوع الدليل |
 |---|---|---|
-| شاشات المكتبة/التفاصيل/المشغّل/الإشارات/الإحصاءات/History/LibraryRoots يمكن الوصول إليها | مكتمل (نطاق الوحدة) | اختبار وحدة — حزمة accessibility 9 ملفات/27 اختبارًا (semantics-tree) |
+| شاشات المكتبة/التفاصيل/المشغّل/الإشارات/الإحصاءات/History/LibraryRoots/Review Matches يمكن الوصول إليها | مكتمل (نطاق الوحدة) | اختبار وحدة — حزمة accessibility 10 ملفات/30 اختبارًا (semantics-tree)، منها `ReviewMatchesScreenAccessibilityTest` (3) |
 | 48dp وContent Descriptions وصفوف مقروءة بخط كبير | مكتمل (نطاق الوحدة) | اختبار وحدة — حالات `enlargedText*` لكل الشاشات |
 | فحص TalkBack الفعلي على جهاز | **غير مُنجز** | لا جهاز في هذه البيئة؛ لا يُدّعى |
 
@@ -186,13 +221,14 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 
 ## 5. ما لم يُنجز صراحةً (لا ادعاءات كاذبة)
 
-1. **شاشة مراجعة المطابقات (Review Matches)** — غير موجودة في الكود. البند #فصل 3 (plan.md سطر 169).
+1. ~~شاشة مراجعة المطابقات~~ — أُنجزت في R7 (انظر R7 Addendum).
 2. **اختيار مستوى Intelligence من واجهة إعدادات** — `IntelligenceLevel` موجود كـ enum في `domain/usecases/EditionIntelligence.kt`، لكن لا توجد شاشة Settings لتغييره من التطبيق.
 3. **الأدلة الآلية/الحقيقية** (TalkBack حقيقي، المشغل على شاشة القفل، البلوتوث، الإشعارات، فحص بصري Light/Dark/AMOLED، سلاسة الفحص على مكتبة كبيرة على جهاز حقيقي) — كلها `غير مُنجز` لأن البيئة لا تحتوي جهازًا/مُحاكيًا ولا `app/src/androidTest`.
 4. لا يوجد `testReleaseUnitTest` task في هذا المشروع — `./gradlew test` يشغل `testDebugUnitTest` فقط (حقيقة مسجلة، وليست عيبًا مُدّعىً).
 
 ## صافي النتيجة
 
-- **117/117 green، صفر فشل، صفر أخطاء، صفر skips** في تشغيل حرفي إجباري واحد.
+- **117/117 green، صفر فشل، صفر أخطاء، صفر skips** في تشغيل حرفي إجباري واحد (R6).
+- **R7: 124/124 green** في تشغيل حرفي إجباري جديد (33 فئة اختبار، صفر فشل/أخطاء/skips) — يشمل 7 اختبارات جديدة لشاشة Review Matches.
 - كل قيد حرج تمت إعادة اختباره ضمّن نفس التشغيل باسم اختبار محدد ومقتبس أعلاه.
 - أي بند ليس له دليل مباشر مكتوب كـ `غير مكتمل` — **لم تُذكر أي عبارة "تم التأكد" بدون دليل مرفق**.

@@ -113,6 +113,8 @@
 
 7. اربط شاشة "Review Matches" فعليًا بالـEditionRepository (لا تزال شاشة UI فقط بدون بيانات حقيقية إن وُجدت) وشاشة إدارة الإصدارات في BookDetails الحقيقية (بعد Phase R1).
 
+> **حالة R7 (2026-09-10):** أُنجزت — شاشة `ReviewMatchesScreen` + `ReviewMatchesViewModel` تربط فعليًا بـRoom (نفس DAOs)، الملخص الرقمي حقيقي، القرارات تُكتب في `EditionMatchDecisionEntity` وتُطبَّق حقيقيًا (`EditionMerge` للدمج، إبقاء إصدارين، فصل كتاب). الأدلة: `ReviewMatchesViewModelTest` (4) + `ReviewMatchesScreenAccessibilityTest` (3)، والتشغيل الكامل R7 = 124/124 green (راجع `R6_FINAL_REPORT.md` → R7 Addendum).
+
 توقف بعد كل نقطة، شغّل اختبارات الوحدة الجديدة + كل الاختبارات القديمة (No Regression)، واعرض النتائج الحرفية. النقطة 4 (القيد الصارم) هي الأهم في هذه المرحلة كاملة — لا تنتقل للنقطة التالية قبل إثباتها باختبار فعلي ناجح.
 ```
 

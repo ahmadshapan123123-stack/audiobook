@@ -9,7 +9,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -24,6 +27,8 @@ import com.example.audiobook.presentation.player.PlayerScreen
 import com.example.audiobook.presentation.bookmarks.BookmarksScreen
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import com.example.audiobook.presentation.theme.ThemePreference
+import com.example.audiobook.presentation.reviewmatches.ReviewMatchesScreen
+import com.example.audiobook.presentation.reviewmatches.ReviewMatchesViewModel
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
@@ -65,11 +70,15 @@ class MainActivity : ComponentActivity() {
                         startDestination = "library"
                     ) {
                         composable("library") {
+                            val reviewViewModel: ReviewMatchesViewModel = hiltViewModel()
+                            val reviewState by reviewViewModel.uiState.collectAsStateWithLifecycle()
                             LibraryScreen(
                                 onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
                                 onManageRoots = { navController.navigate("library_roots") },
                                 onStatistics = { navController.navigate("statistics") },
-                                onHistory = { navController.navigate("history") }
+                                onHistory = { navController.navigate("history") },
+                                onReviewMatches = { navController.navigate("review_matches") },
+                                reviewBadgeCount = reviewState.summary.suspectCases
                             )
                         }
                         composable(
@@ -115,6 +124,9 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("history") {
                             com.example.audiobook.presentation.statistics.HistoryScreen(onBack = { navController.popBackStack() })
+                        }
+                        composable("review_matches") {
+                            ReviewMatchesScreen(onBack = { navController.popBackStack() })
                         }
                     }
                 }

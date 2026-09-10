@@ -84,6 +84,7 @@ interface AudioFileDao : CrudDao<AudioFileEntity> {
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") fun observeByParent(editionId: UUID): Flow<List<AudioFileEntity>>
     @Query("SELECT * FROM audio_files WHERE fileUri = :fileUri LIMIT 1") suspend fun getByUri(fileUri: String): AudioFileEntity?
     @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
+    @Query("SELECT COUNT(*) FROM audio_files") suspend fun countAll(): Int
 }
 
 data class AudioFileAggregateRow(val editionId: UUID, val totalDurationMs: Long, val fileCount: Int)
