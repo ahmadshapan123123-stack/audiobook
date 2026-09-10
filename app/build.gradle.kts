@@ -57,4 +57,5 @@ dependencies {
     // R5: اختبارات شجرة semantics الفعلية عبر Compose Testing APIs على مسار الوحدة (Robolectric).
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("androidx.compose.ui:ui-test-manifest")
+testImplementation(libs.androidx.work.testing)
 }

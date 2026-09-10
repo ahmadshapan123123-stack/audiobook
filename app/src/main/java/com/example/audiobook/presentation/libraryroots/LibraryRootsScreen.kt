@@ -20,9 +20,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.data.room.entity.LibraryRootEntity
+import com.example.audiobook.presentation.theme.minTouchTarget
 
 @Composable
 fun LibraryRootsScreen(viewModel: LibraryRootsViewModel) {
@@ -36,7 +39,7 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Library folders", style = MaterialTheme.typography.headlineSmall)
-        Button(onClick = { folderPicker.launch(null) }) {
+        Button(onClick = { folderPicker.launch(null) }, modifier = Modifier.minTouchTarget()) {
             Text("Add folder")
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -65,14 +68,26 @@ private fun LibraryRootRow(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row {
                 Text("Priority")
-                Switch(checked = root.isPriority, onCheckedChange = onPriorityChanged)
+                Switch(
+                    checked = root.isPriority,
+                    onCheckedChange = onPriorityChanged,
+                    modifier = Modifier
+                        .minTouchTarget()
+                        .semantics { contentDescription = "Priority toggle for ${root.displayName}" }
+                )
             }
             Row {
                 Text("Enabled")
-                Switch(checked = root.isEnabled, onCheckedChange = onEnabledChanged)
+                Switch(
+                    checked = root.isEnabled,
+                    onCheckedChange = onEnabledChanged,
+                    modifier = Modifier
+                        .minTouchTarget()
+                        .semantics { contentDescription = "Enabled toggle for ${root.displayName}" }
+                )
             }
         }
-        TextButton(onClick = onRefresh, enabled = root.isEnabled) {
+        TextButton(onClick = onRefresh, enabled = root.isEnabled, modifier = Modifier.minTouchTarget()) {
             Text("Refresh")
         }
         HorizontalDivider()

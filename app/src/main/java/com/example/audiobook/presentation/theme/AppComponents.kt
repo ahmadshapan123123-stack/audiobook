@@ -24,15 +24,17 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 fun Modifier.minTouchTarget(): Modifier = sizeIn(minWidth = 48.dp, minHeight = 48.dp)
 
 @Composable
 fun AppPrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(AppSpacing.xs)) { Text(text) }
+    Button(onClick = onClick, modifier = modifier.minTouchTarget(), shape = RoundedCornerShape(AppSpacing.xs)) { Text(text) }
 }
 
 @Composable
@@ -51,12 +53,18 @@ fun AppBookCard(title: String, subtitle: String, modifier: Modifier = Modifier) 
 
 @Composable
 fun AppModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) }, modifier = Modifier.minTouchTarget())
 }
 
 @Composable
 fun AppProgressSlider(value: Float, onValueChange: (Float) -> Unit) {
-    Slider(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth())
+    Box(modifier = Modifier.fillMaxWidth().minTouchTarget().testTag("slider-touch-target")) {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }
 
 @Composable

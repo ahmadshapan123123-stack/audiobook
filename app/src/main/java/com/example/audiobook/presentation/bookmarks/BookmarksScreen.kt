@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.playback.PlaybackController
 import kotlinx.coroutines.launch
 
@@ -32,7 +33,7 @@ fun BookmarksScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) { Text("رجوع") }
+            TextButton(onClick = onBack, modifier = Modifier.minTouchTarget()) { Text("رجوع") }
             Text("Bookmarks وNotes", style = MaterialTheme.typography.headlineSmall)
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -42,8 +43,8 @@ fun BookmarksScreen(
                         Text("${bookmark.positionMs / 1000}s · ${if (bookmark.noteText.isNullOrBlank()) "Bookmark" else "Note"}")
                         bookmark.noteText?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
-                    Button(onClick = { controller.seekTo(bookmark.positionMs) }) { Text("انتقال") }
-                    TextButton(onClick = { viewModel.deleteBookmark(bookmark) }) { Text("حذف") }
+                    Button(onClick = { controller.seekTo(bookmark.positionMs) }, modifier = Modifier.minTouchTarget()) { Text("انتقال") }
+                    TextButton(onClick = { viewModel.deleteBookmark(bookmark) }, modifier = Modifier.minTouchTarget()) { Text("حذف") }
                 }
             }
         }
