@@ -16,9 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.playback.PlaybackController
 import kotlinx.coroutines.launch
@@ -34,7 +36,13 @@ fun BookmarksScreen(
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onBack, modifier = Modifier.minTouchTarget()) { Text("رجوع") }
-            Text("Bookmarks وNotes", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Bookmarks وNotes",
+                modifier = Modifier.weight(1f).padding(start = AppSpacing.sm),
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(uiState.bookmarks, key = { it.id }) { bookmark ->

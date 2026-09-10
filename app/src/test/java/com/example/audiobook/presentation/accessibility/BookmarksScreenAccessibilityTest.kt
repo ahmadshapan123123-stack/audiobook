@@ -1,12 +1,17 @@
 package com.example.audiobook.presentation.accessibility
 
 import android.content.Context
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
@@ -112,15 +117,19 @@ class BookmarksScreenAccessibilityTest {
         bookmark = bm
     }
 
-    private fun showBookmarks() {
+    private fun showBookmarks(fontScale: Float = 1f) {
         val viewModel = BookmarksViewModel(
             savedStateHandle = SavedStateHandle(mapOf("editionId" to editionId.toString())),
             bookmarkDao = database.bookmarkDao(),
             chapterDao = database.chapterDao()
         )
         composeRule.setContent {
-            AudiobookTheme(mode = AppThemeMode.LIGHT) {
-                BookmarksScreen(controller = controller, onBack = {}, viewModel = viewModel)
+            CompositionLocalProvider(
+                LocalDensity provides Density(LocalDensity.current.density, fontScale = fontScale)
+            ) {
+                AudiobookTheme(mode = AppThemeMode.LIGHT) {
+                    BookmarksScreen(controller = controller, onBack = {}, viewModel = viewModel)
+                }
             }
         }
         composeRule.waitUntil(5_000) {
@@ -157,5 +166,17 @@ class BookmarksScreenAccessibilityTest {
             composeRule.onAllNodesWithText("120s · Bookmark").fetchSemanticsNodes().isEmpty()
         }
         composeRule.onAllNodesWithText("120s · Bookmark").assertCountEquals(0)
+    }
+
+    @Test
+    fun enlargedTextKeepsHeaderInsideScreenWithoutClipping() {
+        showBookmarks(fontScale = 2f)
+
+        val root = composeRule.onRoot().getUnclippedBoundsInRoot()
+        for (text in listOf("رجوع", "Bookmarks وNotes", "120s · Bookmark")) {
+            val bounds = composeRule.onAllNodesWithText(text).onFirst().getUnclippedBoundsInRoot()
+            assertTrue("'$text' يعبر الحافة اليمنى", bounds.right <= root.right)
+            assertTrue("'$text' يعبر الحافة اليسرى", bounds.left >= root.left)
+        }
     }
 }

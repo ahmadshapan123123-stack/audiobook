@@ -2,6 +2,8 @@ package com.example.audiobook.presentation.accessibility
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -13,7 +15,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -78,7 +82,7 @@ class LibraryRootsScreenAccessibilityTest {
         podcastsRoot = podcasts
     }
 
-    private fun showScreen() {
+    private fun showScreen(fontScale: Float = 1f) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dao = database.libraryRootDao()
         val repository = LocalOnlyLibraryRootRepository(dao)
@@ -89,8 +93,12 @@ class LibraryRootsScreenAccessibilityTest {
             scanScheduler = ScanScheduler(context, repository)
         )
         composeRule.setContent {
-            AudiobookTheme(mode = AppThemeMode.LIGHT) {
-                LibraryRootsScreen(viewModel = viewModel)
+            CompositionLocalProvider(
+                LocalDensity provides Density(LocalDensity.current.density, fontScale = fontScale)
+            ) {
+                AudiobookTheme(mode = AppThemeMode.LIGHT) {
+                    LibraryRootsScreen(viewModel = viewModel)
+                }
             }
         }
         composeRule.waitUntil(5_000) {
@@ -160,6 +168,18 @@ class LibraryRootsScreenAccessibilityTest {
         )) {
             val bounds = labeledToggle(cd).getUnclippedBoundsInRoot()
             assertTrue("'$cd' height (${bounds.bottom - bounds.top}) < 48dp", bounds.bottom - bounds.top >= 47.9.dp)
+        }
+    }
+
+    @Test
+    fun enlargedTextKeepsLabelsAndRowsInsideScreenWithoutClipping() {
+        showScreen(fontScale = 2f)
+
+        val root = composeRule.onRoot().getUnclippedBoundsInRoot()
+        for (text in listOf("Library folders", "Add folder", "Sounds", "Priority", "Enabled", "Refresh")) {
+            val bounds = composeRule.onAllNodesWithText(text).onFirst().getUnclippedBoundsInRoot()
+            assertTrue("'$text' يعبر الحافة اليمنى", bounds.right <= root.right)
+            assertTrue("'$text' يعبر الحافة اليسرى", bounds.left >= root.left)
         }
     }
 }
