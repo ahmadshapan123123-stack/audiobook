@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AppContinueListeningCard
+import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
 
 private enum class LibrarySection(val label: String) {
@@ -64,9 +65,6 @@ private enum class LibrarySection(val label: String) {
 }
 
 private enum class LibraryLayout { GRID, LIST }
-
-private fun Modifier.minTouchTarget(): Modifier =
-    sizeIn(minWidth = 48.dp, minHeight = 48.dp)
 
 @Composable
 fun LibraryScreen(
