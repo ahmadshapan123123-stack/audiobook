@@ -8,12 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -24,6 +25,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
 import androidx.room.Room
@@ -157,15 +160,17 @@ class LibraryScreenAccessibilityTest {
         composeRule.onNodeWithContentDescription("عرض قائمة").assertIsDisplayed().assertHasClickAction()
 
         composeRule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("إضافة إلى المفضلة"))
-        val favoriteButton = hasContentDescription("إضافة إلى المفضلة").and(hasClickAction())
-        composeRule.onNode(useUnmergedTree = true, matcher = favoriteButton).assertIsDisplayed()
-        composeRule.onAllNodes(useUnmergedTree = true, matcher = hasContentDescription("إزالة من المفضلة").and(hasClickAction())).assertCountEquals(0)
+        val toggleIcon = hasContentDescription("إضافة إلى المفضلة")
+        composeRule.onAllNodes(useUnmergedTree = true, matcher = toggleIcon).onFirst().assertIsDisplayed()
+        composeRule.onAllNodes(useUnmergedTree = true, matcher = hasContentDescription("إزالة من المفضلة")).assertCountEquals(0)
 
-        composeRule.onNode(useUnmergedTree = true, matcher = favoriteButton).performClick()
-        composeRule.waitForIdle()
+        composeRule.onAllNodes(useUnmergedTree = true, matcher = toggleIcon).onFirst().performTouchInput { click() }
 
-        composeRule.onAllNodes(useUnmergedTree = true, matcher = hasContentDescription("إزالة من المفضلة").and(hasClickAction())).assertCountEquals(1)
-        composeRule.onAllNodes(useUnmergedTree = true, matcher = favoriteButton).assertCountEquals(1)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodes(useUnmergedTree = true, matcher = hasContentDescription("إزالة من المفضلة")).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodes(useUnmergedTree = true, matcher = hasContentDescription("إزالة من المفضلة")).assertCountEquals(1)
+        composeRule.onAllNodes(useUnmergedTree = true, matcher = toggleIcon).assertCountEquals(1)
         composeRule.onNodeWithContentDescription("عرض قائمة").assertIsDisplayed().assertHasClickAction()
     }
 
@@ -177,7 +182,10 @@ class LibraryScreenAccessibilityTest {
 
         val gridIcon = composeRule.onNodeWithContentDescription("عرض شبكي").getUnclippedBoundsInRoot()
         val listIcon = composeRule.onNodeWithContentDescription("عرض قائمة").getUnclippedBoundsInRoot()
-        val favoriteIcon = composeRule.onNode(useUnmergedTree = true, matcher = hasContentDescription("إضافة إلى المفضلة").and(hasClickAction())).getUnclippedBoundsInRoot()
+        val favoriteIcon = composeRule.onAllNodes(
+            useUnmergedTree = true,
+            matcher = hasClickAction() and hasAnyDescendant(hasContentDescription("إضافة إلى المفضلة"))
+        ).onFirst().getUnclippedBoundsInRoot()
 
         assertTrue("عرض شبكي width < 48dp", gridIcon.right - gridIcon.left >= 48.dp)
         assertTrue("عرض شبكي height < 48dp", gridIcon.bottom - gridIcon.top >= 48.dp)
