@@ -29,6 +29,7 @@ import com.example.audiobook.presentation.theme.AudiobookTheme
 import com.example.audiobook.presentation.theme.ThemePreference
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesScreen
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesViewModel
+import com.example.audiobook.presentation.settings.SettingsScreen
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
@@ -78,7 +79,8 @@ class MainActivity : ComponentActivity() {
                                 onStatistics = { navController.navigate("statistics") },
                                 onHistory = { navController.navigate("history") },
                                 onReviewMatches = { navController.navigate("review_matches") },
-                                reviewBadgeCount = reviewState.summary.suspectCases
+                                reviewBadgeCount = reviewState.summary.suspectCases,
+                                onSettings = { navController.navigate("settings") }
                             )
                         }
                         composable(
@@ -127,6 +129,9 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("review_matches") {
                             ReviewMatchesScreen(onBack = { navController.popBackStack() })
+                        }
+                        composable("settings") {
+                            SettingsScreen(onBack = { navController.popBackStack() })
                         }
                     }
                 }

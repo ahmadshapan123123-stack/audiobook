@@ -105,6 +105,8 @@
 
 3. **`enum class IntelligenceLevel { CONSERVATIVE, BALANCED, AGGRESSIVE }`** كإعداد فعلي يختاره المستخدم من شاشة Settings، محفوظ محليًا (DataStore أو مشابه)، ويُقرأ فعليًا في منطق القرار أثناء الفحص.
 
+> **حالة R8 (2026-09-10):** أُنجزت — الاختيار محفوظ محليًا في `ScanSettings` (SharedPreferences باسم `scan`، يقابل "DataStore أو مشابه")، شاشة `SettingsScreen` + `SettingsViewModel` + route `settings` + أيقونة المكتبة، ويقرأ `ScanRoot` القيمة المخزَّنة فعلًا (`ScanRoot.kt:231`). الأدلة: `SettingsViewModelTest` (2) + `SettingsScreenAccessibilityTest` (3) + `SettingsChoiceDrivesScanIntegrationTest` (Conservative→0 دمج، ثم Balanced بنفس البيانات→1 دمج)، والتشغيل الكامل R8 = 130/130 green (راجع `R6_FINAL_REPORT.md` → R8 Addendum).
+
 4. **[أهم نقطة]** اكتب دالة منفصلة ومعزولة تمامًا `canAutoMerge(subject: EditionSignals, candidate: EditionSignals, level: IntelligenceLevel): Boolean` تُطبّق القيد الصارم: اختلاف راوٍ واضح أو فرق مدة > 15% → `false` دائمًا، بصرف النظر عن `level`. اكتب اختبار وحدة صريح يستدعي هذه الدالة بالمستويات الثلاثة على نفس حالتين (راويين مختلفين بوضوح) ويثبت أن النتيجة `false` في الحالات الثلاث كلها.
 
 5. **فعّل `EditionMatchDecision` فعليًا**: كل قرار (تلقائي عالي الثقة في Balanced، أو من المستخدم عبر شاشة Review) يُكتب في الجدول عبر `EditionMatchDecisionDao.insert()` (الموجود لكن غير مستخدم حاليًا) بمرجعين صريحين. اكتب منطقًا بسيطًا وحقيقيًا (وليس شكليًا) يستخدم القرارات السابقة لنفس المستخدم لتعديل الأوزان مستقبلاً (مثال بسيط قابل للتحقق: لو المستخدم أكّد سابقًا أن نمط تسمية معيّن = نفس الإصدار، زِد وزن ذلك النمط في القرارات التالية).

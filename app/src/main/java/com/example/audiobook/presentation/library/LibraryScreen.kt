@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -74,6 +75,7 @@ fun LibraryScreen(
     onHistory: () -> Unit = {},
     onReviewMatches: () -> Unit = {},
     reviewBadgeCount: Int = 0,
+    onSettings: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -107,6 +109,7 @@ fun LibraryScreen(
                 TextButton(onClick = onStatistics, modifier = Modifier.minTouchTarget()) { Text("الإحصائيات") }
                 TextButton(onClick = onReviewMatches, modifier = Modifier.minTouchTarget()) { Text(if (reviewBadgeCount > 0) "مراجعة المطابقات ($reviewBadgeCount)" else "مراجعة المطابقات") }
                 TextButton(onClick = onManageRoots, modifier = Modifier.minTouchTarget()) { Text("مجلدات المكتبة") }
+                IconButton(onClick = onSettings, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(Icons.Outlined.Settings, contentDescription = "الإعدادات") }
             }
         }
         Spacer(Modifier.height(AppSpacing.md))

@@ -85,6 +85,47 @@ BUILD SUCCESSFUL in 1m 5s
 
 ملاحظة أمانة: أثناء كتابة اختبارات الشاشة سُجّل فشلان محليان أولًا (`assertCountEquals(4)` على "1" ثم `"55٪"`)، وثبّت الفشلان/إصلاحهما القيم الفعلية الحقيقية: بطاقات الملخص تعرض فعليًا `4,2,1,1,1` و"الثقة" نصًا مقترنًا بجملته. الشهادة على الشاشة الآن حرفية: `reportsRealSummaryAndShowsOnlyMediumAndLowCases` يثبّت `4`,`2`,`1`,`1`,`1` وغياب الإصدارين المؤكدين، و`choosingSameEditionAppliesRealMergeAndRemovesCaseFromList` يثبّت انقر "نفس الإصدار" → اختفاء الحالة → `الحالات المشكوك فيها = 0`، و`decisionButtonsMeetMin48DpTouchTarget` يثبّت ارتفاع ≥48dp للأزرار الأربعة.
 
+---
+
+## R8 Addendum — شاشة الإعدادات: اختيار مستوى الذكاء يؤثر فعليًا على الفحص
+
+فجوة R6/R7 الموثّقة (القسم 5 #2: "لا توجد شاشة Settings") عولجت في R8. لا قيمة افتراضية ثابتة في وحدة التحكم بعد الآن: القيمة تُقرأ فعلًا من `ScanSettings` أثناء كل فحص.
+
+النقاط حسب طلب الفجوة وأدلتها:
+
+1. **`ScanSettings.kt`** (`data/preferences`) — وُجد يخزّن `IntelligenceLevel` فعلًا بشكل دائم عبر `SharedPreferences` ("scan", `KEY_INTELLIGENCE_LEVEL`) بنفس نمط `ThemePreference`، ومزوّد عبر `ScanModule.provideScanSettings()` (Singleton). استُخدم كما هو بلا توسيع؛ الحفظ الدائم أثبته `SettingsViewModelTest.chosenLevelThroughViewModelIsPersistedAcrossNewInstance` (كائن `ScanSettings` جديد = قراءة ثانية، يعيد نفس القيمة الفعلية) + `selectingEveryLevelAppliesPersistentlyThroughScanSettings` (الثلاثة).
+2. **`SettingsScreen.kt`** (جديد، `presentation/settings`) — الاختيارات الثلاثة كـRadio (محافظ/متوازن/ذكي) مع سطر شرح تحت كل خيار، وسطر صريح أن القيد الصارم (راوٍ مختلف / فرق مدة > 15%) يمنع أي دمج في المستويات الثلاثة كلها.
+3. **`SettingsViewModel.kt`** (جديد، `@HiltViewModel`) — يقرأ/يكتب عبر `ScanSettings.intelligenceLevel`/`setIntelligenceLevel`.
+4. **`ScanRoot.kt:231`** — كان يقرأ `scanSettings.currentIntelligenceLevel()` فعلًا ويمرّره إلى `EditionIntelligence.mergeDecision`؛ الترابط أكده اختبار التكامل أدناه (ليست قيمة معروضة بلا أثر).
+5. **الربط** — `MainActivity.kt`: route `settings` + `onSettings` من المكتبة؛ `LibraryScreen.kt`: أيقونة إعدادات (`Icons.Outlined.Settings`) في رأس المكتبة بحجم ≥ 48dp.
+6. **اختبار التكامل الحقيقي** `SettingsChoiceDrivesScanIntegrationTest`:
+   - بيانات تجريبية عالية الثقة جدًا (كل القنوات تطابق؛ `mergeConfidence ≥ BALANCED_AUTO_MERGE_THRESHOLD`، و`canAutoMerge(…, BALANCED) == true` مثبت داخل الاختبار نفسه).
+   - الخيار عبر `SettingsViewModel.selectIdentity(CONSERVATIVE)` → فحص كامل → **0 دمج تلقائي** ويبقى إصداران منفصلان.
+   - تحكم إيجابي بنفس البيانات: `select(BALANCED)` → إعادة فحص → **1 دمج** ويبقى إصدار واحد.
+   - هذا يثبت أن اختيار المستخدم من الواجهة له أثر فعلي على سلوك [ScanRoot]، لا قيمة معروضة فحسب.
+
+تشغيل حرفي إجباري R8 (نفس أسلوب R6/R7: حذف المخرجات + intermediates أولًا):
+```
+gradlew.bat --no-daemon --console=plain testDebugUnitTest
+```
+Verbatim tail (`r8-gradlew-test-fresh.log`):
+```
+> Task :app:transformDebugUnitTestClassesWithAsm
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 1m 11s
+38 actionable tasks: 3 executed, 35 up-to-date
+```
+
+| Metric | Literal value (R8) |
+|---|---|
+| Test classes (`TEST-*.xml`) | **36** |
+| Tests | **130** |
+| Failures | **0** |
+| Errors | **0** |
+| Skipped | **0** |
+
+اختبارات R8 الجديدة (6): `SettingsViewModelTest` (2) · `SettingsScreenAccessibilityTest` (3) · `SettingsChoiceDrivesScanIntegrationTest` (1).
+
 ## 3. Explicit re-verification of every critical constraint (R6 targets)
 
 Each constraint below has a dedicated test method; all passed inside the fresh 117/0 run above.
@@ -128,6 +169,7 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 | Strict: روّاة مختلفون → لا auto-merge (كل المستويات) | مكتمل | اختبار وحدة — 3 طرق أعلاه (#2) |
 | Strict: فرق مدة > 15 % → لا auto-merge | مكتمل | اختبار وحدة — `canAutoMerge_durationDifferenceAbove15PercentBlocksAllLevels` |
 | ثلاثة مستويات Conservative/Balanced/Aggressive | مكتمل | مراجعة كود + اختبار وحدة (طبقات Evaluation) |
+| اختيار مستوى الذكاء من شاشة إعدادات، والفحص يقرأ القيمة المخزَّنة فعليًا | **مكتمل (R8)** | اختبار تكامل — `SettingsChoiceDrivesScanIntegrationTest`: Conservative عبر `SettingsViewModel` → فحص عالي الثقة → 0 دمج؛ ثم Balanced بنفس البيانات → 1 دمج. الحفظ الدائم: `SettingsViewModelTest`. الوصلة: `ScanRoot.kt:231` |
 | EditionMatchDecision سجل JSON (subject/compared) | مكتمل | مراجعة كود + اختبار وحدة (`balancedScanAutoMergesSameBookAcrossTwoFoldersAndRecordsDecision`) |
 | **شاشة مراجعة المطابقات** (رفض/دمج/تقسيم + ملخص حقيقي + حدّ موثّق) | **مكتمل (R7)** | اختبار وحدة + مراجعة كود — `ReviewMatchesViewModelTest` (4) + `ReviewMatchesScreenAccessibilityTest` (3)؛ تفاصيل وحذف التشغيل في R7 Addendum أعلاه. القرارات تُكتب حقيقيًا في `EditionMatchDecisionEntity` عبر Dao نفسه |
 | M4B فصول تُستورد بـ `createdFrom = IMPORTED` | مكتمل | مراجعة كود — `ScanRoot.kt:290-292` يحذف ويعيد إدراج فصول `ChapterCreatedFrom.IMPORTED` |
@@ -222,7 +264,7 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 ## 5. ما لم يُنجز صراحةً (لا ادعاءات كاذبة)
 
 1. ~~شاشة مراجعة المطابقات~~ — أُنجزت في R7 (انظر R7 Addendum).
-2. **اختيار مستوى Intelligence من واجهة إعدادات** — `IntelligenceLevel` موجود كـ enum في `domain/usecases/EditionIntelligence.kt`، لكن لا توجد شاشة Settings لتغييره من التطبيق.
+2. ~~اختيار مستوى Intelligence من واجهة إعدادات~~ — أُنجزت في R8 (انظر R8 Addendum): `SettingsScreen` + `SettingsViewModel` + route `settings` + أيقونة المكتبة، ويقرأ `ScanRoot` القيمة المخزَّنة فعلًا أثناء كل فحص.
 3. **الأدلة الآلية/الحقيقية** (TalkBack حقيقي، المشغل على شاشة القفل، البلوتوث، الإشعارات، فحص بصري Light/Dark/AMOLED، سلاسة الفحص على مكتبة كبيرة على جهاز حقيقي) — كلها `غير مُنجز` لأن البيئة لا تحتوي جهازًا/مُحاكيًا ولا `app/src/androidTest`.
 4. لا يوجد `testReleaseUnitTest` task في هذا المشروع — `./gradlew test` يشغل `testDebugUnitTest` فقط (حقيقة مسجلة، وليست عيبًا مُدّعىً).
 
@@ -230,5 +272,6 @@ Column 1 = الحالة الفعلية, column 2 = نوع الدليل. Evidence
 
 - **117/117 green، صفر فشل، صفر أخطاء، صفر skips** في تشغيل حرفي إجباري واحد (R6).
 - **R7: 124/124 green** في تشغيل حرفي إجباري جديد (33 فئة اختبار، صفر فشل/أخطاء/skips) — يشمل 7 اختبارات جديدة لشاشة Review Matches.
+- **R8: 130/130 green** في تشغيل حرفي إجباري جديد (36 فئة اختبار، صفر فشل/أخطاء/skips) — يشمل 6 اختبارات جديدة لشاشة الإعدادات/تكامل القرار مع الفحص.
 - كل قيد حرج تمت إعادة اختباره ضمّن نفس التشغيل باسم اختبار محدد ومقتبس أعلاه.
 - أي بند ليس له دليل مباشر مكتوب كـ `غير مكتمل` — **لم تُذكر أي عبارة "تم التأكد" بدون دليل مرفق**.
