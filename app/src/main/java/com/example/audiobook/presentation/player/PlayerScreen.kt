@@ -1,10 +1,11 @@
 package com.example.audiobook.presentation.player
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,16 +20,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bedtime
@@ -56,7 +61,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,14 +73,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
+import com.example.audiobook.domain.usecases.MarksCoordinator
 import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.playback.SleepTimerPhase
+import com.example.audiobook.playback.SleepTimerUiState
 import com.example.audiobook.presentation.theme.AppProgressSlider
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AppThemeMode
@@ -88,11 +95,17 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import dev.chrisbanes.haze.rememberHazeState
+import java.util.UUID
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import com.example.audiobook.domain.usecases.MarksCoordinator
-import java.util.UUID
 
+/**
+ * مشغّل "أثير" — جلسة استماع هادئة.
+ *
+ * البنية من جديد: خلفية تدرج هادئ فقط (هوية الكتاب)، رأس رفيع (رجوع + شارة السرعة)،
+ * غلاف كبير مع العنوان/المؤلف كتعليق تحته، خيط زمني واحد نظيف، وصندوق تحكّم زجاجي واحد.
+ * لوحات الأدوات (سرعة/نوم/فصول) تنبثق فوق منطقة الغلاف — بلا إزاحة للتخطيط أبدًا.
+ */
 @Composable
 fun PlayerScreen(
     controller: PlaybackController,
@@ -112,6 +125,7 @@ fun PlayerScreen(
     val storedBookmarks by (if (editionId != null && marks != null) marks.bookmarks(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
     val cosmicHeader = LocalCosmicHeader.current
     SideEffect { cosmicHeader.reset() }
+
     var timeline by remember {
         mutableStateOf(
             PlayerTimelineState(
@@ -145,78 +159,139 @@ fun PlayerScreen(
         authorColor = playerUi.authorColor,
         coverColor = playerUi.coverColor
     )
+    val fg = playerForeground(gradient)
     val hazeState = rememberHazeState()
     val visibleWindow = visibleWindowMs(renderedTimeline, playback.positionMs)
+    val title = playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .haze(hazeState)
     ) {
-        // ---- خلفية "غبار النجوم": التدرج الديناميكي محفوظ + سدم نجمية ----
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(gradient.start, gradient.end))))
-            PlayerStardustBackdrop(modifier = Modifier.fillMaxSize(), mode = themeMode)
-        }
+        // ---- الخلفية: تدرج هادئ واحد (هوية الكتاب) — بلا سدم ولا نجوم ----
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(listOf(gradient.start, gradient.end)))
+        )
 
-        // ---- عمود واحد ثابت (بلا تمرير): TOP → MAIN → TIMELINE → تحكّم متصل ----
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = AppSpacing.md)
                 .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
         ) {
-            // TOP: رجوع + عنوان/مؤلف بخط مضغوط
+            // ---- HEADER: رجوع فقط + شارة السرعة الحيّة (دالة دائمة الظهور) ----
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = AppSpacing.xs),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(onClick = onBack, modifier = Modifier.minTouchTarget()) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.player_back), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.player_back), tint = fg.ink)
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) }, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
-                    Text(playerUi.authorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.75f), maxLines = 1)
-                }
+                SpeedBadge(
+                    speed = selectedSpeed,
+                    onClick = { expandedPanel = if (expandedPanel == PlayerControlPanel.SPEED) null else PlayerControlPanel.SPEED },
+                    fg = fg
+                )
             }
 
-            // MAIN CONTENT: غلاف مضغوط + الفصل الحالي — منطقة مرنة تتمدد وتنكمش بلا فراغ ثابت
-            Column(
+            // ---- MAIN: غلاف كبير + عنوان/مؤلف كتعليق + الفصل الحالي — مع لوحات الأدوات تنبثق فوقها ----
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxWidth()
             ) {
-                Spacer(Modifier.weight(1f))
-                PlayerCoverBlock(
-                    title = playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) },
-                    gradient = gradient,
-                    modifier = Modifier.fillMaxWidth().height(176.dp)
-                )
-                Text(
-                    text = currentChapterLabel(renderedTimeline, playback.positionMs),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Cosmic.TealBright.copy(alpha = 0.95f),
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg)
-                )
-                Spacer(Modifier.weight(1f))
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = AppSpacing.md),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    PlayerCoverBlock(
+                        title = title,
+                        gradient = gradient,
+                        fg = fg,
+                        modifier = Modifier.fillMaxWidth(0.52f).aspectRatio(0.72f)
+                    )
+                    Spacer(Modifier.height(AppSpacing.lg))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.displaySmall,
+                        color = fg.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(AppSpacing.xxs))
+                    Text(
+                        text = playerUi.authorName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = fg.soft,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(AppSpacing.md))
+                    Text(
+                        text = currentChapterLabel(renderedTimeline, playback.positionMs),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = fg.accent,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // لوحات الأدوات: تنبثق فوق أسفل المنطقة — بلا إزاحة للتخطيط (Overlay).
+                AnimatedContent(
+                    targetState = expandedPanel,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    transitionSpec = {
+                        (fadeIn() + expandVertically()) togetherWith (fadeOut() + shrinkVertically())
+                    }
+                ) { panel ->
+                    UtilitiesDeck(
+                        panel = panel,
+                        sleepUi = sleepUi,
+                        selectedSpeed = selectedSpeed,
+                        onSpeedChange = { value ->
+                            selectedSpeed = value
+                            controller.setSpeed(value)
+                        },
+                        onSleepStart = { minutes -> sleepTimer.start(minutes) },
+                        onSleepExtend = { minutes -> sleepTimer.extendBy(minutes) },
+                        onSleepCancel = { sleepTimer.cancel() },
+                        onAddChapter = {
+                            if (editionId != null && marks != null) scope.launch { marks.addChapter(editionId, playback.positionMs) }
+                        },
+                        onToggleEditing = { editing = !editing },
+                        editing = editing,
+                        haze = hazeState,
+                        modifier = Modifier.padding(bottom = AppSpacing.xs)
+                    )
+                }
             }
 
             playback.missingFileMessage?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = AppSpacing.xxs)
+                )
             }
 
-            // TIMELINE: الخيط الزمني الموحّد وعلاماته (فصول/إشارات) فوق أدوات التشغيل دائمًا
+            // ---- TIMELINE: الخيط الزمني النظيف (تبديل مستوى + شريط + وقتان) ----
             PlayerTimelineBar(
                 state = renderedTimeline,
                 positionMs = playback.positionMs,
                 durationMs = playback.durationMs,
                 visibleWindow = visibleWindow,
+                fg = fg,
                 editing = editing,
                 onScrub = { target -> controller.seekTo(target) },
                 onLevelChange = { level ->
@@ -230,33 +305,8 @@ fun PlayerScreen(
                 }
             )
 
-            // PRIMARY + SECONDARY: منطقة تحكّم واحدة متصلة أسفل الشاشة
-            AnimatedVisibility(
-                visible = expandedPanel != null,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                ControlPanel(
-                    panel = expandedPanel,
-                    sleepUi = sleepUi,
-                    selectedSpeed = selectedSpeed,
-                    onSpeedChange = { value ->
-                        selectedSpeed = value
-                        controller.setSpeed(value)
-                    },
-                    onSleepStart = { minutes -> sleepTimer.start(minutes) },
-                    onSleepExtend = { minutes -> sleepTimer.extendBy(minutes) },
-                    onSleepCancel = { sleepTimer.cancel() },
-                    onAddChapter = {
-                        if (editionId != null && marks != null) scope.launch { marks.addChapter(editionId, playback.positionMs) }
-                    },
-                    onToggleEditing = { editing = !editing },
-                    editing = editing,
-                    modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs)
-                )
-            }
-
-            PlayerControlsBar(
+            // ---- CONSOLE: صندوق تحكّم زجاجي واحد (تشغيل + أدوات) ----
+            PlayerConsole(
                 isPlaying = playback.isPlaying,
                 onPrevious = { scope.launch { controller.previousChapter() } },
                 onSkipBack = controller::skipBack15Seconds,
@@ -271,14 +321,26 @@ fun PlayerScreen(
                 haze = hazeState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = AppSpacing.md)
-                    .padding(bottom = AppSpacing.xs)
+                    .padding(top = AppSpacing.sm)
             )
         }
     }
 }
 
 private enum class PlayerControlPanel { SPEED, SLEEP, CHAPTERS }
+
+/** ألوان النص فوق التدرج: حبر داكن فوق سماء فاتحة، بياض فوق الحبر الليلي. */
+private class PlayerFg(val ink: Color, val soft: Color, val accent: Color)
+
+private fun playerForeground(gradient: PlayerGradient): PlayerFg {
+    val light = gradient.start.luminance() > 0.55f
+    val ink = if (light) Color(0xFF1F2A44) else Color.White
+    return PlayerFg(
+        ink = ink,
+        soft = ink.copy(alpha = if (light) 0.72f else 0.78f),
+        accent = if (light) Color(0xFF0B6E63) else Cosmic.TealBright
+    )
+}
 
 private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongRange {
     if (state.level != TimelineLevel.ZOOMED || state.durationMs <= 0L) return 0L..state.durationMs.coerceAtLeast(1L)
@@ -298,54 +360,75 @@ private fun currentChapterLabel(state: PlayerTimelineState, positionMs: Long): S
     return "$num · $title"
 }
 
-/** غلاف الـPlayer المضغوط: حرف أول فقط فوق التدرج السديمي — العنوان في الـheader، لا ازدواج. */
+/** غلاف المشغّل: الحرف الأول فوق تدرج الكتاب — بلا شطاحات ولا توهجات، بسكون بسيط. */
 @Composable
-private fun PlayerCoverBlock(title: String, gradient: PlayerGradient, modifier: Modifier = Modifier) {
+private fun PlayerCoverBlock(
+    title: String,
+    gradient: PlayerGradient,
+    fg: PlayerFg,
+    modifier: Modifier = Modifier
+) {
     val shape = RoundedCornerShape(AppSpacing.lg)
     Box(
         modifier = modifier
             .clip(shape)
             .background(
-                Brush.linearGradient(
-                    listOf(
-                        gradient.start,
-                        Cosmic.StardustViolet.copy(alpha = if (gradient.start.luminance() > 0.55f) 0.55f else 0.85f),
-                        gradient.end
-                    )
-                ),
+                Brush.verticalGradient(listOf(gradient.start, gradient.end)),
                 shape
             )
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.14f), shape = shape),
+            .border(width = 1.dp, color = fg.ink.copy(alpha = 0.16f), shape = shape),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.10f),
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.10f)
-                    )
-                )
-            )
-        )
         val letter = title.trim().firstOrNull()?.toString() ?: "؟"
         Text(
             text = letter,
-            color = Color.White,
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Bold
+            color = fg.ink,
+            style = MaterialTheme.typography.displayLarge,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
 
-/** عنصر Timeline واحد: الشريط نفسه عليه علامات الفصول + Tooltip يتبع اللمس، وتبديل Overview/Zoomed واحد. */
+/** شارة السرعة الحيّة في الرأس: دالة دائمة الظهور بنقرة واحدة لفتح اللوحة. */
+@Composable
+private fun SpeedBadge(
+    speed: Float,
+    onClick: () -> Unit,
+    fg: PlayerFg,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(50)
+    val description = stringResource(R.string.player_speed, speedLabel(speed))
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(fg.ink.copy(alpha = 0.08f))
+            .border(1.dp, fg.ink.copy(alpha = 0.16f), shape)
+            .clickable(onClick = onClick)
+            .minTouchTarget()
+            .semantics { contentDescription = description }
+            .padding(horizontal = AppSpacing.sm, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = speedLabel(speed),
+            style = MaterialTheme.typography.labelLarge,
+            color = fg.accent
+        )
+    }
+}
+
+private fun speedLabel(speed: Float): String =
+    "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
+
+/** عنصر Timeline واحد: شريط عليه علامات الفصول + وقتان، وتبديل مستوى نظيف. */
 @Composable
 private fun PlayerTimelineBar(
     state: PlayerTimelineState,
     positionMs: Long,
     durationMs: Long,
     visibleWindow: LongRange,
+    fg: PlayerFg,
     editing: Boolean,
     onScrub: (Long) -> Unit,
     onLevelChange: (TimelineLevel) -> Unit,
@@ -353,16 +436,15 @@ private fun PlayerTimelineBar(
 ) {
     val positionFraction = if (visibleWindow.last <= visibleWindow.first) 0f
     else ((positionMs - visibleWindow.first).toFloat() / (visibleWindow.last - visibleWindow.first)).coerceIn(0f, 1f)
-    var scrubTooltip by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-        // ---- التبديل الزجاجي الموحّد: عنصر واحد يبدّل نظرة عامة/تكبير على نفس الشريط ----
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xxs),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             TimelineModeToggle(
+                fg = fg,
                 labels = listOf(
                     stringResource(R.string.player_timeline_overview) to TimelineLevel.OVERVIEW,
                     stringResource(R.string.player_timeline_zoom) to TimelineLevel.ZOOMED
@@ -370,44 +452,19 @@ private fun PlayerTimelineBar(
                 selected = state.level,
                 onSelect = onLevelChange
             )
-            Spacer(Modifier.weight(1f))
-            Text(
-                stringResource(R.string.player_chapter_num, currentChapterNumber(state, positionMs)),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.85f)
-            )
         }
 
-        // ---- الوقت على نفس العنصر: لا صندوق منفصل تاني يعرض الموضع/الفصل ----
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime(positionMs), style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.88f))
-            Text(formatTime(durationMs), style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.55f))
-        }
-
-        // ---- الشريط الفعلي (Scrub حقيقي لـPlaybackController) + العلامات فوقه ----
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val barWidthPx = maxWidth
             AppProgressSlider(
                 value = positionFraction,
                 onValueChange = { fraction ->
                     val target = visibleWindow.first + (fraction * (visibleWindow.last - visibleWindow.first)).toLong()
-                    scrubTooltip = tooltipForPosition(state, target)
                     onScrub(target)
                 },
-                onValueChangeFinished = { scrubTooltip = null }
+                onValueChangeFinished = {}
             )
             if (!editing) {
-                TimelineMarksCanvas(
-                    state = state,
-                    visibleWindow = visibleWindow,
-                    editing = false
-                )
-                if (scrubTooltip != null) {
-                    TooltipChip(
-                        text = scrubTooltip,
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 2.dp)
-                    )
-                }
+                TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = false)
             } else {
                 TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = true)
                 EditingChapterDragLayer(
@@ -418,24 +475,64 @@ private fun PlayerTimelineBar(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(formatTime(positionMs), style = MaterialTheme.typography.bodySmall, color = fg.ink)
+            Text(formatTime(durationMs), style = MaterialTheme.typography.bodySmall, color = fg.soft)
+        }
+
         state.markCaptureMs?.let { captured ->
             Text(
                 stringResource(R.string.player_mark_captured, formatTime(captured)),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.85f),
+                color = fg.soft,
                 modifier = Modifier.padding(horizontal = AppSpacing.xs)
             )
         }
     }
 }
 
-private fun tooltipForPosition(state: PlayerTimelineState, positionMs: Long): String {
-    val chapter = state.chapters.sortedBy { it.startPositionMs }.lastOrNull { it.startPositionMs <= positionMs }
-    val label = chapter?.title?.take(24) ?: "فصل"
-    return "$label — ${formatTime(positionMs)}"
+/** عنصر تبديل مستوى واحد متسق (نظرة عامة / تكبير) منسجم مع لون السماء. */
+@Composable
+private fun TimelineModeToggle(
+    labels: List<Pair<String, TimelineLevel>>,
+    selected: TimelineLevel,
+    onSelect: (TimelineLevel) -> Unit,
+    fg: PlayerFg
+) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(fg.ink.copy(alpha = 0.08f))
+            .border(width = 1.dp, color = fg.ink.copy(alpha = 0.16f), shape = shape)
+            .padding(3.dp)
+    ) {
+        labels.forEach { (label, level) ->
+            val isSelected = level == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isSelected) fg.ink.copy(alpha = 0.16f) else Color.Transparent)
+                    .minTouchTarget()
+                    .clickable(onClick = { onSelect(level) })
+                    .padding(horizontal = AppSpacing.sm, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isSelected) fg.accent else fg.soft,
+                    maxLines = 1
+                )
+            }
+        }
+    }
 }
 
-/** طبقة لاصقة لا تلتقط اللمس إطلاقًا (الـSlider يبقى هو المسؤول عن السحب). */
+/** طبقة لاصقة لا تلتقط اللمس إطلاقًا (الـSlider يبقى المسؤول عن السحب). */
 @Composable
 private fun TimelineMarksCanvas(
     state: PlayerTimelineState,
@@ -473,7 +570,7 @@ private fun TimelineMarksCanvas(
     }
 }
 
-/** وضع التحرير فقط: اسحب أقرب علامة فصل لتحريك بدايتها — ويبقى السحب على الشريط سليمًا في الوضع العادي. */
+/** وضع التحرير فقط: اسحب أقرب علامة فصل لتحريك بدايتها. */
 @Composable
 private fun BoxWithConstraintsScope.EditingChapterDragLayer(
     state: PlayerTimelineState,
@@ -506,64 +603,14 @@ private fun BoxWithConstraintsScope.EditingChapterDragLayer(
     )
 }
 
-@Composable
-private fun TooltipChip(text: String?, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Cosmic.InkBottom.copy(alpha = 0.92f))
-            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        Text(text ?: "", style = MaterialTheme.typography.bodySmall, color = Color.White)
-    }
-}
-
-/** عنصر تبديل زجاجي واحد متسق (زراران في شريط واحد، لا ستايلين مختلفين). */
-@Composable
-private fun TimelineModeToggle(
-    labels: List<Pair<String, TimelineLevel>>,
-    selected: TimelineLevel,
-    onSelect: (TimelineLevel) -> Unit
-) {
-    val shape = RoundedCornerShape(50)
-    Row(
-        modifier = Modifier
-            .clip(shape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f), shape = shape)
-            .padding(3.dp)
-    ) {
-        labels.forEach { (label, level) ->
-            val isSelected = level == selected
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) Cosmic.Teal.copy(alpha = 0.55f) else Color.Transparent)
-                    .minTouchTarget()
-                    .clickable(onClick = { onSelect(level) })
-                    .padding(horizontal = AppSpacing.sm, vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.75f),
-                    maxLines = 1
-                )
-            }
-        }
-    }
-}
-
 private fun mkFraction(positionMs: Long, window: LongRange): Float {
     if (window.last <= window.first) return 0f
     return ((positionMs - window.first).toFloat() / (window.last - window.first)).coerceIn(0f, 1f)
 }
 
-/** شريط التحكم السفلي الزجاجي العFloating — عناصر قسم 10 حرفيًا ولا أكثر. */
+/** صندوق التحكّم الزجاجي الموحّد أسفل الشاشة: تشغيل + أدوات — كل الوظائف المطلوبة ولا غيرها. */
 @Composable
-private fun PlayerControlsBar(
+private fun PlayerConsole(
     isPlaying: Boolean,
     onPrevious: () -> Unit,
     onSkipBack: () -> Unit,
@@ -580,13 +627,12 @@ private fun PlayerControlsBar(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
-            .background(Cosmic.NavBarBlue.copy(alpha = 0.88f), RoundedCornerShape(28.dp))
+            .background(Cosmic.NavBarBlue.copy(alpha = 0.90f), RoundedCornerShape(28.dp))
             .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(28.dp))
             .hazeChild(haze, navBarGlassStyle())
             .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.xs)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
-            // Previous | -15 | Play/Pause | +15 | Next
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -595,17 +641,12 @@ private fun PlayerControlsBar(
                 GlassIconButton(onClick = onPrevious, contentDescription = stringResource(R.string.player_previous)) {
                     Icon(Icons.Outlined.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
-                GlassIconButton(onClick = onSkipBack, contentDescription = stringResource(R.string.player_skip_back)) {
-                    Text(stringResource(R.string.player_skip_back), style = MaterialTheme.typography.labelLarge, color = Color.White)
-                }
+                TransportPill(text = stringResource(R.string.player_skip_back), onClick = onSkipBack)
                 Box(
                     modifier = Modifier
-                        .size(62.dp)
-                        .drawBehind {
-                            drawCircle(brush = Brush.radialGradient(listOf(Cosmic.TealBright.copy(alpha = 0.5f), Color.Transparent), radius = size.width))
-                        }
+                        .size(64.dp)
                         .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Cosmic.Teal, Cosmic.StardustViolet)))
+                        .background(Brush.linearGradient(listOf(Cosmic.Teal, Cosmic.TealBright)))
                         .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
                         .clickable(onClick = onTogglePlay),
                     contentAlignment = Alignment.Center
@@ -614,17 +655,14 @@ private fun PlayerControlsBar(
                         if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                         contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(34.dp)
                     )
                 }
-                GlassIconButton(onClick = onSkipForward, contentDescription = stringResource(R.string.player_skip_forward)) {
-                    Text(stringResource(R.string.player_skip_forward), style = MaterialTheme.typography.labelLarge, color = Color.White)
-                }
+                TransportPill(text = stringResource(R.string.player_skip_forward), onClick = onSkipForward)
                 GlassIconButton(onClick = onNext, contentDescription = stringResource(R.string.player_next)) {
                     Icon(Icons.Outlined.SkipNext, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
             }
-            // Mark | Speed | Sleep Timer | Chapters
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs),
@@ -664,8 +702,23 @@ private fun GlassIconButton(onClick: () -> Unit, contentDescription: String?, co
 }
 
 @Composable
+private fun TransportPill(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .minTouchTarget()
+            .clip(RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.08f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppSpacing.md, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White)
+    }
+}
+
+@Composable
 private fun GlassPillButton(
-    icon: @Composable () -> Unit,
+    icon: @Composable () -> Unit = {},
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -688,11 +741,11 @@ private fun GlassPillButton(
     }
 }
 
-/** لوحة تحكم قابلة للتمدد فوق شريط التحكم: السرعة / مؤقت النوم / المزيد. */
+/** لوحة الأدوات العائمة: تنبثق فوق أسفل منطقة الغلاف بلا إزاحة للتخطيط. */
 @Composable
-private fun ControlPanel(
+private fun UtilitiesDeck(
     panel: PlayerControlPanel?,
-    sleepUi: com.example.audiobook.playback.SleepTimerUiState,
+    sleepUi: SleepTimerUiState,
     selectedSpeed: Float,
     onSpeedChange: (Float) -> Unit,
     onSleepStart: (Int) -> Unit,
@@ -701,6 +754,7 @@ private fun ControlPanel(
     onAddChapter: () -> Unit,
     onToggleEditing: () -> Unit,
     editing: Boolean,
+    haze: HazeState,
     modifier: Modifier = Modifier
 ) {
     if (panel == null) return
@@ -708,15 +762,19 @@ private fun ControlPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = AppSpacing.md)
+            .heightIn(max = 320.dp)
             .clip(shape)
-            .background(Cosmic.InkBottom.copy(alpha = 0.88f), shape)
-            .border(1.dp, Color.White.copy(alpha = 0.12f), shape)
-            .padding(AppSpacing.md),
+            .background(Cosmic.InkBottom.copy(alpha = 0.92f), shape)
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .hazeChild(haze, navBarGlassStyle())
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.md),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
     ) {
         when (panel) {
             PlayerControlPanel.SPEED -> {
-                Text(stringResource(R.string.player_speed, ("%.2f".format(selectedSpeed)) + "×"), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                Text(stringResource(R.string.player_speed, speedLabel(selectedSpeed)), style = MaterialTheme.typography.titleSmall, color = Color.White)
                 Slider(
                     value = selectedSpeed,
                     onValueChange = onSpeedChange,
@@ -725,7 +783,7 @@ private fun ControlPanel(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                     listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { preset ->
-                        GlassPillButton(icon = {}, label = "%.2f".format(preset).replace(".00", "").toString() + "×",
+                        GlassPillButton(label = speedLabel(preset),
                             selected = kotlin.math.abs(selectedSpeed - preset) < 0.01f,
                             onClick = { onSpeedChange(preset) }, modifier = Modifier.weight(1f))
                     }
@@ -744,17 +802,17 @@ private fun ControlPanel(
                 if (phase == SleepTimerPhase.IDLE || phase == SleepTimerPhase.STOPPED) {
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                         listOf(15, 30, 45, 60).forEach { minutes ->
-                            GlassPillButton(icon = {}, label = "$minutes", selected = false,
+                            GlassPillButton(label = "$minutes", selected = false,
                                 onClick = { onSleepStart(minutes) }, modifier = Modifier.weight(1f))
                         }
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                        GlassPillButton(icon = {}, label = stringResource(R.string.player_sleep_extend, 15),
+                        GlassPillButton(label = stringResource(R.string.player_sleep_extend, 15),
                             selected = false, onClick = { onSleepExtend(15) })
-                        GlassPillButton(icon = {}, label = stringResource(R.string.player_sleep_extend, 30),
+                        GlassPillButton(label = stringResource(R.string.player_sleep_extend, 30),
                             selected = false, onClick = { onSleepExtend(30) })
-                        GlassPillButton(icon = {}, label = stringResource(R.string.player_sleep_cancel),
+                        GlassPillButton(label = stringResource(R.string.player_sleep_cancel),
                             selected = false, onClick = onSleepCancel)
                     }
                 }
@@ -765,7 +823,7 @@ private fun ControlPanel(
             PlayerControlPanel.CHAPTERS -> {
                 GlassPillButton(icon = { Icon(Icons.Outlined.BookmarkAdd, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(R.string.player_mark_chapter), selected = false, onClick = onAddChapter)
-                GlassPillButton(icon = { Icon(if (editing) Icons.Outlined.BookmarkAdd else Icons.Outlined.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
+                GlassPillButton(icon = { Icon(Icons.Outlined.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(if (editing) R.string.player_edit_done else R.string.player_edit_chapters),
                     selected = editing, onClick = onToggleEditing)
             }
@@ -774,39 +832,4 @@ private fun ControlPanel(
     }
 }
 
-/** خلفية "غبار النجوم": سدم بنفسجي/ماجنتا/كهرماني + نجوم ساكنة فوق التدرج الديناميكي. */
-@Composable
-private fun PlayerStardustBackdrop(modifier: Modifier = Modifier, mode: AppThemeMode) {
-    val baseAlpha = if (mode == AppThemeMode.LIGHT) 0.35f else 0.70f
-    Canvas(modifier = modifier) {
-        val blobs = listOf(
-            Triple(size.width * 0.18f, size.height * 0.14f, Cosmic.StardustViolet),
-            Triple(size.width * 0.84f, size.height * 0.30f, Cosmic.StardustMagenta),
-            Triple(size.width * 0.50f, size.height * 0.90f, Cosmic.StardustAmber)
-        )
-        blobs.forEach { (cx, cy, color) ->
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(color.copy(alpha = if (mode == AppThemeMode.LIGHT) 0.10f else 0.14f), Color.Transparent),
-                    center = Offset(cx, cy),
-                    radius = size.minDimension * 0.50f
-                ),
-                radius = size.minDimension * 0.50f,
-                center = Offset(cx, cy)
-            )
-        }
-        val rng = kotlin.random.Random(42L)
-        val count = when (mode) { AppThemeMode.LIGHT -> 40; AppThemeMode.DARK -> 80; AppThemeMode.AMOLED -> 100 }
-        repeat(count) {
-            val x = rng.nextFloat() * size.width
-            val y = rng.nextFloat() * size.height
-            val r = (0.5f + rng.nextFloat() * 1.6f).dp.toPx()
-            val a = baseAlpha * (0.4f + rng.nextFloat() * 0.6f)
-            drawCircle(color = Cosmic.MoonIce.copy(alpha = a), radius = r, center = Offset(x, y))
-        }
-    }
-}
-
 private fun formatTime(ms: Long): String = "%02d:%02d".format(ms / 60_000, (ms / 1_000) % 60)
-private fun currentChapterNumber(state: PlayerTimelineState, position: Long): Int =
-    PlayerTimelineEditor.numbered(state).lastOrNull { it.chapter.startPositionMs <= position }?.number ?: 1
