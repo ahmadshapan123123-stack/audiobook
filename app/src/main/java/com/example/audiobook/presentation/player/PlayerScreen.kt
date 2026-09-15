@@ -177,12 +177,11 @@ fun PlayerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = AppSpacing.md)
                 .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
         ) {
             // ---- HEADER: رجوع فقط + شارة السرعة الحيّة (دالة دائمة الظهور) ----
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.xs),
+                modifier = Modifier.fillMaxWidth().padding(start = AppSpacing.md, end = AppSpacing.md, top = AppSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -201,6 +200,7 @@ fun PlayerScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .padding(start = AppSpacing.md, end = AppSpacing.md)
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -258,7 +258,7 @@ fun PlayerScreen(
                     message,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(vertical = AppSpacing.xxs)
+                    modifier = Modifier.padding(vertical = AppSpacing.xxs).padding(start = AppSpacing.md, end = AppSpacing.md)
                 )
             }
 
@@ -279,10 +279,11 @@ fun PlayerScreen(
                     val stored = storedChapters.firstOrNull { it.id == id }
                     if (marks != null && stored != null) scope.launch { marks.updateChapter(stored, position) }
                     else timeline = PlayerTimelineEditor.moveChapter(timeline, id, position)
-                }
+                },
+                modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md)
             )
 
-            // ---- CONSOLE: صندوق تحكّم زجاجي واحد (تشغيل + أدوات) ----
+            // ---- CONSOLE: شريط زجاجي بعرض الشاشة كاملة (تشغيل + أدوات) موزّع حافة إلى حافة ----
             PlayerConsole(
                 isPlaying = playback.isPlaying,
                 onPrevious = { scope.launch { controller.previousChapter() } },
@@ -460,12 +461,16 @@ private fun PlayerTimelineBar(
     editing: Boolean,
     onScrub: (Long) -> Unit,
     onLevelChange: (TimelineLevel) -> Unit,
-    onChapterMoved: (UUID, Long) -> Unit
+    onChapterMoved: (UUID, Long) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val positionFraction = if (visibleWindow.last <= visibleWindow.first) 0f
     else ((positionMs - visibleWindow.first).toFloat() / (visibleWindow.last - visibleWindow.first)).coerceIn(0f, 1f)
 
-    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
@@ -653,18 +658,24 @@ private fun PlayerConsole(
     modifier: Modifier = Modifier
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val bandShape = RoundedCornerShape(
+        topStart = 22.dp,
+        topEnd = 22.dp,
+        bottomStart = 0.dp,
+        bottomEnd = 0.dp
+    )
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(28.dp))
-            .background(Cosmic.NavBarBlue.copy(alpha = 0.90f), RoundedCornerShape(28.dp))
-            .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(28.dp))
+            .clip(bandShape)
+            .background(Cosmic.NavBarBlue.copy(alpha = 0.92f), bandShape)
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.12f), shape = bandShape)
             .hazeChild(haze, navBarGlassStyle())
             .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.xs)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 GlassIconButton(onClick = onPrevious, contentDescription = stringResource(R.string.player_previous)) {
