@@ -36,14 +36,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -317,6 +315,9 @@ fun PlayerScreen(
                     if (editionId != null && marks != null) scope.launch { marks.addBookmark(editionId, playback.positionMs) }
                 },
                 activePanel = expandedPanel,
+                sleepActive = sleepUi.phase == SleepTimerPhase.RUNNING ||
+                    sleepUi.phase == SleepTimerPhase.WARNING_WINDOW ||
+                    sleepUi.phase == SleepTimerPhase.FADING_OUT,
                 onTogglePanel = { panel -> expandedPanel = if (expandedPanel == panel) null else panel },
                 haze = hazeState,
                 modifier = Modifier
@@ -619,6 +620,7 @@ private fun PlayerConsole(
     onNext: () -> Unit,
     onMark: () -> Unit,
     activePanel: PlayerControlPanel?,
+    sleepActive: Boolean,
     onTogglePanel: (PlayerControlPanel) -> Unit,
     haze: HazeState,
     modifier: Modifier = Modifier
@@ -668,18 +670,14 @@ private fun PlayerConsole(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                GlassPillButton(icon = { Icon(Icons.Outlined.BookmarkAdd, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_mark_label), selected = false,
-                    onClick = onMark, modifier = Modifier.weight(1f))
-                GlassPillButton(icon = { Icon(Icons.Outlined.Speed, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_speed_short), selected = activePanel == PlayerControlPanel.SPEED,
-                    onClick = { onTogglePanel(PlayerControlPanel.SPEED) }, modifier = Modifier.weight(1f))
-                GlassPillButton(icon = { Icon(Icons.Outlined.Bedtime, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_sleep_short), selected = activePanel == PlayerControlPanel.SLEEP,
-                    onClick = { onTogglePanel(PlayerControlPanel.SLEEP) }, modifier = Modifier.weight(1f))
-                GlassPillButton(icon = { Icon(Icons.Outlined.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_chapters_short), selected = activePanel == PlayerControlPanel.CHAPTERS,
-                    onClick = { onTogglePanel(PlayerControlPanel.CHAPTERS) }, modifier = Modifier.weight(1f))
+                GlassPillButton(label = stringResource(R.string.player_mark_label), selected = false,
+                    onClick = onMark, modifier = Modifier.weight(1f), compact = true)
+                GlassPillButton(label = stringResource(R.string.player_speed_short), selected = activePanel == PlayerControlPanel.SPEED,
+                    onClick = { onTogglePanel(PlayerControlPanel.SPEED) }, modifier = Modifier.weight(1f), compact = true)
+                GlassPillButton(label = stringResource(R.string.player_sleep_short), selected = activePanel == PlayerControlPanel.SLEEP || sleepActive,
+                    onClick = { onTogglePanel(PlayerControlPanel.SLEEP) }, modifier = Modifier.weight(1f), compact = true)
+                GlassPillButton(label = stringResource(R.string.player_chapters_short), selected = activePanel == PlayerControlPanel.CHAPTERS,
+                    onClick = { onTogglePanel(PlayerControlPanel.CHAPTERS) }, modifier = Modifier.weight(1f), compact = true)
             }
         }
     }
@@ -722,7 +720,8 @@ private fun GlassPillButton(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val shape = RoundedCornerShape(50)
     Row(
@@ -732,7 +731,7 @@ private fun GlassPillButton(
             .border(1.dp, if (selected) Color.White.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.12f), shape)
             .clickable(onClick = onClick)
             .minTouchTarget()
-            .padding(horizontal = AppSpacing.md, vertical = 6.dp),
+            .padding(horizontal = if (compact) AppSpacing.xs else AppSpacing.md, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -785,7 +784,7 @@ private fun UtilitiesDeck(
                     listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { preset ->
                         GlassPillButton(label = speedLabel(preset),
                             selected = kotlin.math.abs(selectedSpeed - preset) < 0.01f,
-                            onClick = { onSpeedChange(preset) }, modifier = Modifier.weight(1f))
+                            onClick = { onSpeedChange(preset) }, modifier = Modifier.weight(1f), compact = true)
                     }
                 }
             }
@@ -803,17 +802,17 @@ private fun UtilitiesDeck(
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                         listOf(15, 30, 45, 60).forEach { minutes ->
                             GlassPillButton(label = "$minutes", selected = false,
-                                onClick = { onSleepStart(minutes) }, modifier = Modifier.weight(1f))
+                                onClick = { onSleepStart(minutes) }, modifier = Modifier.weight(1f), compact = true)
                         }
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                         GlassPillButton(label = stringResource(R.string.player_sleep_extend, 15),
-                            selected = false, onClick = { onSleepExtend(15) })
+                            selected = false, onClick = { onSleepExtend(15) }, compact = true)
                         GlassPillButton(label = stringResource(R.string.player_sleep_extend, 30),
-                            selected = false, onClick = { onSleepExtend(30) })
+                            selected = false, onClick = { onSleepExtend(30) }, compact = true)
                         GlassPillButton(label = stringResource(R.string.player_sleep_cancel),
-                            selected = false, onClick = onSleepCancel)
+                            selected = false, onClick = onSleepCancel, compact = true)
                     }
                 }
                 if (sleepUi.isExtendWindowVisible) {
