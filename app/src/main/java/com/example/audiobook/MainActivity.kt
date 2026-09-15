@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
-                    verticalArrangement = Arrangement.spacedBy(AppSpacing.xs, Alignment.Bottom)
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.md, Alignment.Bottom)
                 ) {
                     if (showMiniPlayer) {
                         MiniPlayer(

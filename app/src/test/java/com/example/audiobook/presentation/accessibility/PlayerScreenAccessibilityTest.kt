@@ -6,6 +6,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -171,7 +172,7 @@ class PlayerScreenAccessibilityTest {
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("نظرة عامة").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("-15 ثا").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
@@ -188,14 +189,17 @@ class PlayerScreenAccessibilityTest {
         assertTrue("icon '$contentDescription' width (${bounds.right - bounds.left}) < 48dp", bounds.right - bounds.left >= 47.9.dp)
     }
 
+    private fun assertCurrentChapterVisible() {
+        composeRule.onAllNodes(hasText("الفصل 1", substring = true)).assertCountEquals(1)
+    }
+
 @Test
     fun playerControlsMeetMin48DpTouchTarget() {
         showPlayer()
 
         assertIconTouchTarget("رجوع")
 
-        assertMinTouchTarget("نظرة عامة")
-        assertMinTouchTarget("تكبير ٣٠–٦٠ دقيقة")
+        assertCurrentChapterVisible()
 
         assertIconTouchTarget("السابق")
         assertMinTouchTarget("-15 ثا")
@@ -203,13 +207,15 @@ class PlayerScreenAccessibilityTest {
         assertMinTouchTarget("+15 ثا")
         assertIconTouchTarget("التالي")
 
-        assertMinTouchTarget("إشارة")
+        assertMinTouchTarget("حفظ اللحظة")
         assertMinTouchTarget("السرعة")
         assertMinTouchTarget("النوم")
         assertMinTouchTarget("الفصول")
 
         composeRule.onNodeWithText("الفصول").performClick()
         composeRule.waitForIdle()
+        assertMinTouchTarget("نظرة عامة")
+        assertMinTouchTarget("تكبير ٣٠–٦٠ دقيقة")
         assertMinTouchTarget("فصل جديد")
         assertMinTouchTarget("تحرير الفصول")
     }
@@ -238,10 +244,10 @@ class PlayerScreenAccessibilityTest {
         val headerTitle = composeRule.onAllNodesWithText(bookTitle).onFirst().getUnclippedBoundsInRoot()
         assertTrue("cover title يعبر الحافة اليمنى", headerTitle.right <= rootWidth)
 
-        val timelineLabel = composeRule.onNodeWithText("نظرة عامة").getUnclippedBoundsInRoot()
-        assertTrue("timeline label يعبر الحافة اليمنى", timelineLabel.right <= rootWidth)
-
         val playButton = composeRule.onNodeWithContentDescription("تشغيل").getUnclippedBoundsInRoot()
         assertTrue("play button يعبر الحافة اليمنى", playButton.right <= rootWidth)
+
+        val toolLabel = composeRule.onNodeWithText("الفصول").getUnclippedBoundsInRoot()
+        assertTrue("tool label يعبر الحافة اليمنى", toolLabel.right <= rootWidth)
     }
 }

@@ -196,6 +196,10 @@
     <string name="player_mark">إضافة</string>
     <string name="player_mark_label">إشارة</string>
     <string name="player_chapters_short">الفصول</string>
+    <string name="player_chapters_header">الفصول (%1$d)</string>
+    <string name="player_save_moment">حفظ اللحظة</string>
+    <string name="player_remaining">باقٍ %1$s</string>
+    <string name="player_sleep_with_remaining">النوم · %1$s</string>
     <string name="player_mark_bookmark">إشارة</string>
     <string name="player_mark_chapter">فصل جديد</string>
     <string name="player_mark_captured">التُقط %1$s فورًا</string>

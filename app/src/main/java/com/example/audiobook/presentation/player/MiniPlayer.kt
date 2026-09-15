@@ -71,7 +71,7 @@ fun MiniPlayer(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg)
+            .padding(horizontal = AppSpacing.md)
             .shadow(
                 elevation = 12.dp,
                 shape = RoundedCornerShape(28.dp),
