@@ -193,6 +193,8 @@
     <string name="player_sleep_ending">سينتهي قريبًا</string>
     <string name="player_sleep_extend">+%1$d دقيقة</string>
     <string name="player_mark">إضافة</string>
+    <string name="player_mark_label">إشارة</string>
+    <string name="player_chapters_short">الفصول</string>
     <string name="player_mark_bookmark">إشارة</string>
     <string name="player_mark_chapter">فصل جديد</string>
     <string name="player_mark_captured">التُقط %1$s فورًا</string>

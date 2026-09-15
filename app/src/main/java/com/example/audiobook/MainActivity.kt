@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -207,16 +208,16 @@ class MainActivity : ComponentActivity() {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.xs, Alignment.Bottom)
                 ) {
                     if (showMiniPlayer) {
                         MiniPlayer(
                             editionId = playbackState.editionId!!,
                             controller = playbackController,
                             haze = hazeState,
-                            onClick = { navigateToPlayer(navController, playbackState.editionId!!) },
-                            modifier = Modifier.padding(bottom = AppSpacing.xs)
+                            onClick = { navigateToPlayer(navController, playbackState.editionId!!) }
                         )
                     }
 
@@ -229,7 +230,6 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = AppSpacing.md)
-                                .navigationBarsPadding()
                                 .padding(bottom = AppSpacing.sm)
                                 .shadow(
                                     elevation = 18.dp,

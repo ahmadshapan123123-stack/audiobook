@@ -17,15 +17,18 @@ import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bedtime
@@ -57,13 +60,16 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -153,14 +159,14 @@ fun PlayerScreen(
             PlayerStardustBackdrop(modifier = Modifier.fillMaxSize(), mode = themeMode)
         }
 
+        // ---- عمود واحد ثابت (بلا تمرير): TOP → MAIN → TIMELINE → تحكّم متصل ----
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = AppSpacing.md)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 260.dp),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
+                .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
         ) {
+            // TOP: رجوع + عنوان/مؤلف بخط مضغوط
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -171,19 +177,41 @@ fun PlayerScreen(
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.player_back), tint = Color.White)
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) }, style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1)
+                    Text(playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) }, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
                     Text(playerUi.authorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.75f), maxLines = 1)
                 }
             }
 
-            // ---- غلاف الـPlayer: حرف أول + تدرج سديمي + توهج ----
-            PlayerCoverBlock(
-                title = playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) },
-                gradient = gradient,
-                modifier = Modifier.fillMaxWidth().height(250.dp)
-            )
+            // MAIN CONTENT: غلاف مضغوط + الفصل الحالي — منطقة مرنة تتمدد وتنكمش بلا فراغ ثابت
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.weight(1f))
+                PlayerCoverBlock(
+                    title = playerUi.title.ifBlank { stringResource(R.string.player_cover_placeholder) },
+                    gradient = gradient,
+                    modifier = Modifier.fillMaxWidth().height(176.dp)
+                )
+                Text(
+                    text = currentChapterLabel(renderedTimeline, playback.positionMs),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Cosmic.TealBright.copy(alpha = 0.95f),
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.lg)
+                )
+                Spacer(Modifier.weight(1f))
+            }
 
-            // ---- عنصر Timeline واحد فقط: الشريط نفسه عليه علامات الفصول + التبديل الزجاجي ----
+            playback.missingFileMessage?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+
+            // TIMELINE: الخيط الزمني الموحّد وعلاماته (فصول/إشارات) فوق أدوات التشغيل دائمًا
             PlayerTimelineBar(
                 state = renderedTimeline,
                 positionMs = playback.positionMs,
@@ -202,18 +230,7 @@ fun PlayerScreen(
                 }
             )
 
-            playback.missingFileMessage?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        // ---- اللوحات القابلة للتمدد فوق شريط التحكم الزجاجي العائم ----
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.Bottom
-        ) {
+            // PRIMARY + SECONDARY: منطقة تحكّم واحدة متصلة أسفل الشاشة
             AnimatedVisibility(
                 visible = expandedPanel != null,
                 enter = expandVertically() + fadeIn(),
@@ -227,14 +244,9 @@ fun PlayerScreen(
                         selectedSpeed = value
                         controller.setSpeed(value)
                     },
-                    onSleepStart = { minutes ->
-                        sleepTimer.start(minutes)
-                    },
+                    onSleepStart = { minutes -> sleepTimer.start(minutes) },
                     onSleepExtend = { minutes -> sleepTimer.extendBy(minutes) },
                     onSleepCancel = { sleepTimer.cancel() },
-                    onAddBookmark = {
-                        if (editionId != null && marks != null) scope.launch { marks.addBookmark(editionId, playback.positionMs) }
-                    },
                     onAddChapter = {
                         if (editionId != null && marks != null) scope.launch { marks.addChapter(editionId, playback.positionMs) }
                     },
@@ -251,19 +263,22 @@ fun PlayerScreen(
                 onTogglePlay = { if (playback.isPlaying) controller.pause() else controller.play() },
                 onSkipForward = controller::skipForward15Seconds,
                 onNext = { scope.launch { controller.nextChapter() } },
+                onMark = {
+                    if (editionId != null && marks != null) scope.launch { marks.addBookmark(editionId, playback.positionMs) }
+                },
                 activePanel = expandedPanel,
                 onTogglePanel = { panel -> expandedPanel = if (expandedPanel == panel) null else panel },
                 haze = hazeState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = AppSpacing.md)
-                    .padding(bottom = AppSpacing.sm)
+                    .padding(bottom = AppSpacing.xs)
             )
         }
     }
 }
 
-private enum class PlayerControlPanel { SPEED, SLEEP, MORE }
+private enum class PlayerControlPanel { SPEED, SLEEP, CHAPTERS }
 
 private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongRange {
     if (state.level != TimelineLevel.ZOOMED || state.durationMs <= 0L) return 0L..state.durationMs.coerceAtLeast(1L)
@@ -273,25 +288,22 @@ private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongR
     return start..end
 }
 
-/** غلاف الـPlayer: حرف أول كبير + تدرج سديمي "غبار النجوم" + توهج خلفي بدل المستطيل الفارغ. */
+@Composable
+private fun currentChapterLabel(state: PlayerTimelineState, positionMs: Long): String {
+    val numbered = PlayerTimelineEditor.numbered(state)
+    val chapter = numbered.lastOrNull { it.chapter.startPositionMs <= positionMs }
+    val title = chapter?.chapter?.title?.take(40)?.trim().orEmpty()
+    if (chapter == null || title.isEmpty()) return stringResource(R.string.player_cover_placeholder)
+    val num = stringResource(R.string.player_chapter_num, chapter.number)
+    return "$num · $title"
+}
+
+/** غلاف الـPlayer المضغوط: حرف أول فقط فوق التدرج السديمي — العنوان في الـheader، لا ازدواج. */
 @Composable
 private fun PlayerCoverBlock(title: String, gradient: PlayerGradient, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(AppSpacing.lg)
     Box(
         modifier = modifier
-            .drawBehind {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Cosmic.TealBright.copy(alpha = 0.42f),
-                            Cosmic.StardustViolet.copy(alpha = 0.20f),
-                            Color.Transparent
-                        ),
-                        center = Offset(size.width / 2f, size.height / 2f),
-                        radius = size.width * 0.75f
-                    )
-                )
-            }
             .clip(shape)
             .background(
                 Brush.linearGradient(
@@ -308,10 +320,12 @@ private fun PlayerCoverBlock(title: String, gradient: PlayerGradient, modifier: 
     ) {
         Box(
             modifier = Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
-                    center = Offset.Infinite * 0.5f,
-                    radius = 400f
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.10f),
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.10f)
+                    )
                 )
             )
         )
@@ -319,15 +333,8 @@ private fun PlayerCoverBlock(title: String, gradient: PlayerGradient, modifier: 
         Text(
             text = letter,
             color = Color.White,
-            style = MaterialTheme.typography.displayLarge,
+            style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = title,
-            color = Color.White.copy(alpha = 0.92f),
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = AppSpacing.md).padding(horizontal = AppSpacing.md)
         )
     }
 }
@@ -554,7 +561,7 @@ private fun mkFraction(positionMs: Long, window: LongRange): Float {
     return ((positionMs - window.first).toFloat() / (window.last - window.first)).coerceIn(0f, 1f)
 }
 
-/** شريط التحكم السفلي الزجاجي العائم — عناصر قسم 10 حرفيًا ولا أكثر. */
+/** شريط التحكم السفلي الزجاجي العFloating — عناصر قسم 10 حرفيًا ولا أكثر. */
 @Composable
 private fun PlayerControlsBar(
     isPlaying: Boolean,
@@ -563,11 +570,13 @@ private fun PlayerControlsBar(
     onTogglePlay: () -> Unit,
     onSkipForward: () -> Unit,
     onNext: () -> Unit,
+    onMark: () -> Unit,
     activePanel: PlayerControlPanel?,
     onTogglePanel: (PlayerControlPanel) -> Unit,
     haze: HazeState,
     modifier: Modifier = Modifier
 ) {
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
@@ -584,14 +593,14 @@ private fun PlayerControlsBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 GlassIconButton(onClick = onPrevious, contentDescription = stringResource(R.string.player_previous)) {
-                    Icon(Icons.Outlined.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                    Icon(Icons.Outlined.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
                 GlassIconButton(onClick = onSkipBack, contentDescription = stringResource(R.string.player_skip_back)) {
                     Text(stringResource(R.string.player_skip_back), style = MaterialTheme.typography.labelLarge, color = Color.White)
                 }
                 Box(
                     modifier = Modifier
-                        .size(58.dp)
+                        .size(62.dp)
                         .drawBehind {
                             drawCircle(brush = Brush.radialGradient(listOf(Cosmic.TealBright.copy(alpha = 0.5f), Color.Transparent), radius = size.width))
                         }
@@ -605,31 +614,34 @@ private fun PlayerControlsBar(
                         if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                         contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
                         tint = Color.White,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
                 GlassIconButton(onClick = onSkipForward, contentDescription = stringResource(R.string.player_skip_forward)) {
                     Text(stringResource(R.string.player_skip_forward), style = MaterialTheme.typography.labelLarge, color = Color.White)
                 }
                 GlassIconButton(onClick = onNext, contentDescription = stringResource(R.string.player_next)) {
-                    Icon(Icons.Outlined.SkipNext, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                    Icon(Icons.Outlined.SkipNext, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
             }
-            // Speed / Sleep Timer / More
+            // Mark | Speed | Sleep Timer | Chapters
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                GlassPillButton(icon = { Icon(Icons.Outlined.BookmarkAdd, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
+                    label = stringResource(R.string.player_mark_label), selected = false,
+                    onClick = onMark, modifier = Modifier.weight(1f))
                 GlassPillButton(icon = { Icon(Icons.Outlined.Speed, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(R.string.player_speed_short), selected = activePanel == PlayerControlPanel.SPEED,
-                    onClick = { onTogglePanel(PlayerControlPanel.SPEED) })
+                    onClick = { onTogglePanel(PlayerControlPanel.SPEED) }, modifier = Modifier.weight(1f))
                 GlassPillButton(icon = { Icon(Icons.Outlined.Bedtime, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(R.string.player_sleep_short), selected = activePanel == PlayerControlPanel.SLEEP,
-                    onClick = { onTogglePanel(PlayerControlPanel.SLEEP) })
+                    onClick = { onTogglePanel(PlayerControlPanel.SLEEP) }, modifier = Modifier.weight(1f))
                 GlassPillButton(icon = { Icon(Icons.Outlined.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_more), selected = activePanel == PlayerControlPanel.MORE,
-                    onClick = { onTogglePanel(PlayerControlPanel.MORE) })
+                    label = stringResource(R.string.player_chapters_short), selected = activePanel == PlayerControlPanel.CHAPTERS,
+                    onClick = { onTogglePanel(PlayerControlPanel.CHAPTERS) }, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -686,7 +698,6 @@ private fun ControlPanel(
     onSleepStart: (Int) -> Unit,
     onSleepExtend: (Int) -> Unit,
     onSleepCancel: () -> Unit,
-    onAddBookmark: () -> Unit,
     onAddChapter: () -> Unit,
     onToggleEditing: () -> Unit,
     editing: Boolean,
@@ -751,10 +762,8 @@ private fun ControlPanel(
                     Text(stringResource(R.string.player_sleep_ending), style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
                 }
             }
-            PlayerControlPanel.MORE -> {
+            PlayerControlPanel.CHAPTERS -> {
                 GlassPillButton(icon = { Icon(Icons.Outlined.BookmarkAdd, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                    label = stringResource(R.string.player_mark_bookmark), selected = false, onClick = onAddBookmark)
-                GlassPillButton(icon = { Icon(Icons.Outlined.SkipNext, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(R.string.player_mark_chapter), selected = false, onClick = onAddChapter)
                 GlassPillButton(icon = { Icon(if (editing) Icons.Outlined.BookmarkAdd else Icons.Outlined.MoreHoriz, null, tint = Color.White, modifier = Modifier.size(18.dp)) },
                     label = stringResource(if (editing) R.string.player_edit_done else R.string.player_edit_chapters),

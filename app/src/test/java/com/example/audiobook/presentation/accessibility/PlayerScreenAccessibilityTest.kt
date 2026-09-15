@@ -203,13 +203,13 @@ class PlayerScreenAccessibilityTest {
         assertMinTouchTarget("+15 ثا")
         assertIconTouchTarget("التالي")
 
+        assertMinTouchTarget("إشارة")
         assertMinTouchTarget("السرعة")
         assertMinTouchTarget("النوم")
-        assertMinTouchTarget("المزيد")
+        assertMinTouchTarget("الفصول")
 
-        composeRule.onNodeWithText("المزيد").performClick()
+        composeRule.onNodeWithText("الفصول").performClick()
         composeRule.waitForIdle()
-        assertMinTouchTarget("إشارة")
         assertMinTouchTarget("فصل جديد")
         assertMinTouchTarget("تحرير الفصول")
     }
