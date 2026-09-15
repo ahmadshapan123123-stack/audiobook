@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    مقدمة أيقونة أثير: مثلث تشغيل + قوس صوتي، بلون عظمي دافئ على خلفية عنبرية.
+    نسخة أولية صريحة — تُستبدل بالأيقونة النهائية بعد اعتماد لوحة Prompt 5.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F7EDE1"
+        android:pathData="M45,39 L73,54 L45,69 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#F7EDE1"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M73,43 C79,47 79,61 73,65" />
+</vector>

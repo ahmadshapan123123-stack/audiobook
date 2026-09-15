@@ -112,7 +112,9 @@ class LibraryViewModelTest {
             progressDao = database.progressDao(),
             favoriteBookDao = database.favoriteBookDao(),
             collectionDao = database.collectionDao(),
-            crossRefDao = database.collectionBookCrossRefDao()
+            crossRefDao = database.collectionBookCrossRefDao(),
+            seriesDao = database.seriesDao(),
+            audioFileDao = database.audioFileDao()
         )
 
         val state = viewModel.uiState.first { it.books.size == 2 }
@@ -133,7 +135,9 @@ class LibraryViewModelTest {
             progressDao = database.progressDao(),
             favoriteBookDao = database.favoriteBookDao(),
             collectionDao = database.collectionDao(),
-            crossRefDao = database.collectionBookCrossRefDao()
+            crossRefDao = database.collectionBookCrossRefDao(),
+            seriesDao = database.seriesDao(),
+            audioFileDao = database.audioFileDao()
         )
 
         val state = viewModel.uiState.first { it.books.size == 2 }

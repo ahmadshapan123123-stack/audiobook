@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        أولوية مبدئية لهوية أثير (تُستبدل باللوحة المعتمدة في Prompt 5).
+        Provisional identity color — replaced by the final palette in Prompt 5.
+    -->
+    <color name="ic_launcher_background">#A85F1D</color>
+</resources>

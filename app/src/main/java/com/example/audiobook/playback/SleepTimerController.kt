@@ -107,6 +107,9 @@ class SleepTimerController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
 
+    /** يحمي حالة القرار من تنافس خيطي (حلقة الخلفية + استدعاءات الاختبار/الواجهة). */
+    private val tickLock = Any()
+
     private var phase = SleepTimerPhase.IDLE
     private var deadlineMs = 0L
     private var timerStartedMs = 0L
@@ -202,37 +205,38 @@ class SleepTimerController @Inject constructor(
     internal suspend fun tickClock() {
         val now = clock.nowMillis()
         if (deadlineMs == 0L) return
-        val remainingMs = deadlineMs - now
+        var stopNow = false
+        synchronized(tickLock) {
+            val remainingMs = deadlineMs - now
 
-        if (remainingMs <= SLEEP_WARNING_WINDOW_MS) {
-            beepThresholds.forEach { instant ->
-                if (instant >= timerStartedMs && now >= instant && !firedBeeps.contains(instant)) {
-                    firedBeeps += instant
-                    duckOnce()
+            if (remainingMs <= SLEEP_WARNING_WINDOW_MS) {
+                beepThresholds.forEach { instant ->
+                    if (instant >= timerStartedMs && now >= instant && !firedBeeps.contains(instant)) {
+                        firedBeeps += instant
+                        duckOnce()
+                    }
                 }
             }
-        }
-        if (pendingDuckRestoreAtMs > 0L && now >= pendingDuckRestoreAtMs) {
-            playback.setVolume(duckBaseVolume)
-            pendingDuckRestoreAtMs = 0L
-        }
+            if (pendingDuckRestoreAtMs > 0L && now >= pendingDuckRestoreAtMs) {
+                playback.setVolume(duckBaseVolume)
+                pendingDuckRestoreAtMs = 0L
+            }
 
-        val nextPhase = when {
-            remainingMs <= 0L -> SleepTimerPhase.STOPPED
-            remainingMs <= SLEEP_FADE_OUT_MS -> SleepTimerPhase.FADING_OUT
-            remainingMs <= SLEEP_WARNING_WINDOW_MS -> SleepTimerPhase.WARNING_WINDOW
-            else -> SleepTimerPhase.RUNNING
+            val nextPhase = when {
+                remainingMs <= 0L -> SleepTimerPhase.STOPPED
+                remainingMs <= SLEEP_FADE_OUT_MS -> SleepTimerPhase.FADING_OUT
+                remainingMs <= SLEEP_WARNING_WINDOW_MS -> SleepTimerPhase.WARNING_WINDOW
+                else -> SleepTimerPhase.RUNNING
+            }
+            if (nextPhase != phase) setPhase(nextPhase)
+            if (phase == SleepTimerPhase.FADING_OUT) {
+                val ratio = (remainingMs.toFloat() / SLEEP_FADE_OUT_MS).coerceIn(0f, 1f)
+                playback.setVolume(duckBaseVolume * ratio)
+            }
+            stopNow = nextPhase == SleepTimerPhase.STOPPED && remainingMs <= 0L
+            if (!stopNow) publishState()
         }
-        if (nextPhase != phase) setPhase(nextPhase)
-        if (phase == SleepTimerPhase.FADING_OUT) {
-            val ratio = (remainingMs.toFloat() / SLEEP_FADE_OUT_MS).coerceIn(0f, 1f)
-            playback.setVolume(duckBaseVolume * ratio)
-        }
-        if (nextPhase == SleepTimerPhase.STOPPED && remainingMs <= 0L) {
-            finishStop()
-        } else {
-            publishState()
-        }
+        if (stopNow) finishStop()
     }
 
     private fun duckOnce() {

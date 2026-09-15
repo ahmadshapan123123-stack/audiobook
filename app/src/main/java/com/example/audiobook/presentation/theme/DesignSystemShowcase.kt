@@ -37,7 +37,7 @@ fun DesignSystemShowcase(preference: ThemePreference) {
                 AppModeChip("AMOLED", preference.mode == AppThemeMode.AMOLED) { preference.updateMode(AppThemeMode.AMOLED) }
             }
             Text("موضع الاستماع", style = MaterialTheme.typography.titleMedium)
-            AppProgressSlider(sliderValue) { sliderValue = it }
+            AppProgressSlider(sliderValue, onValueChange = { sliderValue = it })
             AppPrimaryButton("متابعة الاستماع", onClick = {}, modifier = Modifier.fillMaxWidth())
             Text("النص العربي يستخدم اتجاه RTL وتباعد أسطر مريح للملاحظات والفصول.", style = MaterialTheme.typography.bodyMedium)
         }

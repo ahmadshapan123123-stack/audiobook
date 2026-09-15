@@ -1,0 +1,256 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== التطبيق ===== -->
+    <string name="app_name">أثير</string>
+
+<!-- ===== التنقل ===== -->
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_library">المكتبة</string>
+    <string name="nav_statistics">الإحصائيات</string>
+    <string name="nav_settings">الإعدادات</string>
+
+    <!-- ===== نصوص مشتركة ===== -->
+    <string name="progress_percent_remaining">%1$d٪ · %2$s</string>
+    <string name="time_remaining_hours_minutes">%1$d ساعة و %2$d دقيقة</string>
+    <string name="time_remaining_minutes">%1$d دقيقة</string>
+    <string name="time_done">مكتملة</string>
+    <string name="continue_label">متابعة الاستماع</string>
+    <string name="favorite_add">إضافة إلى المفضلة</string>
+    <string name="favorite_remove">إزالة من المفضلة</string>
+    <string name="missing_file">ملف صوتي ناقص</string>
+
+    <!-- ===== عدّاد الكتب (مصدر واحد) ===== -->
+    <plurals name="book_count">
+        <item quantity="zero">لا كتب</item>
+        <item quantity="one">كتاب واحد</item>
+        <item quantity="two">كتابان</item>
+        <item quantity="few">%d كتب</item>
+        <item quantity="many">%d كتابًا</item>
+        <item quantity="other">%d كتابًا</item>
+    </plurals>
+
+    <!-- ===== أقسام المكتبة (تسميات موحّدة Home/Library) ===== -->
+    <string name="section_all">كل الكتب</string>
+    <string name="section_current">أستمع الآن</string>
+    <string name="section_finished">مكتملة</string>
+    <string name="section_favorites">المفضلة</string>
+    <string name="section_collections">المجموعات</string>
+    <string name="section_recent">أضيفت حديثًا</string>
+
+    <!-- ===== الفلاتر والفرز ===== -->
+    <string name="filter_status_all">الكل</string>
+    <string name="filter_status_in_progress">قيد الاستماع</string>
+    <string name="filter_status_finished">مكتملة</string>
+    <string name="filter_status_not_started">لم أبدأ</string>
+    <string name="filter_genre_novel">رواية</string>
+    <string name="filter_series_all">كل السلاسل</string>
+    <string name="sort_name">الاسم</string>
+    <string name="sort_added">الأحدث</string>
+    <string name="sort_last_played">آخر استماع</string>
+    <string name="sort_progress">الإنجاز</string>
+
+    <!-- ===== العرض ===== -->
+    <string name="view_grid">عرض شبكي</string>
+    <string name="view_list">عرض قائمة</string>
+    <string name="progress_percent">%d٪</string>
+
+    <!-- ===== Home ===== -->
+    <string name="home_greeting">أهلًا بك</string>
+    <string name="home_subtitle">مكتبة صوتية مريحة، تتابعك أينما توقفت</string>
+    <string name="home_summary_title">ملخص أثير</string>
+    <string name="home_sections_title">أقسام المكتبة</string>
+    <string name="home_tile_books">كتب</string>
+    <string name="home_tile_in_progress">قيد الاستماع</string>
+    <string name="home_tile_finished">مكتملة</string>
+    <string name="home_tile_favorites">مفضلة</string>
+    <string name="home_continue_title">أكمل استماعك</string>
+    <string name="home_next_title">ماذا بعد؟</string>
+    <string name="home_recent_title">استمعت إليها مؤخرًا</string>
+<string name="home_series_title">السلاسل</string>
+    <string name="home_authors_title">المؤلفون</string>
+    <string name="home_collections_title">رفوفك</string>
+    <string name="home_favorites_title">المفضلة</string>
+    <string name="home_view_all">عرض الكل</string>
+    <string name="home_view_all_favorites">عرض المفضلة</string>
+    <string name="home_current_chapter">الفصل الحالي: %1$s</string>
+    <string name="home_series_of">سلسلة %1$s</string>
+    <string name="home_empty_title">مكتبتك لم تُزرع بعد</string>
+    <string name="home_empty_hint">أضف مجلدات كتبك الصوتية؛ ستبدأ هنا رحلتك مع أثير.</string>
+    <string name="home_explore_library">استكشاف المكتبة</string>
+<string name="home_continue_play">استئناف</string>
+
+    <!-- ===== استمع الآن (مركز الجلسات) ===== -->
+    <string name="listen_now_title">استمع الآن</string>
+    <string name="listen_now_subtitle">أخبرنا بوقتك، ودع أثير يجهّز لك الجلسة</string>
+    <string name="listen_now_open">ابدأ</string>
+    <string name="listen_now_time_minutes">%1$d دقيقة</string>
+    <string name="listen_now_fits_title">يكمّل وقتك</string>
+    <string name="listen_now_shelf_title">يناسب وقتك</string>
+    <string name="listen_now_play_all">شغّلها كلها</string>
+    <string name="listen_now_bedtime_title">قبل النوم</string>
+    <string name="listen_now_bedtime_hint">كتب قصيرة لوقتٍ هادئ، مع مؤقّت نوم</string>
+    <string name="listen_now_bedtime_play">تشغيل مع مؤقّت نوم</string>
+    <string name="listen_now_series_title">أكمل سلسلة</string>
+    <string name="listen_now_long_title">جلسة طويلة</string>
+
+    <!-- ===== Library ===== -->
+    <string name="library_title">أثير</string>
+    <string name="library_subtitle">كل ما تريد الاستماع إليه في مكان هادئ</string>
+    <string name="library_menu_more">المزيد</string>
+    <string name="library_menu_history">السجل</string>
+    <string name="library_menu_statistics">الإحصائيات</string>
+    <string name="library_menu_review">مراجعة المطابقات</string>
+    <string name="library_menu_review_count">مراجعة المطابقات (%1$d)</string>
+    <string name="library_menu_roots">مجلدات المكتبة</string>
+    <string name="library_search_label">ابحث في أثير</string>
+    <string name="library_search_placeholder">العنوان أو المؤلف</string>
+    <string name="library_search_clear">مسح البحث</string>
+    <string name="no_results_title">لم نجد نتائج</string>
+    <string name="no_results_hint">جرّب كلمة أخرى، أو امسح البحث</string>
+    <string name="clear_search">مسح البحث</string>
+    <string name="library_empty_title">لا توجد كتب في المكتبة بعد</string>
+    <string name="library_empty_hint">أضف مجلدات كتبك الصوتية لتبدأ الاستماع</string>
+    <string name="manage_roots">إدارة المجلدات</string>
+    <string name="section_empty_title">لا توجد كتب في هذا القسم بعد</string>
+    <string name="section_empty_hint">ستظهر الكتب هنا عند وصولها لهذا القسم</string>
+
+    <!-- ===== المجموعات ===== -->
+    <string name="collection_chip_label">%1$s (%2$d)</string>
+    <string name="collection_new">+ مجموعة</string>
+    <string name="collection_create_title">إنشاء مجموعة</string>
+    <string name="collection_name_label">اسم المجموعة</string>
+    <string name="collection_add">إضافة</string>
+    <string name="collection_cancel">إلغاء</string>
+
+    <!-- ===== تفاصيل الكتاب ===== -->
+    <string name="book_details_title">تفاصيل الكتاب</string>
+    <string name="bd_back">رجوع</string>
+    <string name="bd_play_default">تشغيل</string>
+    <string name="bd_play_default_count">تشغيل (%1$d إصدارات)</string>
+    <string name="bd_book_not_found">الكتاب غير متوفر</string>
+    <string name="bd_tab_overview">البيانات</string>
+    <string name="bd_tab_editions">الإصدارات (%1$d)</string>
+    <string name="bd_tab_content">المحتوى</string>
+    <string name="bd_overview_header">الأساسيات</string>
+    <string name="bd_title_field">العنوان</string>
+    <string name="bd_author_field">المؤلف</string>
+    <string name="bd_series">السلسلة: %1$s</string>
+    <string name="bd_series_none">لا توجد سلسلة</string>
+    <string name="bd_genre">%1$s</string>
+    <string name="bd_save">حفظ البيانات</string>
+    <string name="bd_saved_confirmation">تم الحفظ ✓</string>
+    <string name="bd_cover_header">الغلاف</string>
+    <string name="bd_set_user_cover">اختيار غلاف يدوي</string>
+    <string name="bd_rediscover_cover">إعادة الاكتشاف</string>
+    <string name="bd_cover_user_note">هذا الغلاف لن يُستبدل أثناء فحص لاحق.</string>
+    <string name="bd_cover_auto_note">الغلاف يتبع أولوية الاكتشاف التلقائي.</string>
+    <string name="bd_progress_header">التقدم</string>
+    <string name="bd_progress_percent">%1$d٪ مكتمل</string>
+    <string name="bd_progress_start">لم تبدأ بعد</string>
+    <string name="bd_editions_header">إدارة الإصدارات</string>
+    <string name="bd_edition_narrator">راوٍ غير محدد</string>
+    <string name="bd_edition_rename">إعادة تسمية</string>
+    <string name="bd_edition_narrator_change">تغيير الرواي</string>
+    <string name="bd_edition_set_default">تعيين افتراضي</string>
+    <string name="bd_edition_default_yes">الافتراضي</string>
+    <string name="bd_edition_delete">حذف</string>
+    <string name="bd_edition_split">إنشاء نسخة</string>
+    <string name="bd_edition_file_format">%1$s · %2$s</string>
+    <string name="bd_edition_authoritative_note">القرارات اليدوية محفوظة ولا يكتب عليها الفحص لاحقًا.</string>
+    <string name="bd_content_chapters_header">الفصول (%1$d)</string>
+    <string name="bd_content_marks_header">الإشارات والملاحظات (%1$d)</string>
+    <string name="bd_content_none">لا توجد فصول بعد</string>
+    <string name="bd_marks_none">لا إشارات ولا ملاحظات</string>
+    <string name="bd_open_bookmarks">فتح شاشة الإشارات</string>
+    <string name="bd_jump_hint">اضغط على فصل للتشغيل من موضعه مباشرة</string>
+    <string name="bd_mark_type_bookmark">إشارة</string>
+    <string name="bd_mark_type_note">ملاحظة</string>
+    <string name="bd_mark_position">عند %1$s</string>
+
+    <!-- ===== المشغّل (Player) ===== -->
+    <string name="player_back">رجوع</string>
+    <string name="player_more">المزيد</string>
+    <string name="player_cover_placeholder">غلاف الكتاب</string>
+    <string name="player_timeline_overview">نظرة عامة</string>
+    <string name="player_timeline_zoom">تكبير ٣٠–٦٠ دقيقة</string>
+    <string name="player_timeline_zoom_range">الجدول الزمني · %1$s – %2$s</string>
+    <string name="player_edit_chapters">تحرير الفصول</string>
+    <string name="player_edit_done">إنهاء التحرير</string>
+    <string name="player_chapter_num">الفصل %1$d</string>
+<string name="player_speed">السرعة %1$s</string>
+    <string name="player_speed_short">السرعة</string>
+    <string name="player_sleep_short">النوم</string>
+    <string name="player_sleep_cancel">إلغاء</string>
+    <string name="player_previous">السابق</string>
+    <string name="player_skip_back">-15 ثا</string>
+    <string name="player_play">تشغيل</string>
+    <string name="player_pause">إيقاف</string>
+    <string name="player_skip_forward">+15 ثا</string>
+    <string name="player_next">التالي</string>
+    <string name="player_sleep_label">مؤقت النوم</string>
+    <string name="player_sleep_minutes">مؤقت النوم: %1$d دقيقة</string>
+    <string name="player_sleep_active">متبقٍ %1$s</string>
+    <string name="player_sleep_ending">سينتهي قريبًا</string>
+    <string name="player_sleep_extend">+%1$d دقيقة</string>
+    <string name="player_mark">إضافة</string>
+    <string name="player_mark_bookmark">إشارة</string>
+    <string name="player_mark_chapter">فصل جديد</string>
+    <string name="player_mark_captured">التُقط %1$s فورًا</string>
+    <string name="library_folder_title">مجلدات المكتبة</string>
+    <string name="library_folder_add">إضافة مجلد</string>
+    <string name="library_folder_empty">لا توجد مجلدات بعد. أضف مجلدًا لبدء فحص مكتبتك.</string>
+    <string name="library_folder_priority">أولوية</string>
+    <string name="library_folder_enabled">ممكّن</string>
+    <string name="library_folder_refresh">تحديث</string>
+    <string name="library_folder_priority_toggle">مفتاح الأولوية لـ %1$s</string>
+    <string name="library_folder_enabled_toggle">مفتاح التمكين لـ %1$s</string>
+    <string name="bookmarks_title">الإشارات والملاحظات</string>
+    <string name="bookmark_row_label">عند %1$s · %2$s</string>
+<!-- ===== صفحات التفاصيل (سلسلة/مؤلف/مجموعة) ===== -->
+    <string name="series_details_title">تفاصيل السلسلة</string>
+    <string name="author_details_title">تفاصيل المؤلف</string>
+    <string name="collection_details_title">تفاصيل المجموعة</string>
+    <string name="entity_not_found">غير موجود</string>
+    <string name="entity_progress_remaining">بقي %1$s</string>
+    <string name="entity_series_books_header">كتب السلسلة</string>
+    <string name="entity_author_books_header">كتب المؤلف</string>
+    <string name="entity_books_header">الكتب</string>
+    <string name="entity_no_books">لا توجد كتب بعد.</string>
+    <string name="entity_series_group_header">سلسلة %1$s</string>
+    <string name="entity_standalone_header">كتب مستقلة</string>
+
+    <string name="entity_edit_button">تعديل</string>
+    <string name="entity_edit_title">تعديل البيانات</string>
+    <string name="entity_edit_name_label">الاسم</string>
+    <string name="entity_edit_description_label">النـبذة</string>
+    <string name="entity_edit_image_button">اختيار صورة</string>
+    <string name="entity_edit_image_preview">معاينة الصورة</string>
+<string name="entity_edit_save">حفظ</string>
+    <string name="entity_edit_cancel">إلغاء</string>
+
+<!-- ===== المحفوظات ===== -->
+    <string name="nav_saved">المحفوظات</string>
+    <string name="saved_title">المحفوظات</string>
+    <string name="saved_subtitle">كل اللحظات التي أردت الاحتفاظ بها.</string>
+    <string name="saved_tab_bookmarks">العلامات</string>
+    <string name="saved_tab_notes">الملاحظات</string>
+    <string name="saved_tab_chapters">الفصول</string>
+    <string name="saved_search_label">ابحث في محفوظاتك</string>
+    <string name="saved_search_placeholder">كتاب، مؤلف، ملاحظة، فصل…</string>
+    <string name="saved_search_clear">مسح البحث</string>
+    <string name="saved_delete">حذف</string>
+    <string name="saved_rename">إعادة تسمية</string>
+    <string name="saved_rename_title">اسم الفصل</string>
+    <string name="saved_rename_save">حفظ الاسم</string>
+    <string name="saved_cancel">إلغاء</string>
+    <string name="saved_item_saved_at">حُفظ في %1$s</string>
+    <string name="saved_item_position">الموضع %1$s</string>
+    <string name="saved_item_chapter">الفصل: %1$s</string>
+    <string name="saved_open_book">فتح الكتاب</string>
+    <string name="saved_empty_bookmarks_title">لم تحفظ أي لحظة بعد.</string>
+    <string name="saved_empty_bookmarks_hint">عندما تمرّ بلحظة تريد الرجوع إليها، اضغط زر العلامة في المشغّل وستجدها هنا.</string>
+    <string name="saved_empty_notes_title">ملاحظاتك ستظهر هنا.</string>
+    <string name="saved_empty_notes_hint">أضف ملاحظة أثناء الاستماع لتحتفظ بقِصاصة من اللحظة.</string>
+    <string name="saved_empty_chapters_title">الفصول التي تنشئها ستجدها هنا.</string>
+    <string name="saved_empty_chapters_hint">قسّم كتابك إلى فصول من المشغّل لتنتقل بين أجزائه بسهولة.</string>
+</resources>

@@ -73,6 +73,13 @@ class ExoPlaybackController @Inject constructor(
                     saveProgress()
                 }
             }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // يُطبَّق سلوك التوقف عند الملفات المفقودة عبر onMediaItemTransition و stopAtMissingBoundaryIfNeeded
+            }
+
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            }
         })
         scope.launch {
             while (isActive) {
@@ -94,6 +101,7 @@ class ExoPlaybackController @Inject constructor(
             return
         }
         player.setMediaItems(playableFiles.map { MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString()).build() })
+        player.prepare()
         player.setPlaybackSpeed(progress?.playbackSpeed ?: 1f)
         player.volume = 1f
         seekToGlobal(progress?.currentPositionMs ?: 0L)
@@ -108,8 +116,14 @@ class ExoPlaybackController @Inject constructor(
         )
     }
 
-    override fun play() { player.play() }
-    override fun pause() { player.pause(); saveProgress() }
+    override fun play() {
+        player.play()
+    }
+
+    override fun pause() {
+        player.pause()
+        saveProgress()
+    }
     override fun seekTo(positionMs: Long) { seekToGlobal(positionMs); saveProgress() }
     override fun skipForward15Seconds() { seekTo(currentGlobalPosition() + 15_000L) }
     override fun skipBack15Seconds() { seekTo(currentGlobalPosition() - 15_000L) }
@@ -157,6 +171,9 @@ class ExoPlaybackController @Inject constructor(
             mutableState.value = mutableState.value.copy(missingFileMessage = "الجزء المطلوب مفقود ولا يمكن تشغيله")
             player.pause()
             return
+        }
+        if (mutableState.value.missingFileMessage != null) {
+            mutableState.value = mutableState.value.copy(missingFileMessage = null)
         }
         val offset = files.take(originalIndex).sumOf { it.durationMs }
         player.seekTo(playableIndex, (bounded - offset).coerceAtLeast(0L))
@@ -212,12 +229,13 @@ class ExoPlaybackController @Inject constructor(
     private fun saveProgress() {
         val id = editionId ?: return
         val position = currentGlobalPosition()
+        val speed = player.playbackParameters.speed
         scope.launch(Dispatchers.IO) {
             val existing = database.progressDao().getByParent(id)
             val progress = ListeningProgressEntity(
                 id = existing?.id ?: UUID.randomUUID(), editionId = id, currentPositionMs = position,
                 lastPlayedAt = System.currentTimeMillis(), status = if (position >= timeline.durationMs && timeline.durationMs > 0) ProgressStatus.FINISHED else if (position > 0) ProgressStatus.IN_PROGRESS else ProgressStatus.NOT_STARTED,
-                playbackSpeed = player.playbackParameters.speed, remoteId = existing?.remoteId, syncStatus = existing?.syncStatus ?: com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY
+                playbackSpeed = speed, remoteId = existing?.remoteId, syncStatus = existing?.syncStatus ?: com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY
             )
             if (existing == null) database.progressDao().insert(progress) else database.progressDao().update(progress)
         }

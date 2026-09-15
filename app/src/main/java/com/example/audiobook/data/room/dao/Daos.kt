@@ -83,7 +83,9 @@ interface AudioFileDao : CrudDao<AudioFileEntity> {
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<AudioFileEntity>
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") fun observeByParent(editionId: UUID): Flow<List<AudioFileEntity>>
     @Query("SELECT * FROM audio_files WHERE fileUri = :fileUri LIMIT 1") suspend fun getByUri(fileUri: String): AudioFileEntity?
+    @Query("SELECT * FROM audio_files") fun observeAll(): Flow<List<AudioFileEntity>>
     @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
+    @Query("SELECT COUNT(*) FROM audio_files") suspend fun countAll(): Int
 }
 
 data class AudioFileAggregateRow(val editionId: UUID, val totalDurationMs: Long, val fileCount: Int)
@@ -105,6 +107,7 @@ interface ChapterDao : CrudDao<ChapterEntity> {
     @Query("SELECT * FROM chapters WHERE id = :id") suspend fun getById(id: UUID): ChapterEntity?
     @Query("SELECT * FROM chapters WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<ChapterEntity>
     @Query("SELECT * FROM chapters WHERE editionId = :editionId ORDER BY startPositionMs") fun observeByParent(editionId: UUID): Flow<List<ChapterEntity>>
+    @Query("SELECT * FROM chapters ORDER BY orderIndex") fun observeAll(): Flow<List<ChapterEntity>>
     @Query("DELETE FROM chapters WHERE editionId = :editionId AND createdFrom = 'IMPORTED'") suspend fun deleteImported(editionId: UUID)
 }
 
@@ -116,6 +119,7 @@ interface BookmarkDao : CrudDao<BookmarkEntity> {
     @Query("SELECT * FROM bookmarks WHERE id = :id") suspend fun getById(id: UUID): BookmarkEntity?
     @Query("SELECT * FROM bookmarks WHERE editionId = :editionId ORDER BY positionMs") suspend fun getByParent(editionId: UUID): List<BookmarkEntity>
     @Query("SELECT * FROM bookmarks WHERE editionId = :editionId ORDER BY positionMs") fun observeByParent(editionId: UUID): Flow<List<BookmarkEntity>>
+    @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC") fun observeAll(): Flow<List<BookmarkEntity>>
 }
 
 @Dao
@@ -184,9 +188,58 @@ data class ListeningHistoryRow(
     val sessionId: UUID,
     val bookTitle: String?,
     val editionLabel: String?,
+    val bookId: UUID? = null,
+    val editionId: UUID? = null,
     val startedAt: Long,
     val durationListenedMs: Long,
     val endReason: SessionEndReason?
+)
+
+/** صف جلسة مصحوبة بمعلومات الكتاب/المؤلف/السلسلة (للإحصائيات الحقيقية). */
+data class SessionBookRow(
+    val bookId: UUID,
+    val bookTitle: String,
+    val authorName: String?,
+    val authorColorTheme: String?,
+    val seriesName: String?,
+    val seriesColorTheme: String?,
+    val editionId: UUID?,
+    val startedAt: Long,
+    val durationListenedMs: Long
+)
+
+/** صف كتاب قيد الاستماع (تقدّمك) مع المدة الكلية والموضع الحالي. */
+data class InProgressRow(
+    val editionId: UUID,
+    val bookId: UUID,
+    val bookTitle: String,
+    val authorName: String?,
+    val authorColorTheme: String?,
+    val seriesName: String?,
+    val seriesColorTheme: String?,
+    val totalDurationMs: Long,
+    val currentPositionMs: Long,
+    val lastPlayedAt: Long
+)
+
+/** أول كتاب بلغ نهايته فعليًا (endReason = FINISHED_BOOK). */
+data class FirstCompletedBookRow(
+    val bookTitle: String,
+    val completedAt: Long
+)
+
+/** صف سلسلة: عدد كتبها التي استمعت إليها مقارنة بإجمالي كتبها. */
+data class SeriesListeningRow(
+    val seriesId: UUID,
+    val seriesName: String,
+    val seriesColorTheme: String?,
+    val bookId: UUID
+)
+
+/** إجمالي عدد الكتب داخل سلسلة. */
+data class SeriesTotalsRow(
+    val seriesId: UUID,
+    val totalBooks: Int
 )
 
 @Dao
@@ -197,8 +250,9 @@ interface StatisticsDao {
     @Query("SELECT DISTINCT editionId FROM listening_progress WHERE status = 'FINISHED'") suspend fun getCompletedBooks(): List<UUID>
     @Query("SELECT playbackSpeed FROM listening_progress") suspend fun getPlaybackSpeeds(): List<Float>
     @Query("SELECT COUNT(*) FROM chapter_completions") suspend fun countCompletedChapters(): Int
+    @Query("SELECT COUNT(*) FROM chapter_completions WHERE completedAtMs >= :startMillis AND completedAtMs < :endMillis") suspend fun countCompletedChaptersBetween(startMillis: Long, endMillis: Long): Int
     @Query(
-        "SELECT s.id AS sessionId, b.title AS bookTitle, e.label AS editionLabel, " +
+        "SELECT s.id AS sessionId, b.title AS bookTitle, e.label AS editionLabel, b.id AS bookId, s.editionId AS editionId, " +
             "s.startedAt AS startedAt, s.durationListenedMs AS durationListenedMs, s.endReason AS endReason " +
             "FROM listening_sessions s " +
             "LEFT JOIN editions e ON e.id = s.editionId " +
@@ -206,6 +260,59 @@ interface StatisticsDao {
             "ORDER BY s.startedAt DESC"
     )
     suspend fun getHistory(): List<ListeningHistoryRow>
+    @Query(
+        "SELECT s.editionId AS editionId, b.id AS bookId, b.title AS bookTitle, " +
+            "a.name AS authorName, a.colorTheme AS authorColorTheme, " +
+            "sy.name AS seriesName, sy.colorTheme AS seriesColorTheme, " +
+            "s.startedAt AS startedAt, s.durationListenedMs AS durationListenedMs " +
+            "FROM listening_sessions s " +
+            "LEFT JOIN editions e ON e.id = s.editionId " +
+            "LEFT JOIN books b ON b.id = e.bookId " +
+            "LEFT JOIN authors a ON a.id = b.authorId " +
+            "LEFT JOIN series sy ON sy.id = b.seriesId " +
+            "WHERE s.sessionState = 'COMPLETED' AND s.startedAt >= :startMillis AND s.startedAt < :endMillis " +
+            "ORDER BY s.durationListenedMs DESC"
+    )
+    suspend fun getSessionsWithBookBetween(startMillis: Long, endMillis: Long): List<SessionBookRow>
+    @Query(
+        "SELECT b.title AS bookTitle, MIN(ls.startedAt) AS completedAt " +
+            "FROM listening_sessions ls " +
+            "LEFT JOIN editions e ON e.id = ls.editionId " +
+            "LEFT JOIN books b ON b.id = e.bookId " +
+            "WHERE ls.sessionState = 'COMPLETED' AND ls.endReason = 'FINISHED_BOOK' " +
+            "GROUP BY b.id ORDER BY completedAt ASC LIMIT 1"
+    )
+    suspend fun getFirstCompletedBook(): FirstCompletedBookRow?
+    @Query(
+        "SELECT p.editionId AS editionId, b.id AS bookId, b.title AS bookTitle, " +
+            "a.name AS authorName, a.colorTheme AS authorColorTheme, " +
+            "sy.name AS seriesName, sy.colorTheme AS seriesColorTheme, " +
+            "e.totalDurationMs AS totalDurationMs, p.currentPositionMs AS currentPositionMs, p.lastPlayedAt AS lastPlayedAt " +
+            "FROM listening_progress p " +
+            "LEFT JOIN editions e ON e.id = p.editionId " +
+            "LEFT JOIN books b ON b.id = e.bookId " +
+            "LEFT JOIN authors a ON a.id = b.authorId " +
+            "LEFT JOIN series sy ON sy.id = b.seriesId " +
+            "WHERE p.status = 'IN_PROGRESS' " +
+            "ORDER BY p.lastPlayedAt DESC"
+    )
+    suspend fun getInProgressRows(): List<InProgressRow>
+    @Query(
+        "SELECT DISTINCT s.id AS seriesId, s.name AS seriesName, s.colorTheme AS seriesColorTheme, " +
+            "b.id AS bookId " +
+            "FROM listening_sessions ls " +
+            "LEFT JOIN editions e ON e.id = ls.editionId " +
+            "LEFT JOIN books b ON b.id = e.bookId " +
+            "LEFT JOIN series s ON s.id = b.seriesId " +
+            "WHERE ls.sessionState = 'COMPLETED' AND b.seriesId IS NOT NULL"
+    )
+    suspend fun getSeriesListening(): List<SeriesListeningRow>
+    @Query(
+        "SELECT s.id AS seriesId, " +
+            "(SELECT COUNT(*) FROM books b WHERE b.seriesId = s.id) AS totalBooks " +
+            "FROM series s"
+    )
+    suspend fun getTotalBooksPerSeries(): List<SeriesTotalsRow>
 }
 
 @Dao

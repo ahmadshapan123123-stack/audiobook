@@ -5,3 +5,20 @@ build/
 local.properties
 .idea/
 *.iml
+
+# Local tooling directories
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.opencode/
+
+# Local dev helpers & artifacts
+*.ps1
+*.png
+docs/
+prompt-verify-and-build-apk.md
+s9.png
+scr1.png

@@ -23,6 +23,23 @@ const val MILLIS_PER_DAY = 24 * 60 * 60 * 1000L
  * 3) تعيين الطابع الزمني → رقم اليوم (بالتوقيت المحلي للجهاز).
  * 4) بداية النطاقات (اليوم/الأسبوع/الشهر).
  */
+/** أسماء أيام الأسبوع بالعربية تبدأ بالسبت (متسقة مع التقويم العربي). */
+val ARABIC_DAY_NAMES = listOf("السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة")
+
+/** أسماء الشهور بالعربية. */
+val ARABIC_MONTH_NAMES = listOf(
+    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+)
+
+/** يوم الأسبوع بالعربية لرقم يوم محدد (السبت أول الأسبوع). */
+fun arabicDayName(dayNumber: Int): String {
+    // 1970-01-01 (dayNumber 0) كان خميسًا.
+    val weekday = ((dayNumber % 7) + 7) % 7
+    val saturdayIndex = (weekday - 2 + 7) % 7
+    return ARABIC_DAY_NAMES[saturdayIndex]
+}
+
 object StatisticsRules {
 
     /**
@@ -104,6 +121,18 @@ object StatisticsDates {
         calendar.clear(Calendar.MILLISECOND)
         return calendar.timeInMillis
     }
+
+    /** بداية السنة التقويمية (الساعة 00:00 المحلية لأول يناير) لطابع زمني معيّن. */
+    fun startOfYearMillis(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long {
+        val calendar = Calendar.getInstance(zone)
+        calendar.timeInMillis = millis
+        calendar.set(Calendar.DAY_OF_YEAR, 1)
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.clear(Calendar.MINUTE)
+        calendar.clear(Calendar.SECOND)
+        calendar.clear(Calendar.MILLISECOND)
+        return calendar.timeInMillis
+    }
 }
 
 object StatisticsRanges {
@@ -113,11 +142,24 @@ object StatisticsRanges {
      * TODAY  → بداية اليوم الحالي.
      * WEEK   → قبل 7 أيام متدحرجة (بداية اليوم الحالي ناقص 6 أيام) — تعريف الأسبوع هنا.
      * MONTH  → بداية الشهر التقويمي الحالي.
+     * YEAR   → بداية السنة التقويمية الحالية.
+     * ALL    → صفر (منذ أول جلسة).
      * النهاية دائمًا "الآن"، والجلسة تُحسب حسب [ListeningSessionEntity.startedAt].
      */
     fun rangeStartMillis(range: DateRange, nowMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long = when (range) {
         DateRange.TODAY -> StatisticsDates.startOfDayMillis(nowMillis, zone)
         DateRange.WEEK -> StatisticsDates.startOfDayMillis(nowMillis, zone) - 6 * MILLIS_PER_DAY
         DateRange.MONTH -> StatisticsDates.startOfMonthMillis(nowMillis, zone)
+        DateRange.YEAR -> StatisticsDates.startOfYearMillis(nowMillis, zone)
+        DateRange.ALL -> 0L
+    }
+
+    /** بداية الفترة السابقة ذات الطول نفسه (للمقارنة في واجهة الإحصائيات). */
+    fun previousRangeStartMillis(range: DateRange, nowMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long = when (range) {
+        DateRange.TODAY -> rangeStartMillis(DateRange.TODAY, nowMillis, zone) - MILLIS_PER_DAY
+        DateRange.WEEK -> rangeStartMillis(DateRange.WEEK, nowMillis, zone) - 7 * MILLIS_PER_DAY
+        DateRange.MONTH -> StatisticsDates.startOfMonthMillis(StatisticsDates.startOfMonthMillis(nowMillis, zone) - 1L, zone)
+        DateRange.YEAR -> StatisticsDates.startOfYearMillis(StatisticsDates.startOfYearMillis(nowMillis, zone) - 1L, zone)
+        DateRange.ALL -> 0L
     }
 }

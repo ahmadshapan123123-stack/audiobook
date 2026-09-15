@@ -31,7 +31,9 @@ data class LibraryRootEntity(
 data class AuthorEntity(
     @androidx.room.PrimaryKey val id: UUID = UUID.randomUUID(),
     val name: String,
-    val colorTheme: String?
+    val colorTheme: String?,
+    val imagePath: String? = null,
+    val description: String? = null
 )
 
 @Entity(
@@ -43,7 +45,9 @@ data class SeriesEntity(
     @androidx.room.PrimaryKey val id: UUID = UUID.randomUUID(),
     val authorId: UUID,
     val name: String,
-    val colorTheme: String?
+    val colorTheme: String?,
+    val imagePath: String? = null,
+    val description: String? = null
 )
 
 @Entity(

@@ -33,6 +33,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+private fun parseColor(hex: String?, default: Long): Long {
+    if (hex.isNullOrBlank()) return default
+    return runCatching { android.graphics.Color.parseColor(hex).toLong() }.getOrDefault(default)
+}
+
 data class BookDetailsUiState(
     val book: BookEntity? = null,
     val authorName: String = "",
@@ -42,7 +47,8 @@ data class BookDetailsUiState(
     val defaultEditionId: UUID? = null,
     val chapters: List<ChapterEntity> = emptyList(),
     val bookmarks: List<BookmarkEntity> = emptyList(),
-    val progress: ListeningProgressEntity? = null
+    val progress: ListeningProgressEntity? = null,
+    val coverColor: Long = 0xFF356B68
 )
 
 @HiltViewModel
@@ -75,13 +81,23 @@ class BookDetailsViewModel @Inject constructor(
         progressDao.observeByParent(editionId)
     }
 
+    private val chaptersFlow = defaultEditionFlow.flatMapLatest { defaultId ->
+        val editionId = defaultId ?: return@flatMapLatest flowOf(emptyList())
+        chapterDao.observeByParent(editionId)
+    }
+
+    private val bookmarksFlow = defaultEditionFlow.flatMapLatest { defaultId ->
+        val editionId = defaultId ?: return@flatMapLatest flowOf(emptyList())
+        bookmarkDao.observeByParent(editionId)
+    }
+
     val uiState: StateFlow<BookDetailsUiState> = combine(
         bookFlow,
         authorDao.observeAll(),
         seriesDao.observeAll(),
         editionsFlow,
-        chapterDao.observeByParent(bookId),
-        bookmarkDao.observeByParent(bookId),
+        chaptersFlow,
+        bookmarksFlow,
         defaultEditionFlow,
         progressFlow
     ) { values ->
@@ -103,7 +119,12 @@ class BookDetailsViewModel @Inject constructor(
             defaultEditionId = defaultId,
             chapters = chapters.sortedBy { it.startPositionMs },
             bookmarks = bookmarks,
-            progress = progress
+            progress = progress,
+            coverColor = parseColor(
+                series.firstOrNull { it.id == book?.seriesId }?.colorTheme
+                    ?: authors.firstOrNull { it.id == book?.authorId }?.colorTheme,
+                0xFF356B68
+            )
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookDetailsUiState())
 

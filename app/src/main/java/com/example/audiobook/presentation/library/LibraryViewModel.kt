@@ -1,7 +1,9 @@
 package com.example.audiobook.presentation.library
 
+import android.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audiobook.data.room.dao.AudioFileDao
 import com.example.audiobook.data.room.dao.AuthorDao
 import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.CollectionBookCrossRefDao
@@ -9,15 +11,17 @@ import com.example.audiobook.data.room.dao.CollectionDao
 import com.example.audiobook.data.room.dao.EditionDao
 import com.example.audiobook.data.room.dao.FavoriteBookDao
 import com.example.audiobook.data.room.dao.ProgressDao
+import com.example.audiobook.data.room.dao.SeriesDao
+import com.example.audiobook.data.room.entity.AudioFileEntity
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.CollectionEntity
-import com.example.audiobook.data.room.entity.CollectionBookCrossRef
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.FavoriteBook
+import com.example.audiobook.data.room.entity.FileStatus
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.ProgressStatus
-import com.example.audiobook.data.room.entity.SyncStatus
+import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.domain.usecases.ArabicSearchNormalizer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
@@ -33,6 +37,9 @@ data class LibraryBookUi(
     val book: BookEntity,
     val authorName: String,
     val seriesName: String?,
+    val coverColor: Long,
+    val effectiveEditionId: UUID?,
+    val hasMissingFile: Boolean,
     val progressFraction: Float,
     val remainingMs: Long,
     val isFavorite: Boolean,
@@ -43,7 +50,9 @@ data class LibraryBookUi(
 data class LibraryUiState(
     val books: List<LibraryBookUi> = emptyList(),
     val query: LibraryQuery = LibraryQuery(),
-    val collections: List<CollectionEntity> = emptyList()
+    val collections: List<CollectionEntity> = emptyList(),
+    val collectionMembers: Map<String, Set<UUID>> = emptyMap(),
+    val seriesNames: List<String> = emptyList()
 ) {
     val filtered: List<LibraryBookUi>
         get() {
@@ -57,7 +66,8 @@ data class LibraryUiState(
                 ArabicSearchNormalizer.matches(query.search, book.book.title, book.authorName, book.seriesName)
             }
             val genreFiltered = searchFiltered.filter { query.genre == null || it.book.genre == query.genre }
-            return genreFiltered.sortedWith(
+            val seriesFiltered = genreFiltered.filter { query.series == null || it.seriesName == query.series }
+            return seriesFiltered.sortedWith(
                 when (query.sort) {
                     LibrarySort.NAME -> compareBy(String.CASE_INSENSITIVE_ORDER, { it.book.title })
                     LibrarySort.ADDED_DATE -> compareByDescending { it.addedOrder }
@@ -76,7 +86,9 @@ class LibraryViewModel @Inject constructor(
     private val progressDao: ProgressDao,
     private val favoriteBookDao: FavoriteBookDao,
     private val collectionDao: CollectionDao,
-    private val crossRefDao: CollectionBookCrossRefDao
+    private val crossRefDao: CollectionBookCrossRefDao,
+    private val seriesDao: SeriesDao,
+    private val audioFileDao: AudioFileDao
 ) : ViewModel() {
 
     private val query = MutableStateFlow(LibraryQuery())
@@ -88,6 +100,9 @@ class LibraryViewModel @Inject constructor(
         progressDao.observeAll(),
         favoriteBookDao.observeAll(),
         collectionDao.observeAll(),
+        crossRefDao.observeAll(),
+        seriesDao.observeAll(),
+        audioFileDao.observeAll(),
         query
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -97,11 +112,22 @@ class LibraryViewModel @Inject constructor(
         val progressList = values[3] as List<ListeningProgressEntity>
         val favorites = values[4] as List<FavoriteBook>
         val collections = values[5] as List<CollectionEntity>
-        val q = values[6] as LibraryQuery
+        val crossRefs = values[6] as List<com.example.audiobook.data.room.entity.CollectionBookCrossRef>
+        val series = values[7] as List<SeriesEntity>
+        val audioFiles = values[8] as List<AudioFileEntity>
+        val q = values[9] as LibraryQuery
         val authorName = { id: UUID -> authors.firstOrNull { it.id == id }?.name ?: "" }
         val favoriteIds = favorites.mapTo(HashSet()) { it.bookId }
         val progressById = progressList.associateBy { it.editionId }
         val byAddedIndex = books.withIndex().associate { it.value.id to it.index }
+        val seriesById = series.associateBy { it.id }
+        val seriesColor = { id: UUID? -> series.firstOrNull { it.id == id }?.colorTheme }
+        val booksWithMissingFile = editions
+            .filter { e -> audioFiles.any { it.editionId == e.id && it.fileStatus == FileStatus.MISSING } }
+            .mapTo(HashSet()) { it.bookId }
+        val collectionMembers = collections.associate { collection ->
+            collection.name to crossRefs.filter { it.collectionId == collection.id }.mapTo(HashSet()) { it.bookId }
+        }
 
         val mapped = books.map { book ->
             val edition = effectiveEdition(book, editions, progressById)
@@ -112,7 +138,10 @@ class LibraryViewModel @Inject constructor(
             LibraryBookUi(
                 book = book,
                 authorName = authorName(book.authorId),
-                seriesName = null,
+                seriesName = book.seriesId?.let { seriesById[it]?.name },
+                coverColor = parseColor(seriesColor(book.seriesId) ?: authors.firstOrNull { it.id == book.authorId }?.colorTheme, 0xFF356B68),
+                effectiveEditionId = edition?.id,
+                hasMissingFile = book.id in booksWithMissingFile,
                 progressFraction = fraction,
                 remainingMs = (total - played).coerceAtLeast(0L),
                 isFavorite = book.id in favoriteIds,
@@ -120,7 +149,13 @@ class LibraryViewModel @Inject constructor(
                 lastPlayedAt = progress?.lastPlayedAt ?: 0L
             )
         }
-        LibraryUiState(books = mapped, query = q, collections = collections)
+        LibraryUiState(
+            books = mapped,
+            query = q,
+            collections = collections,
+            collectionMembers = collectionMembers,
+            seriesNames = series.mapNotNull { it.name }.distinct().sorted()
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     fun updateQuery(query: LibraryQuery) {
@@ -143,6 +178,10 @@ class LibraryViewModel @Inject constructor(
         this.query.value = this.query.value.copy(genre = genre)
     }
 
+    fun updateSeries(series: String?) {
+        this.query.value = this.query.value.copy(series = series)
+    }
+
     fun toggleFavorite(bookId: UUID) {
         viewModelScope.launch {
             if (favoriteBookDao.getById(bookId) != null) favoriteBookDao.delete(bookId)
@@ -155,7 +194,7 @@ class LibraryViewModel @Inject constructor(
             val trimmed = name.trim()
             if (trimmed.isBlank()) return@launch
             if (collectionDao.getByName(trimmed) == null) {
-                collectionDao.insert(CollectionEntity(name = trimmed, icon = null, remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY))
+                collectionDao.insert(CollectionEntity(name = trimmed, icon = null, remoteId = null, syncStatus = com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY))
             }
         }
     }
@@ -164,7 +203,7 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             val collection = collectionDao.getByName(collectionName) ?: return@launch
             if (crossRefDao.getById(collection.id, bookId) == null) {
-                crossRefDao.insert(CollectionBookCrossRef(collection.id, bookId))
+                crossRefDao.insert(com.example.audiobook.data.room.entity.CollectionBookCrossRef(collection.id, bookId))
             }
         }
     }
@@ -178,5 +217,10 @@ class LibraryViewModel @Inject constructor(
         book.defaultEditionId?.let { id -> return bookEditions.firstOrNull { it.id == id } }
         return bookEditions.firstOrNull { progress[it.id]?.status == ProgressStatus.IN_PROGRESS }
             ?: bookEditions.firstOrNull()
+    }
+
+    private fun parseColor(hex: String?, default: Long): Long {
+        if (hex == null) return default
+        return runCatching { Color.parseColor(hex).toLong() }.getOrDefault(default)
     }
 }
