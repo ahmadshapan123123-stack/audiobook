@@ -196,14 +196,14 @@ fun PlayerScreen(
                 )
             }
 
-            // ---- MAIN: غلاف كبير + عنوان/مؤلف كتعليق + الفصل الحالي — مع لوحات الأدوات تنبثق فوقها ----
+            // ---- MAIN: غلاف متوسط + عنوان/مؤلف/فصل موزّعون بعرض الشاشة الكامل (حافة إلى حافة) ----
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = AppSpacing.md),
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -211,36 +211,15 @@ fun PlayerScreen(
                         title = title,
                         gradient = gradient,
                         fg = fg,
-                        modifier = Modifier.fillMaxWidth(0.52f).aspectRatio(0.72f)
+                        modifier = Modifier.fillMaxWidth(0.56f).aspectRatio(0.72f)
                     )
                     Spacer(Modifier.height(AppSpacing.lg))
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.displaySmall,
-                        color = fg.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(AppSpacing.xxs))
-                    Text(
-                        text = playerUi.authorName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = fg.soft,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(AppSpacing.md))
-                    Text(
-                        text = currentChapterLabel(renderedTimeline, playback.positionMs),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = fg.accent,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                    PlayerMetadataSpread(
+                        title = title,
+                        authorName = playerUi.authorName,
+                        timeline = renderedTimeline,
+                        positionMs = playback.positionMs,
+                        fg = fg
                     )
                 }
 
@@ -351,14 +330,62 @@ private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongR
     return start..end
 }
 
+/** أساس المعلومات: توزيع بعرض الشاشة الكامل — العنوان والمؤلف والفصل من الحافة إلى الحافة. */
 @Composable
-private fun currentChapterLabel(state: PlayerTimelineState, positionMs: Long): String {
-    val numbered = PlayerTimelineEditor.numbered(state)
-    val chapter = numbered.lastOrNull { it.chapter.startPositionMs <= positionMs }
-    val title = chapter?.chapter?.title?.take(40)?.trim().orEmpty()
-    if (chapter == null || title.isEmpty()) return stringResource(R.string.player_cover_placeholder)
-    val num = stringResource(R.string.player_chapter_num, chapter.number)
-    return "$num · $title"
+private fun PlayerMetadataSpread(
+    title: String,
+    authorName: String,
+    timeline: PlayerTimelineState,
+    positionMs: Long,
+    fg: PlayerFg
+) {
+    val numbered = remember(timeline) { PlayerTimelineEditor.numbered(timeline) }
+    val chapter = remember(timeline, positionMs) { numbered.lastOrNull { it.chapter.startPositionMs <= positionMs } }
+    val chapterTitle = chapter?.chapter?.title?.take(40)?.trim().orEmpty()
+    val hasChapter = chapter != null && chapterTitle.isNotEmpty()
+    val chapterNum = chapter?.number ?: 0
+
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = fg.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = authorName,
+            style = MaterialTheme.typography.bodyLarge,
+            color = fg.soft,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(AppSpacing.xs))
+        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp)) {
+            Text(
+                text = if (hasChapter) stringResource(R.string.player_chapter_num, chapterNum) + " · " + chapterTitle
+                else stringResource(R.string.player_cover_placeholder),
+                style = MaterialTheme.typography.labelLarge,
+                color = fg.accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.CenterStart).padding(end = AppSpacing.lg)
+            )
+            if (hasChapter) {
+                Text(
+                    text = stringResource(R.string.player_chapter_count, chapterNum, numbered.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = fg.soft,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
+            }
+        }
+    }
 }
 
 /** غلاف المشغّل: الحرف الأول فوق تدرج الكتاب — بلا شطاحات ولا توهجات، بسكون بسيط. */

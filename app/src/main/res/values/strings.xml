@@ -177,6 +177,7 @@
     <string name="player_edit_chapters">تحرير الفصول</string>
     <string name="player_edit_done">إنهاء التحرير</string>
     <string name="player_chapter_num">الفصل %1$d</string>
+    <string name="player_chapter_count">%1$d من %2$d</string>
 <string name="player_speed">السرعة %1$s</string>
     <string name="player_speed_short">السرعة</string>
     <string name="player_sleep_short">النوم</string>
