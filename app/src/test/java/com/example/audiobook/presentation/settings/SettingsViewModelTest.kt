@@ -2,6 +2,7 @@ package com.example.audiobook.presentation.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import org.junit.After
@@ -38,7 +39,7 @@ class SettingsViewModelTest {
 
     @Test
     fun chosenLevelThroughViewModelIsPersistedAcrossNewInstance() {
-        val viewModel = SettingsViewModel(ScanSettings(context))
+        val viewModel = SettingsViewModel(ScanSettings(context), AppSettings(context))
 
         viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE)
 
@@ -48,7 +49,7 @@ class SettingsViewModelTest {
 
     @Test
     fun selectingEveryLevelAppliesPersistentlyThroughScanSettings() {
-        val viewModel = SettingsViewModel(ScanSettings(context))
+        val viewModel = SettingsViewModel(ScanSettings(context), AppSettings(context))
 
         for (level in IntelligenceLevel.entries) {
             viewModel.selectIntelligenceLevel(level)

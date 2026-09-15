@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.settings.SettingsScreen
@@ -53,7 +54,7 @@ class SettingsScreenAccessibilityTest {
         scanSettings = ScanSettings(context)
         scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
         themePreference = ThemePreference(context)
-        viewModel = SettingsViewModel(scanSettings)
+        viewModel = SettingsViewModel(scanSettings, AppSettings(context))
     }
 
     @After

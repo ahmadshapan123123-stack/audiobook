@@ -1,30 +1,30 @@
 package com.example.audiobook.presentation.settings
 
 import androidx.lifecycle.ViewModel
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.flow.StateFlow
+import javax.inject.Inject
 
-/**
- * [R8-النقطة 3] قراءة/كتابة مستوى الذكاء عبر [ScanSettings] الحقيقي (SharedPreferences —
- * نفس نمط ThemePreference) داخل كائن [ScanSettings] واحد Singleton يحفظ القيمة في
- * `scan` SharedPreferences فيُعاد قراءتها بعد كل إعادة تشغيل، وليس قيمة افتراضية ثابتة.
- *
- * القرار ينتقل فورًا إلى [ScanSettings.intelligenceLevel] فيقرأه [ScanRoot]
- * فعلًا أثناء الفحص التالي (انظر اختبار التكامل `SettingsChoiceDrivesScanIntegrationTest`).
- */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val scanSettings: ScanSettings
+    private val scanSettings: ScanSettings,
+    private val appSettings: AppSettings
 ) : ViewModel() {
 
-    /** المستوى الحالي كتدفق مباشر من [ScanSettings] (مصدر الحقيقة). */
     val intelligenceLevel: StateFlow<IntelligenceLevel> = scanSettings.intelligenceLevel
+    val defaultSpeed: StateFlow<Float> = appSettings.defaultSpeed
+    val autoResume: StateFlow<Boolean> = appSettings.autoResume
+    val defaultSleepMinutes: StateFlow<Int> = appSettings.defaultSleepMinutes
+    val autoExtendSleep: StateFlow<Boolean> = appSettings.autoExtendSleep
+    val notificationsEnabled: StateFlow<Boolean> = appSettings.notificationsEnabled
 
-    /** اختيار مستوى؛ يُكتب فورًا وبشكل دائم عبر [ScanSettings.setIntelligenceLevel]. */
-    fun selectIntelligenceLevel(level: IntelligenceLevel) {
-        scanSettings.setIntelligenceLevel(level)
-    }
+    fun selectIntelligenceLevel(level: IntelligenceLevel) = scanSettings.setIntelligenceLevel(level)
+    fun setDefaultSpeed(speed: Float) = appSettings.setDefaultSpeed(speed)
+    fun setAutoResume(enabled: Boolean) = appSettings.setAutoResume(enabled)
+    fun setDefaultSleepMinutes(minutes: Int) = appSettings.setDefaultSleepMinutes(minutes)
+    fun setAutoExtendSleep(enabled: Boolean) = appSettings.setAutoExtendSleep(enabled)
+    fun setNotificationsEnabled(enabled: Boolean) = appSettings.setNotificationsEnabled(enabled)
 }

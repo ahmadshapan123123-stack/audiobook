@@ -8,6 +8,7 @@ import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.ScanFile
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.EditionEntity
@@ -54,7 +55,7 @@ class SettingsChoiceDrivesScanIntegrationTest {
         source = FakeFileSource()
         reader = CountingMetadataReader()
         scanSettings = ScanSettings(context)
-        viewModel = SettingsViewModel(scanSettings)
+        viewModel = SettingsViewModel(scanSettings, AppSettings(context))
         scanRoot = ScanRoot(database, source, reader, scanSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)
         runBlocking { database.libraryRootDao().insert(root) }

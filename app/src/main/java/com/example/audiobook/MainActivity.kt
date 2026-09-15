@@ -398,7 +398,9 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     themePreference = themePreference,
-                    showBack = false
+                    showBack = false,
+                    onOpenLibraryRoots = { navController.navigate("library_roots") },
+                    onScanNow = { lifecycleScope.launch { scanScheduler.scheduleBackgroundScans() } }
                 )
             }
             composable("saved") {

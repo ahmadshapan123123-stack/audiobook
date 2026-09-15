@@ -253,4 +253,37 @@
     <string name="saved_empty_notes_hint">أضف ملاحظة أثناء الاستماع لتحتفظ بقِصاصة من اللحظة.</string>
     <string name="saved_empty_chapters_title">الفصول التي تنشئها ستجدها هنا.</string>
     <string name="saved_empty_chapters_hint">قسّم كتابك إلى فصول من المشغّل لتنتقل بين أجزائه بسهولة.</string>
+
+    <!-- ===== الإعدادات ===== -->
+    <string name="settings_appearance">المظهر</string>
+    <string name="settings_theme_light">فاتح</string>
+    <string name="settings_theme_light_desc">خلفية فاتحة مريحة للنهار.</string>
+    <string name="settings_theme_dark">داكن</string>
+    <string name="settings_theme_dark_desc">خلفية داكنة لطيفة على العينين ليلًا.</string>
+    <string name="settings_theme_amoled">أموليد</string>
+    <string name="settings_theme_amoled_desc">أسود كامل للشاشات OLED.</string>
+    <string name="settings_playback">التشغيل</string>
+    <string name="settings_default_speed">السرعة الافتراضية</string>
+    <string name="settings_auto_resume">استئناف تلقائي</string>
+    <string name="settings_auto_resume_desc">فتح التطبيق يستأنف آخر كتاب كنت تستمع إليه.</string>
+    <string name="settings_sleep_timer">مؤقت النوم</string>
+    <string name="settings_default_duration">المدة الافتراضية</string>
+    <string name="settings_auto_extend">تمديد تلقائي</string>
+    <string name="settings_auto_extend_desc">تمديد 15 دقيقة تلقائيًا عند تفاعل المستخدم.</string>
+    <string name="settings_intelligence">مستوى الذكاء في كشف الإصدارات</string>
+    <string name="settings_intelligence_desc">كيف يتصرف الفحص عند رؤية مجلدين قد يكونان لنفس الكتاب.</string>
+    <string name="settings_library">المكتبة</string>
+    <string name="settings_library_roots">مجلدات المكتبة</string>
+    <string name="settings_library_roots_desc">إدارة مصادر الفحص وتحديد الأولويات.</string>
+    <string name="settings_scan_now">فحص المكتبة الآن</string>
+    <string name="settings_scan_now_desc">تشغيل فحص الخلفية لكل المجلدات الممكّنة.</string>
+    <string name="settings_notifications">الإشعارات</string>
+    <string name="settings_notifications_desc">إشعارات التشغيل في الخلفية ومؤقت النوم.</string>
+    <string name="settings_storage">البيانات والتخزين</string>
+    <string name="settings_clear_cache">مسح ذاكرة التخزين المؤقت</string>
+    <string name="settings_clear_cache_desc">حذف الصور المخزّنة مؤقتًا دون حذف الكتب أو الإعدادات.</string>
+    <string name="settings_clear_cache_confirm">تم المسح</string>
+    <string name="settings_about">عن أثير</string>
+    <string name="settings_version">الإصدار %1$s</string>
+    <string name="settings_about_desc">مكتبة صوتية عربية ذكية مفتوحة المصدر.</string>
 </resources>
