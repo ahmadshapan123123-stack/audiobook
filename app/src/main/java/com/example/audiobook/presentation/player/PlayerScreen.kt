@@ -46,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -488,18 +489,27 @@ private fun PlayerTimelineBar(
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            AppProgressSlider(
-                value = positionFraction,
-                onValueChange = { fraction ->
-                    val target = visibleWindow.first + (fraction * (visibleWindow.last - visibleWindow.first)).toLong()
-                    onScrub(target)
-                },
-                onValueChangeFinished = {}
-            )
+            Box(modifier = Modifier.fillMaxWidth().minTouchTarget()) {
+                Slider(
+                    value = positionFraction,
+                    onValueChange = { fraction ->
+                        val target = visibleWindow.first + (fraction * (visibleWindow.last - visibleWindow.first)).toLong()
+                        onScrub(target)
+                    },
+                    onValueChangeFinished = {},
+                    colors = SliderDefaults.colors(
+                        thumbColor = fg.accent,
+                        activeTrackColor = fg.accent,
+                        inactiveTrackColor = fg.ink.copy(alpha = 0.18f),
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent
+                    )
+                )
+            }
             if (!editing) {
-                TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = false)
+                TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = false, fg = fg)
             } else {
-                TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = true)
+                TimelineMarksCanvas(state = state, visibleWindow = visibleWindow, editing = true, fg = fg)
                 EditingChapterDragLayer(
                     state = state,
                     visibleWindow = visibleWindow,
@@ -548,7 +558,7 @@ private fun TimelineModeToggle(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) fg.ink.copy(alpha = 0.16f) else Color.Transparent)
+                    .background(if (isSelected) Cosmic.Teal.copy(alpha = 0.30f) else Color.Transparent)
                     .minTouchTarget()
                     .clickable(onClick = { onSelect(level) })
                     .padding(horizontal = AppSpacing.sm, vertical = 6.dp),
@@ -570,7 +580,8 @@ private fun TimelineModeToggle(
 private fun TimelineMarksCanvas(
     state: PlayerTimelineState,
     visibleWindow: LongRange,
-    editing: Boolean
+    editing: Boolean,
+    fg: PlayerFg
 ) {
     Canvas(modifier = Modifier.fillMaxWidth().height(34.dp)) {
         val trackY = size.height * 0.45f
@@ -582,7 +593,7 @@ private fun TimelineMarksCanvas(
             if (f in 0f..1f) {
                 val x = drawableStart + f * span
                 drawLine(
-                    color = if (editing) Cosmic.StardustAmber.copy(alpha = 0.95f) else Cosmic.MoonIce.copy(alpha = 0.80f),
+                    color = if (editing) Cosmic.StardustAmber.copy(alpha = 0.95f) else fg.accent.copy(alpha = 0.55f),
                     start = Offset(x, trackY - 7.dp.toPx()),
                     end = Offset(x, trackY + 7.dp.toPx()),
                     strokeWidth = 2.dp.toPx()
@@ -679,7 +690,7 @@ private fun PlayerConsole(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 GlassIconButton(onClick = onPrevious, contentDescription = stringResource(R.string.player_previous)) {
-                    Icon(Icons.Outlined.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
+                    Icon(Icons.Outlined.SkipPrevious, null, tint = Cosmic.MoonIce, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
                 TransportPill(text = stringResource(R.string.player_skip_back), onClick = onSkipBack)
                 Box(
@@ -687,7 +698,7 @@ private fun PlayerConsole(
                         .size(64.dp)
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(Cosmic.Teal, Cosmic.TealBright)))
-                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        .border(2.dp, Cosmic.TealBright.copy(alpha = 0.55f), CircleShape)
                         .clickable(onClick = onTogglePlay),
                     contentAlignment = Alignment.Center
                 ) {
@@ -700,7 +711,7 @@ private fun PlayerConsole(
                 }
                 TransportPill(text = stringResource(R.string.player_skip_forward), onClick = onSkipForward)
                 GlassIconButton(onClick = onNext, contentDescription = stringResource(R.string.player_next)) {
-                    Icon(Icons.Outlined.SkipNext, null, tint = Color.White, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
+                    Icon(Icons.Outlined.SkipNext, null, tint = Cosmic.MoonIce, modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
                 }
             }
             Row(
@@ -729,6 +740,7 @@ private fun GlassIconButton(onClick: () -> Unit, contentDescription: String?, co
             .size(48.dp)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Cosmic.MoonIce.copy(alpha = 0.20f), CircleShape)
             .clickable(onClick = onClick)
             .semantics { if (cd != null) this.contentDescription = cd },
         contentAlignment = Alignment.Center
@@ -744,11 +756,12 @@ private fun TransportPill(text: String, onClick: () -> Unit) {
             .minTouchTarget()
             .clip(RoundedCornerShape(50))
             .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Cosmic.MoonIce.copy(alpha = 0.18f), RoundedCornerShape(50))
             .clickable(onClick = onClick)
             .padding(horizontal = AppSpacing.md, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White)
+        Text(text, style = MaterialTheme.typography.labelLarge, color = Cosmic.MoonIce)
     }
 }
 
@@ -766,7 +779,11 @@ private fun GlassPillButton(
         modifier = modifier
             .clip(shape)
             .background(if (selected) Cosmic.Teal.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, if (selected) Color.White.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.12f), shape)
+            .border(
+                1.dp,
+                if (selected) Cosmic.TealBright.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.12f),
+                shape
+            )
             .clickable(onClick = onClick)
             .minTouchTarget()
             .padding(horizontal = if (compact) AppSpacing.xs else AppSpacing.md, vertical = 6.dp),
@@ -774,7 +791,11 @@ private fun GlassPillButton(
         verticalAlignment = Alignment.CenterVertically
     ) {
         icon()
-        Text(label, style = MaterialTheme.typography.labelLarge, color = Color.White)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) Color.White else Cosmic.MoonIce.copy(alpha = 0.92f)
+        )
     }
 }
 
