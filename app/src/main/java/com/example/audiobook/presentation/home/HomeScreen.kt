@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -51,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.AppSpacing
+import com.example.audiobook.presentation.theme.Cosmic
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
@@ -139,13 +142,18 @@ fun HomeScreen(
                 }
 
                 if (state.series.isNotEmpty()) {
-                    HomeSectionTitle(stringResource(R.string.home_series_title))
-                    LazyRow(
-                        contentPadding = PaddingValues(end = AppSpacing.lg),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    HomeSectionPanel(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.padding(top = AppSpacing.sm)
                     ) {
-                        items(state.series, key = { it.seriesId }) { s ->
-                            HomeSeriesCard(s, onClick = { onOpenSeries(s.seriesId) })
+                        HomeSectionTitle(stringResource(R.string.home_series_title))
+                        LazyRow(
+                            contentPadding = PaddingValues(end = AppSpacing.md),
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                        ) {
+                            items(state.series, key = { it.seriesId }) { s ->
+                                HomeSeriesCard(s, onClick = { onOpenSeries(s.seriesId) })
+                            }
                         }
                     }
                 }
@@ -222,6 +230,23 @@ internal fun HomeSectionTitle(
 }
 
 @Composable
+internal fun HomeSectionPanel(
+    color: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppSpacing.md))
+            .background(color)
+            .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs)
+    ) {
+        content()
+    }
+}
+
+@Composable
 internal fun HomeBookCard(
     book: HomeBook,
     modifier: Modifier = Modifier,
@@ -279,12 +304,30 @@ internal fun ContinueFeaturedCard(
     onOpenPlayer: (UUID) -> Unit
 ) {
     val book = cont.book
-    Card(
-        onClick = { onOpenCard(book.bookId) },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(AppSpacing.md),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppSpacing.md))
+            .clickable(onClick = { onOpenCard(book.bookId) })
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Cosmic.StardustViolet.copy(alpha = 0.24f),
+                            Cosmic.Teal.copy(alpha = 0.14f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
         Row(
             modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
@@ -373,11 +416,12 @@ internal fun ContinueFeaturedCard(
 
 @Composable
 internal fun HomeListenNowCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val onPrimary = MaterialTheme.colorScheme.onPrimaryContainer
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(AppSpacing.md),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(AppSpacing.md),
@@ -388,13 +432,13 @@ internal fun HomeListenNowCard(onClick: () -> Unit, modifier: Modifier = Modifie
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(AppSpacing.sm))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    .background(onPrimary.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Headphones,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = onPrimary,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -405,16 +449,20 @@ internal fun HomeListenNowCard(onClick: () -> Unit, modifier: Modifier = Modifie
                 Text(
                     text = stringResource(R.string.listen_now_title),
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = onPrimary
                 )
                 Text(
                     text = stringResource(R.string.listen_now_subtitle),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = onPrimary.copy(alpha = 0.8f)
                 )
             }
             TextButton(onClick = onClick, modifier = Modifier.minTouchTarget()) {
-                Text(stringResource(R.string.listen_now_open), style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = stringResource(R.string.listen_now_open),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = onPrimary
+                )
             }
         }
     }
