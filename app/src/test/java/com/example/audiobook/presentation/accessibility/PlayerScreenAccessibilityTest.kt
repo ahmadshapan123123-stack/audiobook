@@ -172,7 +172,7 @@ class PlayerScreenAccessibilityTest {
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("-15 ثا").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription("تشغيل").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
@@ -193,7 +193,12 @@ class PlayerScreenAccessibilityTest {
         composeRule.onAllNodes(hasText("الفصل 1", substring = true)).assertCountEquals(1)
     }
 
-@Test
+    private fun openChaptersPanel() {
+        composeRule.onNodeWithContentDescription("الفصل الحالي").performClick()
+        composeRule.waitForIdle()
+    }
+
+    @Test
     fun playerControlsMeetMin48DpTouchTarget() {
         showPlayer()
 
@@ -202,18 +207,16 @@ class PlayerScreenAccessibilityTest {
         assertCurrentChapterVisible()
 
         assertIconTouchTarget("السابق")
-        assertMinTouchTarget("-15 ثا")
+        assertIconTouchTarget("-15 ثا")
         assertIconTouchTarget("تشغيل")
-        assertMinTouchTarget("+15 ثا")
+        assertIconTouchTarget("+15 ثا")
         assertIconTouchTarget("التالي")
 
         assertMinTouchTarget("حفظ اللحظة")
         assertMinTouchTarget("السرعة")
         assertMinTouchTarget("النوم")
-        assertMinTouchTarget("الفصول")
 
-        composeRule.onNodeWithText("الفصول").performClick()
-        composeRule.waitForIdle()
+        openChaptersPanel()
         assertMinTouchTarget("نظرة عامة")
         assertMinTouchTarget("تكبير ٣٠–٦٠ دقيقة")
         assertMinTouchTarget("فصل جديد")
@@ -247,7 +250,20 @@ class PlayerScreenAccessibilityTest {
         val playButton = composeRule.onNodeWithContentDescription("تشغيل").getUnclippedBoundsInRoot()
         assertTrue("play button يعبر الحافة اليمنى", playButton.right <= rootWidth)
 
-        val toolLabel = composeRule.onNodeWithText("الفصول").getUnclippedBoundsInRoot()
+        val toolLabel = composeRule.onNodeWithText("السرعة").getUnclippedBoundsInRoot()
         assertTrue("tool label يعبر الحافة اليمنى", toolLabel.right <= rootWidth)
+    }
+
+    @Test
+    fun saveMomentOpensIntentChooser() {
+        showPlayer()
+
+        composeRule.onNodeWithText("حفظ اللحظة").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onAllNodesWithText("حفظ اللحظة").assertCountEquals(2)
+        composeRule.onNodeWithText("إشارة").assertIsDisplayed()
+        composeRule.onNodeWithText("ملاحظة").assertIsDisplayed()
+        composeRule.onNodeWithText("فصل").assertIsDisplayed()
     }
 }

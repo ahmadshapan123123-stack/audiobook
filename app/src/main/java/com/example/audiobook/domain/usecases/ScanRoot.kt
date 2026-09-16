@@ -5,7 +5,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.localfilesystem.AudioMetadataReader
-import com.example.audiobook.data.localfilesystem.EmbeddedChapter
+
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.ScanFile
 import com.example.audiobook.data.preferences.ScanSettings
@@ -111,6 +111,8 @@ class ScanRoot @Inject constructor(
                 onCreated = { report.editionsCreated++ },
                 onRefined = { report.editionsRefined++ }
             )
+            val importedChapters = mutableListOf<ChapterEntity>()
+            var runningOffsetMs = 0L
             folder.files.forEach { file ->
                 val uri = file.scanFile.uri.toString()
                 val entity = AudioFileEntity(
@@ -129,11 +131,25 @@ class ScanRoot @Inject constructor(
                 )
                 if (file.previous == null) {
                     database.audioFileDao().insert(entity)
-                    if (file.freshMetadata != null) importChaptersIfPresent(edition.id, file.freshMetadata.embeddedChapters, report)
+                    file.freshMetadata?.embeddedChapters?.forEachIndexed { index, chapter ->
+                        importedChapters += ChapterEntity(
+                            editionId = edition.id,
+                            title = chapter.title,
+                            startPositionMs = runningOffsetMs + chapter.startPositionMs,
+                            orderIndex = index,
+                            createdFrom = ChapterCreatedFrom.IMPORTED
+                        )
+                    }
                 } else {
                     if (file.previous.fileStatus == FileStatus.MISSING) report.restored++
                     database.audioFileDao().update(entity)
                 }
+                runningOffsetMs += file.durationMs
+            }
+            if (importedChapters.isNotEmpty()) {
+                database.chapterDao().deleteImported(edition.id)
+                importedChapters.forEach { database.chapterDao().insert(it) }
+                report.importedChapters += importedChapters.size
             }
             result[folderPath] = signals
         }
@@ -282,15 +298,6 @@ class ScanRoot @Inject constructor(
                 database.audioFileDao().update(it.copy(fileStatus = FileStatus.MISSING))
                 report.missingMarked++
             }
-        }
-    }
-
-    private suspend fun importChaptersIfPresent(editionId: UUID, chapters: List<EmbeddedChapter>, report: MutableScanReport) {
-        if (chapters.isEmpty()) return
-        database.chapterDao().deleteImported(editionId)
-        chapters.forEachIndexed { index, chapter ->
-            database.chapterDao().insert(ChapterEntity(editionId = editionId, title = chapter.title, startPositionMs = chapter.startPositionMs, orderIndex = index, createdFrom = ChapterCreatedFrom.IMPORTED))
-            report.importedChapters++
         }
     }
 

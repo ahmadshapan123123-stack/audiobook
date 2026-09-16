@@ -23,6 +23,7 @@ data class PlayerEditionUiState(
     val book: BookEntity? = null,
     val title: String = "",
     val authorName: String = "",
+    val seriesName: String = "",
     val seriesColor: Color? = null,
     val authorColor: Color? = null,
     val coverColor: Color? = null
@@ -60,12 +61,14 @@ class PlayerViewModel @Inject constructor(
         seriesDao.observeAll()
     ) { edition, book, authors, series ->
         val author = book?.let { authors.firstOrNull { a -> a.id == it.authorId } }
-        val seriesColor = book?.seriesId?.let { sid -> series.firstOrNull { it.id == sid }?.colorTheme }
+        val series = book?.seriesId?.let { sid -> series.firstOrNull { it.id == sid } }
+        val seriesColor = series?.colorTheme
         PlayerEditionUiState(
             edition = edition,
             book = book,
             title = book?.title ?: "",
             authorName = author?.name ?: "",
+            seriesName = series?.name ?: "",
             seriesColor = parseColor(seriesColor),
             authorColor = parseColor(author?.colorTheme),
             coverColor = book?.let { deterministicColor(it.id) }
