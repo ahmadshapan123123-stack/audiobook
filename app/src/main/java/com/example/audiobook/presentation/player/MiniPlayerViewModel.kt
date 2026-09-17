@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.audiobook.data.room.dao.AuthorDao
 import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.EditionDao
+import com.example.audiobook.data.room.dao.SeriesDao
 import com.example.audiobook.presentation.theme.Cosmic
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
@@ -23,16 +24,24 @@ import kotlinx.coroutines.flow.stateIn
 data class MiniPlayerUiState(
     val title: String = "",
     val authorName: String = "",
+    val seriesColor: Color? = null,
+    val authorColor: Color? = null,
     val coverColor: Color = Cosmic.Teal,
     val isLoading: Boolean = true
 )
+
+private fun parseColor(hex: String?): Color? {
+    if (hex == null) return null
+    return try { Color(android.graphics.Color.parseColor(hex)) } catch (e: IllegalArgumentException) { null }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MiniPlayerViewModel @Inject constructor(
     private val editionDao: EditionDao,
     private val bookDao: BookDao,
-    private val authorDao: AuthorDao
+    private val authorDao: AuthorDao,
+    private val seriesDao: SeriesDao
 ) : ViewModel() {
 
     private val _editionId = MutableStateFlow<UUID?>(null)
@@ -46,13 +55,17 @@ class MiniPlayerViewModel @Inject constructor(
             combine(
                 editionDao.observeById(id),
                 bookDao.observeAll(),
-                authorDao.observeAll()
-            ) { edition, books, authors ->
+                authorDao.observeAll(),
+                seriesDao.observeAll()
+            ) { edition, books, authors, series ->
                 val book = edition?.let { e -> books.firstOrNull { b -> b.id == e.bookId } }
                 val author = book?.let { b -> authors.firstOrNull { a -> a.id == b.authorId } }
+                val bookSeries = book?.seriesId?.let { sid -> series.firstOrNull { it.id == sid } }
                 MiniPlayerUiState(
                     title = book?.title ?: "",
                     authorName = author?.name ?: "",
+                    seriesColor = parseColor(bookSeries?.colorTheme),
+                    authorColor = parseColor(author?.colorTheme),
                     coverColor = book?.let { deterministicColor(it.id) } ?: Cosmic.Teal,
                     isLoading = false
                 )

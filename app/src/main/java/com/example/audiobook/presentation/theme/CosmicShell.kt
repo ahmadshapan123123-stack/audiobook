@@ -75,19 +75,27 @@ fun cosmicGlassStyle(
 )
 
 /**
- * ستايل شريط التنقل السفلي والمشغّل المصغّر: زجاج بتقنية Haze حقيقية.
- * القيم الملزمة من "أثير الكوني" (القسم 3): Blur 20-25dp، Tint #0B0F24 بشفافية 0.40-0.55،
- * وحافة علوية بيضاء 1dp بشفافية 10-15% تُرسم على المكوّن مباشرة.
+ * ستايل شريط التنقل السفلي والمشغّل المصغّر: زجاج بتقنية Haze حقيقية،
+ * سطحه يتبع الوضع اللوني (فاتح/داكن/AMOLED) مع عمق حبري خافت.
  */
 @Composable
 fun navBarGlassStyle(
-    tintAlpha: Float = 0.35f,
+    mode: AppThemeMode = AppThemeMode.DARK,
+    tintAlpha: Float? = null,
     blurRadius: Dp = 30.dp
-): HazeStyle = HazeStyle(
-    backgroundColor = Cosmic.NavBarBlue.copy(alpha = 0.90f),
-    tint = HazeTint(Cosmic.InkBottom.copy(alpha = tintAlpha)),
-    blurRadius = blurRadius
-)
+): HazeStyle {
+    val surface = when (mode) {
+        AppThemeMode.LIGHT -> Color(0xFFF2EEE3)
+        AppThemeMode.DARK -> Color(0xFF0B0F24)
+        AppThemeMode.AMOLED -> Color(0xFF06070C)
+    }
+    val tintAlphaResolved = tintAlpha ?: if (mode == AppThemeMode.LIGHT) 0.20f else 0.35f
+    return HazeStyle(
+        backgroundColor = surface.copy(alpha = 0.90f),
+        tint = HazeTint(Cosmic.InkBottom.copy(alpha = tintAlphaResolved)),
+        blurRadius = blurRadius
+    )
+}
 
 /**
  * ستايل زجاجي للوجو الدائري في شريط التنقل السفلي: نفس منطق الزجاج لكن بشفافية أقل

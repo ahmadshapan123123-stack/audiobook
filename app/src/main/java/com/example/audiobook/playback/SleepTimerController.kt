@@ -51,7 +51,8 @@ enum class SleepTimerPhase { IDLE, RUNNING, WARNING_WINDOW, FADING_OUT, STOPPED 
 data class SleepTimerUiState(
     val phase: SleepTimerPhase = SleepTimerPhase.IDLE,
     val remainingMs: Long? = null,
-    val isExtendWindowVisible: Boolean = false
+    val isExtendWindowVisible: Boolean = false,
+    val totalDurationMs: Long? = null
 )
 
 /**
@@ -154,7 +155,7 @@ class SleepTimerController @Inject constructor(
         setPhase(SleepTimerPhase.IDLE)
     }
 
-    /** تمديد يدوي (+15/+30/+60) من الإشعار/شاشة القفل أو من النافذة داخل التطبيق. */
+    /** تمديد يدوي (+5/+10/+15/+30) من الإشعار/شاشة القفل أو من النافذة داخل التطبيق. */
     fun extendBy(minutes: Int) {
         if (minutes <= 0 || deadlineMs == 0L) return
         deadlineMs += minutes * 60_000L
@@ -162,6 +163,25 @@ class SleepTimerController @Inject constructor(
         armBeeps()
         val remaining = (deadlineMs - clock.nowMillis()).coerceAtLeast(0L)
         setPhase(if (remaining > SLEEP_WARNING_WINDOW_MS) SleepTimerPhase.RUNNING else phase)
+    }
+
+    /**
+     * إنقاص يدوي (−5/−10/−15) من النافذة داخل التطبيق أو من الإشعار/شاشة القفل.
+     * لا ينزل أبدًا تحت الصفر: إذا بلغ الصفر أو دونه انتهى المؤقت وعادت النافذة
+     * إلى الحالة الأولية مع استمرار التشغيل كالمعتاد.
+     */
+    fun decreaseBy(minutes: Int) {
+        if (minutes <= 0 || deadlineMs == 0L) return
+        val remaining = deadlineMs - clock.nowMillis()
+        val newRemaining = remaining - minutes * 60_000L
+        if (newRemaining <= 0L) {
+            cancel()
+            return
+        }
+        deadlineMs -= minutes * 60_000L
+        firedBeeps.clear()
+        armBeeps()
+        setPhase(if (newRemaining > SLEEP_WARNING_WINDOW_MS) SleepTimerPhase.RUNNING else phase)
     }
 
     /**
@@ -287,7 +307,9 @@ class SleepTimerController @Inject constructor(
         _uiState.value = SleepTimerUiState(
             phase = phase,
             remainingMs = remaining,
-            isExtendWindowVisible = phase == SleepTimerPhase.WARNING_WINDOW || phase == SleepTimerPhase.FADING_OUT
+            isExtendWindowVisible = phase == SleepTimerPhase.WARNING_WINDOW || phase == SleepTimerPhase.FADING_OUT,
+            totalDurationMs = if (deadlineMs == 0L) null
+            else (deadlineMs - timerStartedMs).coerceAtLeast(1L)
         )
     }
 }

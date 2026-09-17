@@ -32,4 +32,15 @@ class PlayerTimelineEditorTest {
         assertEquals(3, chapters.size)
         assertEquals(30 * 60_000L, chapters[1].startPositionMs)
     }
+
+    @Test
+    fun chapterStartNeversReachesEditionDuration() {
+        val first = PlayerChapter(title = "الأول", startPositionMs = 0)
+        val state = PlayerTimelineState(60_000, listOf(first))
+        val atEnd = PlayerTimelineEditor.moveChapter(state, first.id, 60_000L)
+        val added = PlayerTimelineEditor.addChapter(atEnd, 60_000L, "النهاية")
+        assertEquals(59_999L, atEnd.chapters.single().startPositionMs)
+        assertEquals(59_999L, added.chapters.first { it.title == "النهاية" }.startPositionMs)
+        assert(added.chapters.all { it.startPositionMs < state.durationMs })
+    }
 }

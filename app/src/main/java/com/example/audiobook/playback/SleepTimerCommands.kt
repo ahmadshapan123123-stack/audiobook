@@ -6,19 +6,29 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionCommands
 
 /**
- * الإجراءات المخصصة على MediaSession (+15/+30/+60 دقيقة) التي تعمل من
- * الإشعار/شاشة القفل دون فتح التطبيق. خريطة نقية قابلة للاختبار:
- * [extendMinutesFor] يحوّل SessionCommand إلى دقائق التمديد الصحيحة.
+ * الإجراءات المخصصة على MediaSession (زيادة +15/+30/+60، إنقاص −5/−10/−15، إلغاء)
+ * التي تعمل من الإشعار/شاشة القفل دون فتح التطبيق، وكلها موصولة مباشرة
+ * بـ [SleepTimerController]. خريطة نقية قابلة للاختبار:
+ * [extendMinutesFor] / [decreaseMinutesFor] / [isCancelAction] يفسّرون
+ * SessionCommand إلى الإجراء الفعلي على المؤقت.
  */
 object SleepTimerCommands {
     const val ACTION_EXTEND_15 = "com.example.audiobook.sleep.extend.15"
     const val ACTION_EXTEND_30 = "com.example.audiobook.sleep.extend.30"
     const val ACTION_EXTEND_60 = "com.example.audiobook.sleep.extend.60"
+    const val ACTION_DECREASE_5 = "com.example.audiobook.sleep.decrease.5"
+    const val ACTION_DECREASE_10 = "com.example.audiobook.sleep.decrease.10"
+    const val ACTION_DECREASE_15 = "com.example.audiobook.sleep.decrease.15"
+    const val ACTION_CANCEL = "com.example.audiobook.sleep.cancel"
 
     private val COMMANDS = listOf(
         SessionCommand(ACTION_EXTEND_15, Bundle()),
         SessionCommand(ACTION_EXTEND_30, Bundle()),
-        SessionCommand(ACTION_EXTEND_60, Bundle())
+        SessionCommand(ACTION_EXTEND_60, Bundle()),
+        SessionCommand(ACTION_DECREASE_5, Bundle()),
+        SessionCommand(ACTION_DECREASE_10, Bundle()),
+        SessionCommand(ACTION_DECREASE_15, Bundle()),
+        SessionCommand(ACTION_CANCEL, Bundle())
     )
 
     fun extendMinutesFor(action: SessionCommand): Int? = when (action.customAction) {
@@ -27,6 +37,15 @@ object SleepTimerCommands {
         ACTION_EXTEND_60 -> 60
         else -> null
     }
+
+    fun decreaseMinutesFor(action: SessionCommand): Int? = when (action.customAction) {
+        ACTION_DECREASE_5 -> 5
+        ACTION_DECREASE_10 -> 10
+        ACTION_DECREASE_15 -> 15
+        else -> null
+    }
+
+    fun isCancelAction(action: SessionCommand): Boolean = action.customAction == ACTION_CANCEL
 
     fun sessionCommands(): SessionCommands =
         SessionCommands.Builder().apply { COMMANDS.forEach { add(it) } }.build()

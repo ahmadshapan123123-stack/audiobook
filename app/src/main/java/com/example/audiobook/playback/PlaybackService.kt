@@ -53,9 +53,20 @@ class PlaybackService : MediaSessionService() {
                     args: Bundle
                 ): ListenableFuture<SessionResult> {
                     val minutes = SleepTimerCommands.extendMinutesFor(action)
-                        ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
-                    sleepTimer.extendBy(minutes)
-                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    if (minutes != null) {
+                        sleepTimer.extendBy(minutes)
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                    val decrease = SleepTimerCommands.decreaseMinutesFor(action)
+                    if (decrease != null) {
+                        sleepTimer.decreaseBy(decrease)
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                    if (SleepTimerCommands.isCancelAction(action)) {
+                        sleepTimer.cancel()
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
                 }
             })
             .setCustomLayout(SleepTimerCommands.customButtons())

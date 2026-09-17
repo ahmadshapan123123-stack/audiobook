@@ -217,12 +217,14 @@ class MainActivity : ComponentActivity() {
                             editionId = playbackState.editionId!!,
                             controller = playbackController,
                             haze = hazeState,
+                            mode = mode,
                             onClick = { navigateToPlayer(navController, playbackState.editionId!!) }
                         )
                     }
 
                     if (showBottomBar) {
                         AppBottomBar(
+                            mode = mode,
                             currentRoute = currentRoute,
                             onNavigate = { route -> navigateToTab(navController, route) },
                             onHome = { navigateToTab(navController, "home") },
@@ -238,13 +240,13 @@ class MainActivity : ComponentActivity() {
                                     spotColor = Color.Black.copy(alpha = 0.45f)
                                 )
                                 .clip(RoundedCornerShape(28.dp))
-                                .background(Cosmic.NavBarBlue.copy(alpha = 0.88f), RoundedCornerShape(28.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f), RoundedCornerShape(28.dp))
                                 .border(
                                     width = 1.dp,
-                                    color = Color.White.copy(alpha = 0.12f),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (mode == AppThemeMode.LIGHT) 0.16f else 0.12f),
                                     shape = RoundedCornerShape(28.dp)
                                 )
-                                .hazeChild(hazeState, navBarGlassStyle())
+                                .hazeChild(hazeState, navBarGlassStyle(mode))
                         )
                     }
                 }
@@ -433,6 +435,7 @@ private fun routeBase(route: String?): String? = route?.substringBefore('?')
  */
 @Composable
 private fun AppBottomBar(
+    mode: AppThemeMode,
     currentRoute: String?,
     onNavigate: (String) -> Unit,
     onHome: () -> Unit,
@@ -493,11 +496,11 @@ private fun AppBottomBar(
 private fun NavBarTab(destination: TopLevelDestination, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colorScheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
-    val contentColor = if (selected) colorScheme.onSurface else colorScheme.onSurfaceVariant
+    val contentColor = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
     Column(
         modifier = modifier
             .clip(shape)
-            .background(if (selected) colorScheme.secondaryContainer.copy(alpha = 0.30f) else Color.Transparent)
+            .background(if (selected) colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent)
             .minTouchTarget()
             .clickable(onClick = onClick)
             .padding(horizontal = AppSpacing.xxs, vertical = AppSpacing.xxs),

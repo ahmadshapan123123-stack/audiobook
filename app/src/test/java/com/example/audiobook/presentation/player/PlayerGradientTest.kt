@@ -1,6 +1,7 @@
 package com.example.audiobook.presentation.player
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.example.audiobook.presentation.theme.AppThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -27,5 +28,46 @@ class PlayerGradientTest {
         assertNotEquals(light.start, dark.start)
         assertNotEquals(dark.start, amoled.start)
         assertTrue(amoled.end == Color.Black)
+    }
+
+    @Test
+    fun lightModeKeepsDarkBookGradientUnchanged() {
+        val darkBook = Color(0xFF78350F)
+        val resolved = PlayerGradientResolver.resolve(AppThemeMode.LIGHT, darkBook, null, null)
+        assertEquals(darkBook, resolved.start)
+        assertTrue(resolved.start.luminance() <= PlayerGradientResolver.READABLE_DARK_LUMINANCE)
+    }
+
+    @Test
+    fun lightModeDarkensMidBandInstedOfWhiteWash() {
+        val midBook = Color(0xFFD97706)
+        val resolved = PlayerGradientResolver.resolve(AppThemeMode.LIGHT, midBook, null, null)
+        assertEquals(GradientSource.SERIES, resolved.source)
+        assertTrue(
+            "start must be darkened into the readable band, was ${resolved.start.luminance()}",
+            resolved.start.luminance() <= PlayerGradientResolver.READABLE_DARK_LUMINANCE + 0.002f
+        )
+        assertTrue(resolved.start.luminance() < midBook.luminance())
+        assertTrue(resolved.end.luminance() < resolved.start.luminance())
+    }
+
+    @Test
+    fun lightModeKeepsLightBookGradientUnchanged() {
+        val lightBook = Color(0xFFE8B88A)
+        val resolved = PlayerGradientResolver.resolve(AppThemeMode.LIGHT, lightBook, null, null)
+        assertEquals(lightBook, resolved.start)
+        assertTrue(resolved.start.luminance() >= PlayerGradientResolver.DARK_INK_MIN_LUMINANCE)
+    }
+
+    @Test
+    fun darkAndAmoledAreNeverNormalized() {
+        val midBook = Color(0xFFD97706)
+        val midLight = midBook.luminance()
+        assertTrue(midLight > PlayerGradientResolver.READABLE_DARK_LUMINANCE)
+        assertTrue(midLight < PlayerGradientResolver.DARK_INK_MIN_LUMINANCE)
+        for (mode in listOf(AppThemeMode.DARK, AppThemeMode.AMOLED)) {
+            val resolved = PlayerGradientResolver.resolve(mode, midBook, null, null)
+            assertEquals(midBook, resolved.start)
+        }
     }
 }

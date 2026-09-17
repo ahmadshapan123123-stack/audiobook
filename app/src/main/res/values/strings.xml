@@ -193,6 +193,10 @@
     <string name="player_sleep_active">متبقٍ %1$s</string>
     <string name="player_sleep_ending">سينتهي قريبًا</string>
     <string name="player_sleep_extend">+%1$d دقيقة</string>
+    <string name="player_sleep_increase">+%1$d</string>
+    <string name="player_sleep_decrease">−%1$d</string>
+    <string name="player_sleep_cancel_all">إلغاء المؤقت</string>
+    <string name="player_sleep_change_duration">تغيير المدة</string>
     <string name="player_mark">إضافة</string>
     <string name="player_mark_label">إشارة</string>
     <string name="player_chapters_short">الفصول</string>

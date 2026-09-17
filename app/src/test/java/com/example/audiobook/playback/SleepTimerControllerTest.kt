@@ -251,15 +251,19 @@ class SleepTimerControllerTest {
     // ---- النقطة 5: Custom Actions على MediaSession — مسجّلة وتستدعي المنطق الصحيح ----
 
     @Test
-    fun mediaSessionCustomCommandsAreRegisteredAndExtendExactMinutes() = runBlocking {
-        // الثلاثة أوامر مسجّلة في SessionCommands.
+    fun mediaSessionCustomCommandsAreRegisteredAndApplyExactChanges() = runBlocking {
+        // كل الأوامر مسجّلة في SessionCommands.
         val registered = SleepTimerCommands.sessionCommands()
         assertTrue("+15 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_EXTEND_15, Bundle())))
         assertTrue("+30 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_EXTEND_30, Bundle())))
         assertTrue("+60 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_EXTEND_60, Bundle())))
-        assertEquals(3, SleepTimerCommands.customButtons().size)
+        assertTrue("−5 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_DECREASE_5, Bundle())))
+        assertTrue("−10 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_DECREASE_10, Bundle())))
+        assertTrue("−15 مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_DECREASE_15, Bundle())))
+        assertTrue("إلغاء مسجّل", registered.commands.contains(SessionCommand(SleepTimerCommands.ACTION_CANCEL, Bundle())))
+        assertEquals("7 أزرار مخصصة", 7, SleepTimerCommands.customButtons().size)
 
-        // كل أمر يستدعي التمديد الصحيح عبر نفس المسار الذي تستخدمه PlaybackService.
+        // كل أمر تمديد يستدعي التمديد الصحيح عبر نفس المسار الذي تستخدمه PlaybackService.
         listOf(15, 30, 60).forEach { minutes ->
             val action = when (minutes) {
                 15 -> SleepTimerCommands.ACTION_EXTEND_15
@@ -280,8 +284,44 @@ class SleepTimerControllerTest {
             assertEquals("أمر $action يضيف $minutes بالضبط", before + minutes * 60_000L, controller.uiState.value.remainingMs!!)
         }
 
-        // أمر غير معروف لا يمدد.
+        // كل أمر إنقاص يستدعي الإنقاص الصحيح.
+        listOf(5, 10, 15).forEach { minutes ->
+            val action = when (minutes) {
+                5 -> SleepTimerCommands.ACTION_DECREASE_5
+                10 -> SleepTimerCommands.ACTION_DECREASE_10
+                else -> SleepTimerCommands.ACTION_DECREASE_15
+            }
+            val mapped = SleepTimerCommands.decreaseMinutesFor(SessionCommand(action, Bundle()))
+            assertEquals(minutes, mapped)
+
+            val clock = FakeClock()
+            val playback = FakePlayback(clock = clock)
+            val controller = controller(clock, playback)
+            controller.start(45)
+            clock.set(FAKE_EPOCH + 5 * 60_000L)
+            controller.tickClock()
+            val before = controller.uiState.value.remainingMs!!
+            controller.decreaseBy(mapped!!)
+            assertEquals("أمر $action ينقص $minutes بالضبط", before - minutes * 60_000L, controller.uiState.value.remainingMs!!)
+        }
+
+        // الإنقاص تحت الصفر لا ينزل أبدًا تحت الصفر: المؤقت ينتهي ويعود للحالة الأولية.
+        val clock = FakeClock()
+        val playback = FakePlayback(clock = clock)
+        val controller = controller(clock, playback)
+        controller.start(15)
+        clock.set(FAKE_EPOCH + 12 * 60_000L)
+        controller.tickClock()
+        controller.decreaseBy(100)
+        assertEquals(SleepTimerPhase.IDLE, controller.uiState.value.phase)
+        assertEquals(null, controller.uiState.value.remainingMs)
+
+        // أمر الإلغاء معروف.
+        assertTrue(SleepTimerCommands.isCancelAction(SessionCommand(SleepTimerCommands.ACTION_CANCEL, Bundle())))
+
+        // أمر غير معروف لا يمدد ولا ينقص.
         assertNull(SleepTimerCommands.extendMinutesFor(SessionCommand("com.example.unknown", Bundle())))
+        assertNull(SleepTimerCommands.decreaseMinutesFor(SessionCommand("com.example.unknown", Bundle())))
     }
 
     /**

@@ -8,6 +8,11 @@ data class PlayerGradient(val start: Color, val end: Color, val source: Gradient
 enum class GradientSource { SERIES, AUTHOR, COVER, DEFAULT }
 
 object PlayerGradientResolver {
+    /** سطوع بداية التدرج الذي يضمن بياض readable (نسبة تباين ≈4.5:1 فأعلى) — هدف تعتيم الوضع الفاتح. */
+    internal const val READABLE_DARK_LUMINANCE = 0.18f
+    /** أي بداية تدرج أعلى من هذا تكتفي بحبر داكن (تباين ≥4.5:1) ولا تُعتَّم في الوضع الفاتح. */
+    internal const val DARK_INK_MIN_LUMINANCE = 0.29f
+
     fun resolve(
         mode: AppThemeMode,
         seriesColor: Color?,
@@ -15,12 +20,12 @@ object PlayerGradientResolver {
         coverColor: Color?
     ): PlayerGradient {
         val base = when {
-            seriesColor != null -> PlayerGradient(seriesColor, seriesColor.shift(0.18f), GradientSource.SERIES)
-            authorColor != null -> PlayerGradient(authorColor, authorColor.shift(0.18f), GradientSource.AUTHOR)
-            coverColor != null -> PlayerGradient(coverColor, coverColor.shift(0.18f), GradientSource.COVER)
+            seriesColor != null -> PlayerGradient(seriesColor, seriesColor.deepenedEnd(), GradientSource.SERIES)
+            authorColor != null -> PlayerGradient(authorColor, authorColor.deepenedEnd(), GradientSource.AUTHOR)
+            coverColor != null -> PlayerGradient(coverColor, coverColor.deepenedEnd(), GradientSource.COVER)
             else -> defaultGradient(mode)
         }
-        return base.contrastFor(mode)
+        return base.adjustForLightReadability(mode)
     }
 
     private fun defaultGradient(mode: AppThemeMode) = when (mode) {
@@ -29,17 +34,25 @@ object PlayerGradientResolver {
         AppThemeMode.AMOLED -> PlayerGradient(Color(0xFF123B38), Color.Black, GradientSource.DEFAULT)
     }
 
-    private fun PlayerGradient.contrastFor(mode: AppThemeMode): PlayerGradient {
-        val minimum = if (mode == AppThemeMode.LIGHT) 0.22f else 0.1f
-        return if (start.luminance() < minimum && end.luminance() < minimum && mode == AppThemeMode.LIGHT) {
-            PlayerGradient(start.shift(0.25f), end.shift(0.25f), source)
-        } else this
+    private fun PlayerGradient.adjustForLightReadability(mode: AppThemeMode): PlayerGradient {
+        if (mode != AppThemeMode.LIGHT) return this
+        val startLum = start.luminance()
+        if (startLum <= READABLE_DARK_LUMINANCE || startLum >= DARK_INK_MIN_LUMINANCE) return this
+        val factor = READABLE_DARK_LUMINANCE / startLum
+        return PlayerGradient(start.scaledToLuminanceFactor(factor), end.scaledToLuminanceFactor(factor), source)
     }
 
-    private fun Color.shift(amount: Float): Color = Color(
-        red = (red + amount).coerceIn(0f, 1f),
-        green = (green + amount).coerceIn(0f, 1f),
-        blue = (blue + amount).coerceIn(0f, 1f),
+    private fun Color.scaledToLuminanceFactor(factor: Float) = copy(
+        red = (red * factor).coerceIn(0f, 1f),
+        green = (green * factor).coerceIn(0f, 1f),
+        blue = (blue * factor).coerceIn(0f, 1f),
+        alpha = alpha
+    )
+
+    private fun Color.deepenedEnd(): Color = Color(
+        red = (red * 0.55f).coerceIn(0f, 1f),
+        green = (green * 0.55f).coerceIn(0f, 1f),
+        blue = (blue * 0.55f).coerceIn(0f, 1f),
         alpha = alpha
     )
 }

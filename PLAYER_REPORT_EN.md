@@ -96,3 +96,63 @@ The player is a full-bleed, edge-to-edge "glass console" band. Everything below 
 | 5 | نقاط الفصول لا تُسحب | Editing drag layer keyed on `isRtl` only + `rememberUpdatedState` + captured `draggedId`; slider hidden in edit mode | Boundary dragged 10:00 → 15:58, rows + chip updated |
 
 Commit-to-be: follows `7f59b0d` (`Player: calm premium listening session`); pushed to `https://github.com/ahmadshapan123123-stack/audiobook.git`.
+
+---
+
+## H. Update — Sleep Timer Active State (sec 6.5) + popup contrast + chapter drag
+
+### H1. Sleep popup: single `+15` bug (6.5, I-DO-NOT a)
+The active-state button `Row` had no `Modifier.weight(1f)`, so every `GlassPillButton` expanded to full width and only `+15 دقيقة` fit on screen (`+30`/`إلغاء` were pushed off-canvas). Fixed — the three-button row now weights all pills equally.
+
+### H2. Active-state redesign (6.5)
+`PlayerScreen.kt` `PlayerControlPanel.SLEEP` branch now exposes, while a timer runs:
+- **Remaining time countdown** — `متبقٍ MM:SS`, `titleMedium`, `popupInk` (full opacity).
+- **Progress bar** — `LinearProgressIndicator` (accent fill, `popupOutline` track) fed from a new `SleepTimerUiState.totalDurationMs`.
+- **Increase `+5/10/15/30`** — accent-filled pills (`primary = true`), equal weights.
+- **Decrease `−5/10/15`** — outline pills; `decreaseBy()` never goes below zero: at ≤0 the timer ends and the popup returns to the initial picker.
+- **`تغيير المدة`** — returns to the 15/30/45/60/مخصص picker; picking a duration replaces the current timer.
+- **`إلغاء المؤقت`** — accent pill; full cancel, playback continues, popup → initial.
+- All controls re-use `GlassPillButton` (`minTouchTarget()` ≥48dp), same glass/ink treatment as the rest of the popup, deck stays vertically centered. Initial↔active transitions are instant (no washed-out intermediate frame).
+
+### H3. Controller (6.5-J)
+`SleepTimerController.decreaseBy(minutes)` added alongside `extendBy`/`cancel`/`start` — single timer system, no bypass. `totalDurationMs = deadline - startedAt` published with every state (progress stays sane after extend).
+
+### H4. Lock screen (6.5-G)
+`SleepTimerCommands` registers 7 custom MediaSession commands: `+15/+30/+60`, `−5/−10/−15`, and `cancel`. `PlaybackService.onCustomCommand` routes each to the real controller (`extendBy`/`decreaseBy`/`cancel`). Unit test asserts all commands are registered and that each maps to the exact controller change (incl. below-zero → IDLE).
+
+### H5. Popup contrast
+- `popupOutline` strengthened for a **visible** border: light `0x28000000`→`0x4D000000`, dark `0x32FFFFFF`→`0x4DFFFFFF` (no more faded borders).
+- Verified the Sleep popup already shared the Speed popup's roles (`popupInk`/`popupSoft`/`popupSurface`) — the only real gap was the layout bug in H1 + flat unselected pills, both fixed. Sleep title sampled at max RGB 237,242,255 (=`popupInk`) and `+15` text 171,180,206 (=`popupSoft`) at full opacity.
+
+### H6. Chapter handle immediate drag
+`ChapterHandleStrip` swapped `detectDragGesturesAfterLongPress` → `detectDragGestures`, so chapter handles respond to **immediate** dragging (no long-press required); per-handle 48dp box retains its own gesture; `mkWindowTime`/`mkFraction` edition-global math unchanged.
+
+**Clean on-device persistence proof** (fresh `pm clear`, "ما وراء الطبيعة", full 45:00 edition — defects wiped, chapters re-seeded uniformly every 5:37):
+- Baseline chapters: 00:00, 05:37, 11:15, 16:52, 22:30, 28:07, 33:45, 39:22.
+- A single handle swipe moved `الفصل السادس` from **28:07 → 12:23** (strip x 419 → 745).
+- Chapters deck immediately showed the re-ordered list (`الفصل 4 · الفصل السادس — من 12:23`).
+- Room DB confirm: `startPositionMs` 1687500 → 743645 with `orderIndex` re-sorted 0–7 (`MarksCoordinator.updateChapter` → `chapterDao().update` + `reorderChapters`).
+- Force-stop + relaunch + reopen: the moved chapter is **still at 12:23** — moves persist across app restarts.
+- The Zone B slider seek (independent gesture) still works via the same `input swipe`; dragging a handle does not scrub.
+
+### H7. On-device regression (Pixel 7 API 36, LIGHT theme)
+Active sleep popup renders all controls:
+```
+متبقٍ 14:57
+[+5][+10][+15][+30]
+[−5][−10][−15]
+[تغيير المدة][إلغاء المؤقت]
+```
+- `+15` → 14:57 → 29:41 ✓
+- `−10` → 29:41 → 19:23 ✓
+- `−15` twice → timer ends, popup returns to duration picker ✓
+- `تغيير المدة` → picker returned while timer still active (title `متبقٍ`); picking `30` replaced 15→30 min ✓
+- `إلغاء المؤقت` → popup → initial picker; utility label reverts to `النوم` (no countdown) ✓
+- Utility label `النوم · 14:57` shown while running ✓
+- Speed, Save-Moment, More decks, and the always-white popup icons unaffected; decks still vertically centered.
+
+### H8. Tests
+`:app:testDebugUnitTest` green (141 tests) including updated `SleepTimerControllerTest.mediaSessionCustomCommandsAreRegisteredAndApplyExactChanges` (7 registered commands) and `PlayerForegroundTest` (new `popupOutline` tokens). `:app:assembleDebug` green; APK installed & regression-run on device.
+
+### H9. Chapter start clamping (resolved)
+A DB pull after restart showed one chapter (`الفصل الثاني`) with `startPositionMs == edition duration` (2700000 ms). Auditing every writer of chapter positions (Seeder `i*step`; `ScanRoot` imported-chapter sync; `MarksCoordinator` drag edit) shows no production path silently repositions an arbitrary chapter — the value is explainable as a stray demo-instance artifact of earlier session drags on a stale emulator build. The audit DID surface a real reachable edge in current code: `PlayerTimelineEditor.moveChapter`/`addChapter` clamped to `state.durationMs`, so dragging or inserting a marker at the exact end wrote a degenerate zero-length chapter at start=duration. **Fix:** chapter starts now clamp to `maxChapterStartMs = durationMs - 1` (new `PlayerTimelineEditor.maxChapterStartMs`), covered by `PlayerTimelineEditorTest.chapterStartNeversReachesEditionDuration`. The dragged chapter (`الفصل السادس` → 12:23) remains persisted across restart regardless.

@@ -29,10 +29,10 @@ object PlayerTimelineEditor {
         state.chapters.sortedBy { it.startPositionMs }.mapIndexed { index, chapter -> NumberedChapter(index + 1, chapter) }
 
     fun addChapter(state: PlayerTimelineState, positionMs: Long, title: String = "فصل جديد"): PlayerTimelineState =
-        state.copy(chapters = (state.chapters + PlayerChapter(title = title, startPositionMs = positionMs.coerceIn(0L, state.durationMs))).sortedBy { it.startPositionMs })
+        state.copy(chapters = (state.chapters + PlayerChapter(title = title, startPositionMs = positionMs.coerceIn(0L, maxChapterStartMs(state.durationMs)))).sortedBy { it.startPositionMs })
 
     fun moveChapter(state: PlayerTimelineState, chapterId: UUID, newPositionMs: Long): PlayerTimelineState =
-        state.copy(chapters = state.chapters.map { chapter -> if (chapter.id == chapterId) chapter.copy(startPositionMs = newPositionMs.coerceIn(0L, state.durationMs)) else chapter }.sortedBy { it.startPositionMs })
+        state.copy(chapters = state.chapters.map { chapter -> if (chapter.id == chapterId) chapter.copy(startPositionMs = newPositionMs.coerceIn(0L, maxChapterStartMs(state.durationMs))) else chapter }.sortedBy { it.startPositionMs })
 
     fun markNow(state: PlayerTimelineState, positionMs: Long): PlayerTimelineState =
         state.copy(markCaptureMs = positionMs.coerceIn(0L, state.durationMs))
@@ -47,6 +47,8 @@ object PlayerTimelineEditor {
         state.copy(level = TimelineLevel.ZOOMED, zoomCenterMs = centerMs.coerceIn(0L, state.durationMs))
 
     fun overview(state: PlayerTimelineState): PlayerTimelineState = state.copy(level = TimelineLevel.OVERVIEW)
+
+    fun maxChapterStartMs(durationMs: Long): Long = (durationMs - 1).coerceAtLeast(0L)
 
     fun adaptiveAutoSplit(durationMs: Long, targetChapterMinutes: Int = 30): List<PlayerChapter> {
         if (durationMs <= 0L) return emptyList()
