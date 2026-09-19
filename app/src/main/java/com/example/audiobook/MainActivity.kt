@@ -40,6 +40,10 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +53,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +91,8 @@ import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.dao.StatisticsDao
 import com.example.audiobook.domain.usecases.RecoverInterruptedSession
 import com.example.audiobook.notifications.AtherNotificationCenter
+import com.example.audiobook.presentation.common.BookManagerViewModel
+import com.example.audiobook.presentation.common.BookOptionsSheet
 import com.example.audiobook.presentation.home.HomeScreen
 import com.example.audiobook.presentation.home.ListeningHubScreen
 import com.example.audiobook.presentation.library.LibraryScreen
@@ -93,6 +100,8 @@ import com.example.audiobook.presentation.bookdetails.BookDetailsScreen
 import com.example.audiobook.presentation.entitydetails.SeriesDetailsScreen
 import com.example.audiobook.presentation.entitydetails.AuthorDetailsScreen
 import com.example.audiobook.presentation.entitydetails.CollectionDetailsScreen
+import com.example.audiobook.presentation.entitydetails.AuthorsListScreen
+import com.example.audiobook.presentation.entitydetails.SeriesListScreen
 import com.example.audiobook.presentation.player.PlayerScreen
 import com.example.audiobook.presentation.player.MiniPlayer
 import com.example.audiobook.presentation.bookmarks.BookmarksScreen
@@ -120,14 +129,28 @@ import com.example.audiobook.presentation.libraryroots.LibraryRootsViewModel
 import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.domain.usecases.DatabaseSeeder
+import com.example.audiobook.domain.usecases.LibraryManagement
 import com.example.audiobook.domain.usecases.MarksCoordinator
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import dev.chrisbanes.haze.rememberHazeState
 import javax.inject.Inject
+import java.util.UUID
 import kotlinx.coroutines.launch
+
+/** يُستخدم فقط في إصدارات التصحيح لحقن بيانات التجربة؛ يبقى بلا مراجع في الإنتاج
+ *  فيشذّبه R8 (BuildConfig.DEBUG ثابتة الكذب). */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SeederEntryPoint {
+    val databaseSeeder: DatabaseSeeder
+}
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -137,7 +160,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var playbackController: PlaybackController
     @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var marksCoordinator: MarksCoordinator
-    @Inject lateinit var databaseSeeder: DatabaseSeeder
+    @Inject lateinit var libraryManagement: LibraryManagement
     @Inject lateinit var appSettings: AppSettings
     @Inject lateinit var statisticsDao: StatisticsDao
     @Inject lateinit var notificationCenter: AtherNotificationCenter
@@ -159,19 +182,27 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { recoverInterruptedSession() }
         lifecycleScope.launch { scanScheduler.scheduleStartupScans() }
         reminderScheduler.syncWithSettings()
+        // حقن بيانات التجربة على إصدارات التصحيح فقط (مرجعها ثابت الكذب في الإنتاج فتُشذَّب).
+        // وفي إصدار الإنتاج تُنظَّف أي بقايا كتب تجريبية قادمة من ترقية بعد استخدام نسخة تصحيح.
         if (BuildConfig.DEBUG) {
-            lifecycleScope.launch { databaseSeeder() }
+            lifecycleScope.launch {
+                EntryPointAccessors.fromApplication(this@MainActivity, SeederEntryPoint::class.java)
+                    .databaseSeeder()
+            }
+        } else {
+            lifecycleScope.launch { libraryManagement.clearDemoData() }
         }
         setContent {
             val navController = rememberNavController()
             var showSplash by remember { mutableStateOf(true) }
             val hasOnboarded by appSettings.hasCompletedOnboarding.collectAsStateWithLifecycle()
             val mode by appSettings.themeMode.collectAsStateWithLifecycle()
+            val logoMode by appSettings.logoColor.collectAsStateWithLifecycle()
             AudiobookTheme(mode) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         if (showSplash) {
-                            AtherSplash(onFinished = { showSplash = false })
+                            AtherSplash(onFinished = { showSplash = false }, themeMode = mode, logoColorMode = logoMode)
                         } else if (!hasOnboarded) {
                             OnboardingScreen(
                                 onFinish = { appSettings.setHasCompletedOnboarding(true) },
@@ -199,8 +230,20 @@ class MainActivity : ComponentActivity() {
         val isPlayerRoute = currentRouteBase?.startsWith("player") == true
         val showBottomBar = !isPlayerRoute
 
+        // خيارات الكتاب (القائمة المنسدلة) + السناكبار مع زر التراجع.
+        val bookManager: BookManagerViewModel = hiltViewModel()
+        val snackbarHostState = remember { SnackbarHostState() }
+
         val playbackState by playbackController.state.collectAsStateWithLifecycle()
-        val showMiniPlayer = playbackState.editionId != null && !isPlayerRoute
+        // المشغّل المصغّر: يُخفى عند إيقاف التشغيل بسحب للأسفل (فيُستعاد عند فتح المشغّل الكامل).
+        var miniPlayerDismissedEdition by remember { mutableStateOf<UUID?>(null) }
+        LaunchedEffect(isPlayerRoute) {
+            if (isPlayerRoute) miniPlayerDismissedEdition = null
+        }
+        val showMiniPlayer =
+            playbackState.editionId != null && !isPlayerRoute && playbackState.editionId != miniPlayerDismissedEdition
+        val snackScope = rememberCoroutineScope()
+        val miniStoppedMessage = stringResource(R.string.mini_player_stopped)
 
         // الإزاحة السفلية للواجهة (المشغّل المصغّر + الفجوة + الشريط + هامش النظام).
         // مصدر واحد للحقيقة يُمرَّر عبر LocalBottomBarInset؛ يتحدّث تلقائيًا عند
@@ -239,6 +282,24 @@ class MainActivity : ComponentActivity() {
             controller.isAppearanceLightNavigationBars = mode == AppThemeMode.LIGHT
         }
 
+        // سناكبار عمليات إدارة الكتاب: يظهر عند كل عملية، مع زر "تراجع" للعمليات القابلة للعكس.
+        val message by bookManager.messages.collectAsStateWithLifecycle()
+        val snackbarText = message?.let { stringResource(it.messageRes, *it.args.toTypedArray()) }
+        val undoLabel = stringResource(R.string.btn_undo)
+        LaunchedEffect(message) {
+            val msg = message ?: return@LaunchedEffect
+            val text = snackbarText ?: return@LaunchedEffect
+            val result = snackbarHostState.showSnackbar(
+                message = text,
+                actionLabel = if (msg.undolable) undoLabel else null,
+                duration = SnackbarDuration.Short
+            )
+            bookManager.consumeMessage()
+            if (result == SnackbarResult.ActionPerformed) {
+                bookManager.undo()
+            }
+        }
+
         CompositionLocalProvider(
             LocalCosmicHeader provides header,
             LocalBottomBarInset provides bottomBarInset
@@ -250,7 +311,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
                 ) {
-                    appNavHost(navController, mode)
+                    appNavHost(navController, mode) { bookId -> bookManager.openOptions(bookId) }
                 }
 
                 // لا شريط علوي مثبّت في "الرئيسية" ولا في "الإعدادات": عنوان الإعدادات
@@ -285,7 +346,15 @@ class MainActivity : ComponentActivity() {
                             controller = playbackController,
                             haze = hazeState,
                             mode = mode,
-                            onClick = { navigateToPlayer(navController, playbackState.editionId!!) }
+                            onClick = {
+                                miniPlayerDismissedEdition = null
+                                navigateToPlayer(navController, playbackState.editionId!!)
+                            },
+                            onStopPlayback = {
+                                playbackController.pause()
+                                miniPlayerDismissedEdition = playbackState.editionId
+                                snackScope.launch { snackbarHostState.showSnackbar(miniStoppedMessage) }
+                            }
                         )
                     }
 
@@ -317,12 +386,27 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                // ورقة خيارات الكتاب: تعلو كل المحتوى والشريط السفلي عندما تكون مفتوحة.
+                BookOptionsSheet(
+                    viewModel = bookManager,
+                    haze = hazeState,
+                    onOpenBookDetails = { bookId -> navController.navigate("book_details/$bookId") }
+                )
+
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = bottomBarInset + AppSpacing.md)
+                        .padding(horizontal = AppSpacing.md)
+                )
             }
         }
     }
 
     @Composable
-    private fun appNavHost(navController: NavHostController, mode: AppThemeMode) {
+    private fun appNavHost(navController: NavHostController, mode: AppThemeMode, onBookOptions: (UUID) -> Unit) {
         NavHost(
             navController = navController,
             startDestination = "home"
@@ -335,8 +419,11 @@ class MainActivity : ComponentActivity() {
                     onOpenHistory = { navController.navigate("history") },
                     onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") },
                     onOpenAuthor = { authorId -> navController.navigate("author_details/$authorId") },
+                    onOpenSeriesList = { navController.navigate("series_list") },
+                    onOpenAuthorsList = { navController.navigate("authors_list") },
                     onOpenCollection = { collectionId -> navController.navigate("collection_details/$collectionId") },
-                    onOpenListenNow = { navController.navigate("listen_now") }
+                    onOpenListenNow = { navController.navigate("listen_now") },
+                    onBookOptions = onBookOptions
                 )
             }
             composable("listen_now") {
@@ -349,7 +436,8 @@ class MainActivity : ComponentActivity() {
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
                     onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") },
                     onOpenLibrarySection = { section -> navController.navigate("library?section=$section") },
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onBookOptions = onBookOptions
                 )
             }
             composable(
@@ -368,7 +456,8 @@ class MainActivity : ComponentActivity() {
                     onHistory = { navController.navigate("history") },
                     onReviewMatches = { navController.navigate("review_matches") },
                     reviewBadgeCount = reviewState.summary.suspectCases,
-                    onSettings = { navController.navigate("settings") }
+                    onSettings = { navController.navigate("settings") },
+                    onBookOptions = onBookOptions
                 )
             }
             composable(
@@ -395,7 +484,8 @@ class MainActivity : ComponentActivity() {
                 SeriesDetailsScreen(
                     onBack = { navController.popBackStack() },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
-                    onAuthorSelected = { authorId -> navController.navigate("author_details/$authorId") }
+                    onAuthorSelected = { authorId -> navController.navigate("author_details/$authorId") },
+                    onBookOptions = onBookOptions
                 )
             }
             composable(
@@ -405,7 +495,20 @@ class MainActivity : ComponentActivity() {
                 AuthorDetailsScreen(
                     onBack = { navController.popBackStack() },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
-                    onSeriesSelected = { seriesId -> navController.navigate("series_details/$seriesId") }
+                    onSeriesSelected = { seriesId -> navController.navigate("series_details/$seriesId") },
+                    onBookOptions = onBookOptions
+                )
+            }
+            composable("authors_list") {
+                AuthorsListScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAuthor = { authorId -> navController.navigate("author_details/$authorId") }
+                )
+            }
+            composable("series_list") {
+                SeriesListScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") }
                 )
             }
             composable(
@@ -414,7 +517,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 CollectionDetailsScreen(
                     onBack = { navController.popBackStack() },
-                    onBookSelected = { bookId -> navController.navigate("book_details/$bookId") }
+                    onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
+                    onBookOptions = onBookOptions
                 )
             }
             composable(
@@ -473,8 +577,7 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     showBack = false,
-                    onOpenLibraryRoots = { navController.navigate("library_roots") },
-                    onScanNow = { lifecycleScope.launch { scanScheduler.scheduleBackgroundScans() } }
+                    onOpenLibraryRoots = { navController.navigate("library_roots") }
                 )
             }
             composable("saved") {
@@ -482,7 +585,8 @@ class MainActivity : ComponentActivity() {
                     onBack = { navController.popBackStack() },
                     onOpenPlayer = { editionId, startMs ->
                         navController.navigate("player/$editionId?startMs=$startMs")
-                    }
+                    },
+                    onBookOptions = onBookOptions
                 )
             }
         }

@@ -36,6 +36,7 @@ import java.util.UUID
 fun CollectionDetailsScreen(
     onBack: () -> Unit,
     onBookSelected: (UUID) -> Unit,
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: CollectionDetailsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -110,7 +111,7 @@ fun CollectionDetailsScreen(
                 Text(stringResource(R.string.entity_no_books), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 state.books.forEach { row ->
-                    EntityBookRowItem(row = row, onClick = { onBookSelected(row.bookId) })
+                    EntityBookRowItem(row = row, onClick = { onBookSelected(row.bookId) }, onBookOptions = { onBookOptions(row.bookId) })
                 }
             }
         }

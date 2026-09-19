@@ -7,7 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -45,6 +48,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -55,6 +59,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,7 +81,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
+import com.example.audiobook.presentation.common.BookManagerViewModel
+import com.example.audiobook.presentation.common.ConfirmDeleteDialog
+import com.example.audiobook.presentation.common.MoveBookDialog
+import com.example.audiobook.presentation.common.MoveBookTab
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
@@ -95,6 +105,15 @@ private enum class LibrarySection(val labelRes: Int) {
 
 private enum class LibraryLayout { GRID, LIST }
 
+/** عمليّة جماعية قيد التأكيد في مكتبة وضع التحديد المتعدد. */
+private sealed interface BulkOp {
+    data class Delete(val count: Int) : BulkOp
+    data class MoveAuthor(val authorId: UUID, val count: Int, val name: String) : BulkOp
+    data class MoveSeries(val seriesId: UUID?, val count: Int, val name: String) : BulkOp
+    data class AddCollection(val collectionId: UUID, val count: Int, val name: String) : BulkOp
+    data class Favorite(val count: Int) : BulkOp
+}
+
 @Composable
 fun LibraryScreen(
     onBookSelected: (UUID) -> Unit,
@@ -106,6 +125,7 @@ fun LibraryScreen(
     onReviewMatches: () -> Unit = {},
     reviewBadgeCount: Int = 0,
     onSettings: () -> Unit = {},
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -122,6 +142,31 @@ fun LibraryScreen(
     var showMenu by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
     val gridCollapsed = gridState.firstVisibleItemIndex > 0
+
+    // ── التحديد المتعدد ──
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<UUID>>(emptySet()) }
+    var movePickerTab by remember { mutableStateOf<MoveBookTab?>(null) }
+    var pendingBulkOp by remember { mutableStateOf<BulkOp?>(null) }
+
+    val exitSelection: () -> Unit = {
+        selectionMode = false
+        selectedIds = emptySet()
+    }
+    val onCardClicked: (UUID) -> Unit = { id ->
+        if (selectionMode) {
+            selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+        } else {
+            onBookSelected(id)
+        }
+    }
+    val onCardLongPress: (UUID) -> Unit = { id ->
+        if (selectionMode) {
+            selectedIds = selectedIds + id
+        } else {
+            onBookOptions(id)
+        }
+    }
 
     val filteredBooks = uiState.filtered
     val sectionBooks = when (selectedSection) {
@@ -145,52 +190,85 @@ fun LibraryScreen(
             verticalAlignment = Alignment.Top
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                AnimatedVisibility(
-                    visible = !gridCollapsed,
-                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
-                ) {
-                    Column {
-                        CosmicScreenHeader(
-                            title = stringResource(R.string.library_title),
-                            subtitle = stringResource(R.string.library_subtitle),
-                            collapsed = false,
-                            compact = gridCollapsed
-                        )
-                        Spacer(Modifier.height(AppSpacing.xs))
+                if (selectionMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            pluralStringResource(R.plurals.book_count, uiState.books.size, uiState.books.size),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            stringResource(R.string.bulk_selection_count, selectedIds.size),
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.weight(1f)
                         )
+                        TextButton(
+                            onClick = {
+                                selectedIds = if (selectedIds.size == sectionBooks.size) {
+                                    emptySet()
+                                } else {
+                                    sectionBooks.map { it.book.id }.toSet()
+                                }
+                            },
+                            modifier = Modifier.minTouchTarget()
+                        ) {
+                            Text(stringResource(R.string.bulk_select_toggle))
+                        }
+                    }
+                } else {
+                    AnimatedVisibility(
+                        visible = !gridCollapsed,
+                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                    ) {
+                        Column {
+                            CosmicScreenHeader(
+                                title = stringResource(R.string.library_title),
+                                subtitle = stringResource(R.string.library_subtitle),
+                                collapsed = false,
+                                compact = gridCollapsed
+                            )
+                            Spacer(Modifier.height(AppSpacing.xs))
+                            Text(
+                                pluralStringResource(R.plurals.book_count, uiState.books.size, uiState.books.size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_menu_history)) },
-                        onClick = { showMenu = false; onHistory() },
-                        modifier = Modifier.minTouchTarget()
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_menu_statistics)) },
-                        onClick = { showMenu = false; onStatistics() },
-                        modifier = Modifier.minTouchTarget()
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(if (reviewBadgeCount > 0) R.string.library_menu_review_count else R.string.library_menu_review, reviewBadgeCount)) },
-                        onClick = { showMenu = false; onReviewMatches() },
-                        modifier = Modifier.minTouchTarget()
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_menu_roots)) },
-                        onClick = { showMenu = false; onManageRoots() },
-                        modifier = Modifier.minTouchTarget()
-                    )
+                if (selectionMode) {
+                    IconButton(onClick = exitSelection, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.bulk_close_selection))
+                    }
+                } else {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_selection_title)) },
+                            onClick = { showMenu = false; selectionMode = true; selectedIds = emptySet() },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_menu_history)) },
+                            onClick = { showMenu = false; onHistory() },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_menu_statistics)) },
+                            onClick = { showMenu = false; onStatistics() },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (reviewBadgeCount > 0) R.string.library_menu_review_count else R.string.library_menu_review, reviewBadgeCount)) },
+                            onClick = { showMenu = false; onReviewMatches() },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_menu_roots)) },
+                            onClick = { showMenu = false; onManageRoots() },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                    }
                 }
             }
         }
@@ -303,14 +381,110 @@ fun LibraryScreen(
                 }
             } else {
                 items(sectionBooks, key = { it.book.id }) { book ->
+                    val isSelected = book.book.id in selectedIds
                     if (layout == LibraryLayout.GRID) {
-                        BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
+                        BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onCardLongPress(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
                     } else {
-                        BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onBookSelected(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) })
+                        BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onCardLongPress(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
                     }
                 }
             }
         }
+        if (selectionMode) {
+        AnimatedVisibility(visible = selectedIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .clip(RoundedCornerShape(AppSpacing.md))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))
+                    .padding(vertical = AppSpacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { pendingBulkOp = BulkOp.Delete(selectedIds.size) }, modifier = Modifier.minTouchTarget()) {
+                    Text(stringResource(R.string.bulk_action_delete), color = MaterialTheme.colorScheme.error)
+                }
+                AssistChip(onClick = { movePickerTab = MoveBookTab.AUTHOR }, label = { Text(stringResource(R.string.bulk_action_move_author)) }, modifier = Modifier.minTouchTarget())
+                AssistChip(onClick = { movePickerTab = MoveBookTab.SERIES }, label = { Text(stringResource(R.string.bulk_action_move_series)) }, modifier = Modifier.minTouchTarget())
+                AssistChip(onClick = { movePickerTab = MoveBookTab.COLLECTION }, label = { Text(stringResource(R.string.bulk_action_add_collection)) }, modifier = Modifier.minTouchTarget())
+                AssistChip(onClick = { pendingBulkOp = BulkOp.Favorite(selectedIds.size) }, label = { Text(stringResource(R.string.bulk_action_favorite)) }, modifier = Modifier.minTouchTarget())
+            }
+        }
+        }
+    }
+    if (selectionMode) {
+        val manager: BookManagerViewModel = hiltViewModel()
+        val catalog by manager.catalog.collectAsStateWithLifecycle()
+        val noSeriesLabel = stringResource(R.string.move_book_no_series)
+        movePickerTab?.let { tab ->
+        MoveBookDialog(
+            catalog = catalog,
+            initialTab = tab,
+            onSelectAuthor = { id ->
+                val name = catalog.authors.firstOrNull { it.id == id }?.name.orEmpty()
+                movePickerTab = null
+                pendingBulkOp = BulkOp.MoveAuthor(id, selectedIds.size, name)
+            },
+            onCreateAuthor = { name ->
+                movePickerTab = null
+                manager.bulkCreateAuthorAndMove(selectedIds.toList(), name)
+                exitSelection()
+            },
+            onSelectSeries = { id ->
+                val name = id?.let { sid -> catalog.series.firstOrNull { it.id == sid }?.name }.orEmpty()
+                movePickerTab = null
+                pendingBulkOp = BulkOp.MoveSeries(id, selectedIds.size, name.ifBlank { noSeriesLabel })
+            },
+            onCreateSeries = { name ->
+                movePickerTab = null
+                manager.bulkCreateSeriesAndMove(selectedIds.toList(), name)
+                exitSelection()
+            },
+            onSelectCollection = { id ->
+                val name = catalog.collections.firstOrNull { it.id == id }?.name.orEmpty()
+                movePickerTab = null
+                pendingBulkOp = BulkOp.AddCollection(id, selectedIds.size, name)
+            },
+            onCreateCollection = { name ->
+                movePickerTab = null
+                manager.bulkCreateCollectionAndAdd(selectedIds.toList(), name)
+                exitSelection()
+            },
+            onDismiss = { movePickerTab = null }
+        )
+    }
+    val confirmMessage = pendingBulkOp?.let { op ->
+        when (op) {
+            is BulkOp.Delete -> stringResource(R.string.bulk_action_confirm_delete, op.count)
+            is BulkOp.MoveAuthor -> stringResource(R.string.bulk_action_confirm_move_author, op.count, op.name)
+            is BulkOp.MoveSeries -> stringResource(R.string.bulk_action_confirm_move_series, op.count, op.name)
+            is BulkOp.AddCollection -> stringResource(R.string.bulk_action_confirm_add_collection, op.count, op.name)
+            is BulkOp.Favorite -> stringResource(R.string.bulk_action_confirm_favorite, op.count)
+        }
+    }
+    if (confirmMessage != null) {
+        ConfirmDeleteDialog(
+            title = stringResource(R.string.bulk_selection_title),
+            message = confirmMessage,
+            confirmText = stringResource(R.string.btn_confirm),
+            onConfirm = {
+                val op = pendingBulkOp
+                val ids = selectedIds.toList()
+                when (op) {
+                    is BulkOp.Delete -> manager.bulkDelete(ids)
+                    is BulkOp.MoveAuthor -> manager.bulkMoveToAuthor(ids, op.authorId)
+                    is BulkOp.MoveSeries -> manager.bulkMoveToSeries(ids, op.seriesId)
+                    is BulkOp.AddCollection -> manager.bulkAddToCollection(op.collectionId, ids)
+                    is BulkOp.Favorite -> manager.bulkSetFavorite(ids, true)
+                    null -> {}
+                }
+                pendingBulkOp = null
+                exitSelection()
+            },
+            onDismiss = { pendingBulkOp = null }
+        )
+    }
     }
     if (showCollectionDialog) {
         AlertDialog(
@@ -378,18 +552,36 @@ private fun EmptyState(searching: Boolean, emptyLibrary: Boolean, onClearSearch:
 }
 
 @Composable
-private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit) {
+private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit, onBookOptions: () -> Unit = {}, selectionMode: Boolean = false, selected: Boolean = false) {
     Column(
-        modifier = Modifier.fillMaxWidth().minTouchTarget().clickable(onClick = onBookSelected).padding(AppSpacing.xxs),
+        modifier = Modifier.fillMaxWidth().minTouchTarget().combinedClickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onBookSelected,
+            onLongClick = onBookOptions
+        ).padding(AppSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
-        AtherCoverBlock(
-            title = book.book.title,
-            coverColor = Color(book.coverColor.toInt()),
-            modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
-            showMissingBadge = book.hasMissingFile,
-            missingFileDescription = stringResource(R.string.missing_file)
-        )
+        Box {
+            AtherCoverBlock(
+                title = book.book.title,
+                coverColor = Color(book.coverColor.toInt()),
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
+                showMissingBadge = book.hasMissingFile,
+                missingFileDescription = stringResource(R.string.missing_file)
+            )
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = null,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(
                 book.book.title,
@@ -413,17 +605,26 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        if (book.book.isDemo) DemoBadge()
         LinearProgressIndicator(progress = { book.progressFraction }, modifier = Modifier.fillMaxWidth().height(6.dp))
     }
 }
 
 @Composable
-private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit) {
+private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected: () -> Unit, onFavoriteToggle: () -> Unit, onBookOptions: () -> Unit = {}, selectionMode: Boolean = false, selected: Boolean = false) {
     Row(
-        modifier = Modifier.fillMaxWidth().minTouchTarget().clickable(onClick = onBookSelected).padding(vertical = AppSpacing.xs),
+        modifier = Modifier.fillMaxWidth().minTouchTarget().combinedClickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onBookSelected,
+            onLongClick = onBookOptions
+        ).padding(vertical = AppSpacing.xs),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (selectionMode) {
+            Checkbox(checked = selected, onCheckedChange = null)
+        }
         AtherCoverBlock(
             title = book.book.title,
             coverColor = Color(book.coverColor.toInt()),
@@ -434,6 +635,7 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
         Column(modifier = Modifier.weight(1f)) {
             Text(book.book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(book.authorName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (book.book.isDemo) DemoBadge()
         }
         Text(stringResource(R.string.progress_percent, (book.progressFraction * 100).toInt()), style = MaterialTheme.typography.labelLarge)
         IconButton(onClick = onFavoriteToggle, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
@@ -443,5 +645,22 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
                 tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/** شارة "بيانات تجريبية": تظهر فقط في إصدارات التصحيح وعلى الكتب الموسومة هويًا isDemo. */
+@Composable
+private fun DemoBadge() {
+    if (!BuildConfig.DEBUG) return
+    Surface(
+        shape = RoundedCornerShape(AppSpacing.xs),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+    ) {
+        Text(
+            stringResource(R.string.library_demo_badge),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = AppSpacing.xs, vertical = AppSpacing.xxs)
+        )
     }
 }

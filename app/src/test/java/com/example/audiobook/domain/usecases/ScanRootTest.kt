@@ -87,6 +87,117 @@ class ScanRootTest {
         assertEquals(1, reader.readCount)
     }
 
+    // ---- R1: بنية أحمد خالد توفيق — مؤلف تحته 3 مجلدات تحمل صوتًا مباشرًا ----
+    // كل مجلد يحوي ملفات = كتاب مستقل؛ لا يُدمج أي منها مع الأخريين أبدًا.
+
+    @Test
+    fun authorWithSeriesFoldersProducesSeparateBooksAndNeverOneMergedBook() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/01.mp3"), "أحمد خالد توفيق/فانتازيا/01.mp3", "أحمد خالد توفيق/فانتازيا", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/02.mp3"), "أحمد خالد توفيق/فانتازيا/02.mp3", "أحمد خالد توفيق/فانتازيا", "02.mp3", 200, 10),
+            ScanFile(Uri.parse("content://audio/03.mp3"), "أحمد خالد توفيق/ما وراء الطبيعة/01.mp3", "أحمد خالد توفيق/ما وراء الطبيعة", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/04.mp3"), "أحمد خالد توفيق/سافاري/01.mp3", "أحمد خالد توفيق/سافاري", "01.mp3", 100, 10)
+        )
+
+        val report = scanRoot(root.id)
+
+        assertEquals("ثلاثة مجلدات تحمل صوتًا → ثلاثة كتب، لا كتاب واحد مدمج", 3, report.editionsCreated)
+        assertEquals("لا دمج تلقائي بين سلسلات مختلفة", 0, report.editionsAutoMerged)
+        assertEquals(3, allEditions().size)
+        val books = database.bookDao().getAll()
+        assertEquals("مجلد واحد ← كتاب واحد", 3, books.size)
+        books.forEach { assertEquals("المؤلف = مجلد المستوى الأعلى", "أحمد خالد توفيق", database.authorDao().getById(it.authorId)?.name) }
+
+        val fantasy = database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/فانتازيا")!!
+        assertEquals("ملفات فانتازيا كلها في كتاب فانتازيا", 2, database.audioFileDao().getByParent(fantasy.id).size)
+        assertEquals("فانتازيا", database.bookDao().getById(fantasy.bookId)?.title)
+        assertEquals("ما وراء الطبيعة", database.bookDao().getById(database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/ما وراء الطبيعة")!!.bookId)?.title)
+        assertEquals("سافاري", database.bookDao().getById(database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/سافاري")!!.bookId)?.title)
+    }
+
+    // ---- R2: مجلدات مسطّحة بلا وسيط — كل مجلد مستقل = كتاب ----
+
+    @Test
+    fun flatBookFoldersEachBecomeTheirOwnBook() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/a.mp3"), "كتاب واحد/01.mp3", "كتاب واحد", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/b.mp3"), "كتاب ثان/01.mp3", "كتاب ثان", "01.mp3", 100, 10)
+        )
+
+        val report = scanRoot(root.id)
+
+        assertEquals(2, report.editionsCreated)
+        assertEquals(0, report.editionsAutoMerged)
+        assertEquals("مجلد مسطح واحد = كتاب واحد", 2, database.bookDao().getAll().size)
+        assertNotNull(database.editionDao().getByRootAndFolder(root.id, "كتاب واحد"))
+        assertNotNull(database.editionDao().getByRootAndFolder(root.id, "كتاب ثان"))
+    }
+
+    // ---- R3: مجلد مختلط (صوت مباشر + مجلد فرعي) → كتاب + كتاب فرعي بلا دمج ----
+
+    @Test
+    fun mixedFolderBecomesBookAndItsSubfoldersBecomeSeparateBooks() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/c.mp3"), "كتاب رئيسي/01.mp3", "كتاب رئيسي", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/d.mp3"), "كتاب رئيسي/جزء فرعي/02.mp3", "كتاب رئيسي/جزء فرعي", "02.mp3", 100, 10)
+        )
+
+        val report = scanRoot(root.id)
+
+        assertEquals("المجلد المختلط نفسه + مجلده الفرعي = كتابان", 2, report.editionsCreated)
+        assertEquals(0, report.editionsAutoMerged)
+        assertEquals(2, allEditions().size)
+        val main = database.editionDao().getByRootAndFolder(root.id, "كتاب رئيسي")!!
+        assertEquals(1, database.audioFileDao().getByParent(main.id).size)
+        assertNotNull(database.editionDao().getByRootAndFolder(root.id, "كتاب رئيسي/جزء فرعي"))
+    }
+
+    // ---- R4: إعادة الفحص (نفس الجذر) لا تكرر الملفات أبدًا ----
+
+    @Test
+    fun rescanSameRootTwiceNeverDuplicatesFiles() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/x.mp3"), "أحمد خالد توفيق/فانتازيا/01.mp3", "أحمد خالد توفيق/فانتازيا", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/y.mp3"), "أحمد خالد توفيق/فانتازيا/02.mp3", "أحمد خالد توفيق/فانتازيا", "02.mp3", 200, 10)
+        )
+
+        scanRoot(root.id)
+        val afterFirst = database.audioFileDao().observeAll().first().size
+        scanRoot(root.id)
+        val afterSecond = database.audioFileDao().observeAll().first().size
+
+        assertEquals("مرّتان فوق نفس الجذر → نفس عدد الملفات تمامًا", afterFirst, afterSecond)
+        assertEquals(2, afterSecond)
+    }
+
+    // ---- R5: إعادة الفحص بعد إعادة تسمية مجلد → القديم يُعلَّم مفقودًا والجديد يُنشأ ----
+
+    @Test
+    fun rescanAfterRenamingFolderMarksOldMissingAndCreatesNewEdition() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/z.mp3"), "اسم قديم/01.mp3", "اسم قديم", "01.mp3", 100, 10)
+        )
+        scanRoot(root.id)
+        val oldEdition = database.editionDao().getByRootAndFolder(root.id, "اسم قديم")!!
+
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/z.mp3"), "اسم جديد/01.mp3", "اسم جديد", "01.mp3", 100, 10)
+        )
+        val report = scanRoot(root.id)
+
+        assertEquals("المجلد الجديد يُنشئ إصدارًا جديدًا", 1, report.editionsCreated)
+        val newEdition = database.editionDao().getByRootAndFolder(root.id, "اسم جديد")!!
+        assertEquals("الملف الفيزيائي نفسه يُعاد توجيهه للإصدار الجديد (لا نسخة مكررة)", listOf(newEdition.id), database.audioFileDao().getByRoot(root.id).map { it.editionId })
+        assertEquals("الإصدار القديم يبقى قشرة فارغة محفوظة — لا يختفي تقدم المستمع", 0, database.audioFileDao().getByParent(oldEdition.id).size)
+        assertEquals("الكتاب القديم يبقى بلا حذف (تقدمه محفوظ)", oldEdition.bookId, database.bookDao().getById(oldEdition.bookId)?.id)
+        assertNull("لا ملف مفقود هنا — الملف الفيزيائي ما زال في المكتبة تحت المسار الجديد", database.audioFileDao().getByRoot(root.id).firstOrNull { it.fileStatus == FileStatus.MISSING })
+    }
+
     // ---- P2: الإصدار يُنشأ بثقة حقيقية (وليست الثابت 1f) وإشارات فعلية ----
 
     @Test
@@ -164,8 +275,8 @@ class ScanRootTest {
         reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp4", null, null, null, emptyList())
         reader.metadataByUri[uriA] = AudioMetadata(1_000_000L, "audio/mp4", null, "Rawi", null, emptyList())
         reader.metadataByUri[uriB] = AudioMetadata(1_000_000L, "audio/mp3", null, "Rawi", null, emptyList())
-        val fileA = ScanFile(Uri.parse(uriA), "Book/Book - 1.m4b", "Book", "Book - 1.m4b", 100, 10)
-        val fileB = ScanFile(Uri.parse(uriB), "book/book - 1.mp3", "book", "book - 1.mp3", 100, 10)
+        val fileA = ScanFile(Uri.parse(uriA), "Book/Book.m4b", "Book", "Book.m4b", 100, 10)
+        val fileB = ScanFile(Uri.parse(uriB), "book/book.mp3", "book", "book.mp3", 100, 10)
         source.files = listOf(fileA, fileB)
         appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
 
@@ -175,8 +286,8 @@ class ScanRootTest {
 
         val editionA = database.editionDao().getByRootAndFolder(root.id, "Book")!!
         val editionB = database.editionDao().getByRootAndFolder(root.id, "book")!!
-        val signalsA = EditionSignalExtractor.build("Book", root.displayName, listOf("Book - 1.m4b"), listOf(AudioMetadata(1_000_000L, "audio/mp4", null, "Rawi", null, emptyList())))
-        val signalsB = EditionSignalExtractor.build("book", root.displayName, listOf("book - 1.mp3"), listOf(AudioMetadata(1_000_000L, "audio/mp3", null, "Rawi", null, emptyList())))
+        val signalsA = EditionSignalExtractor.build("Book", root.displayName, listOf("Book.m4b"), listOf(AudioMetadata(1_000_000L, "audio/mp4", null, "Rawi", null, emptyList())))
+        val signalsB = EditionSignalExtractor.build("book", root.displayName, listOf("book.mp3"), listOf(AudioMetadata(1_000_000L, "audio/mp3", null, "Rawi", null, emptyList())))
         val base = EditionIntelligence.mergeConfidence(signalsA, signalsB)
         assertTrue("الزوج هامشي فعليًا تحت العتبة (متوقع 0.80)", base < EditionIntelligence.BALANCED_AUTO_MERGE_THRESHOLD)
 

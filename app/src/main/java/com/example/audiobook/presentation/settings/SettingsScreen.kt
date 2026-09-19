@@ -40,6 +40,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,7 @@ import com.example.audiobook.R
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.domain.model.AppThemeMode
+import com.example.audiobook.domain.model.LogoColorMode
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.LocalAppAccent
@@ -102,10 +104,10 @@ fun SettingsScreen(
     onBack: () -> Unit,
     showBack: Boolean = true,
     viewModel: SettingsViewModel = hiltViewModel(),
-    onOpenLibraryRoots: (() -> Unit)? = null,
-    onScanNow: (() -> Unit)? = null
+    onOpenLibraryRoots: (() -> Unit)? = null
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val logoColor by viewModel.logoColor.collectAsStateWithLifecycle()
     val level by viewModel.intelligenceLevel.collectAsStateWithLifecycle()
     val defaultSpeed by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val autoResume by viewModel.autoResume.collectAsStateWithLifecycle()
@@ -122,6 +124,12 @@ fun SettingsScreen(
     val resumeReminder by viewModel.resumeReminderEnabled.collectAsStateWithLifecycle()
     val hasDemoData by viewModel.hasSeededDemoData.collectAsStateWithLifecycle()
     val hasLibraryRoots by viewModel.hasLibraryRoots.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
+    val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
+    val isReclassifying by viewModel.isReclassifying.collectAsStateWithLifecycle()
+    val reclassifyPreview by viewModel.reclassifyPreview.collectAsStateWithLifecycle()
+    val reclassifyApplied by viewModel.reclassifyApplied.collectAsStateWithLifecycle()
     var showDailyTimePicker by remember { mutableStateOf(false) }
     var showNoRootsDialog by remember { mutableStateOf(false) }
     var showRemoveDemoDialog by remember { mutableStateOf(false) }
@@ -139,12 +147,41 @@ fun SettingsScreen(
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
+    val scanDoneTemplate = stringResource(R.string.settings_scan_result)
+    val scanFailedMessage = stringResource(R.string.settings_scan_failed)
+    val reclassifyDoneTemplate = stringResource(R.string.settings_reclassify_result)
+    LaunchedEffect(scanResult) {
+        scanResult?.let { result ->
+            snackbarHostState.showSnackbar(
+                String.format(Locale.US, scanDoneTemplate, result.filesSeen, result.booksFound)
+            )
+            viewModel.consumeScanResult()
+        }
+    }
+    LaunchedEffect(scanFailed) {
+        if (scanFailed) {
+            snackbarHostState.showSnackbar(scanFailedMessage)
+            viewModel.consumeScanFailed()
+        }
+    }
+    LaunchedEffect(reclassifyApplied) {
+        reclassifyApplied?.let { applied ->
+            snackbarHostState.showSnackbar(
+                String.format(Locale.US, reclassifyDoneTemplate, applied.affectedBooks)
+            )
+            viewModel.consumeReclassifyApplied()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            CosmicScreenHeader(
+        ) {            CosmicScreenHeader(
                 title = stringResource(R.string.settings_title),
                 subtitle = stringResource(R.string.settings_subtitle),
                 collapsed = collapsed,
@@ -217,38 +254,59 @@ fun SettingsScreen(
                 selected = themeMode == AppThemeMode.AMOLED,
                 onSelect = { viewModel.selectThemeMode(AppThemeMode.AMOLED) }
             )
+            SettingsCardGroup {
+                SettingsOptionGrid(
+                    label = stringResource(R.string.settings_logo_color),
+                    options = listOf(
+                        stringResource(R.string.settings_logo_color_auto),
+                        stringResource(R.string.settings_logo_color_light),
+                        stringResource(R.string.settings_logo_color_dark),
+                        stringResource(R.string.settings_logo_color_accent)
+                    ),
+                    selectedIndex = LogoColorMode.entries.indexOf(logoColor).coerceAtLeast(0),
+                    onSelect = { viewModel.selectLogoColor(LogoColorMode.entries[it]) }
+                )
+            }
 
             // ── 4. المكتبة والفحص ──
             SettingsSectionLabel(
                 text = stringResource(R.string.settings_library),
                 description = stringResource(R.string.settings_library_desc)
             )
-            if (onOpenLibraryRoots != null || onScanNow != null) {
+            if (onOpenLibraryRoots != null) {
                 SettingsCardGroup {
-                    if (onOpenLibraryRoots != null) {
-                        SettingsNavRow(
-                            title = stringResource(R.string.settings_library_roots),
-                            subtitle = stringResource(R.string.settings_library_roots_desc),
-                            onClick = onOpenLibraryRoots
-                        )
-                    }
-                    if (onOpenLibraryRoots != null && onScanNow != null) {
-                        SettingsDivider()
-                    }
-                    if (onScanNow != null) {
-                        SettingsActionRow(
-                            title = stringResource(R.string.settings_scan_now),
-                            subtitle = stringResource(R.string.settings_scan_now_desc),
-                            onClick = {
-                                viewModel.refreshRootsCount()
-                                if (hasLibraryRoots) {
-                                    onScanNow()
-                                } else {
-                                    showNoRootsDialog = true
-                                }
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_library_roots),
+                        subtitle = stringResource(R.string.settings_library_roots_desc),
+                        onClick = onOpenLibraryRoots
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_scan_now),
+                        subtitle = if (isScanning) {
+                            stringResource(R.string.settings_scanning)
+                        } else {
+                            stringResource(R.string.settings_scan_now_desc)
+                        },
+                        onClick = {
+                            viewModel.refreshRootsCount()
+                            if (hasLibraryRoots) {
+                                viewModel.scanNow()
+                            } else {
+                                showNoRootsDialog = true
                             }
-                        )
-                    }
+                        }
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_reclassify),
+                        subtitle = if (isReclassifying) {
+                            stringResource(R.string.settings_reclassifying)
+                        } else {
+                            stringResource(R.string.settings_reclassify_desc)
+                        },
+                        onClick = { viewModel.requestReclassify() }
+                    )
                 }
             }
 
@@ -489,6 +547,36 @@ fun SettingsScreen(
             },
             title = { Text(stringResource(R.string.settings_remove_demo)) },
             text = { Text(stringResource(R.string.settings_remove_demo_confirm)) }
+        )
+    }
+
+    reclassifyPreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelReclassify() },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmReclassify() }) {
+                    Text(stringResource(R.string.settings_reclassify_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelReclassify() }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.settings_reclassify)) },
+            text = {
+                Text(
+                    if (preview.foldersToFix == 0) {
+                        stringResource(R.string.settings_reclassify_nothing)
+                    } else {
+                        String.format(
+                            Locale.US,
+                            stringResource(R.string.settings_reclassify_confirm_body),
+                            preview.affectedBooks
+                        )
+                    }
+                )
+            }
         )
     }
 }

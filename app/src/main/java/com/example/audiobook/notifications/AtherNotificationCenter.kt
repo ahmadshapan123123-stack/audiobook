@@ -15,6 +15,7 @@ import com.example.audiobook.R
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.playback.PlaybackService
 import com.example.audiobook.playback.PlaybackStateHolder
+import com.example.audiobook.presentation.theme.AtherAccent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
@@ -52,6 +53,7 @@ class AtherNotificationCenter @Inject constructor(
         val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val builder = NotificationCompat.Builder(context, NotificationChannels.SLEEP_TIMER)
             .setSmallIcon(R.drawable.ic_stat_ather)
+            .setColor(brandAccent())
             .setContentTitle(context.getString(R.string.notif_sleep_title))
             .setContentText(context.getString(R.string.notif_sleep_remaining, time))
             .setOngoing(true)
@@ -67,7 +69,13 @@ class AtherNotificationCenter @Inject constructor(
         val intent = Intent(context, PlaybackService::class.java)
             .setAction(SLEEP_ACTION)
             .putExtra(SLEEP_ACTION_MINUTES, minutes)
-        return PendingIntent.getForegroundService(context, 1000 + minutes, intent, flags)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(context, 1000 + minutes, intent, flags)
+        } else {
+            // getForegroundService هو API 26+. على API 23-25 نستخدم getService؛
+            // الخدمة نفسها تستدعي startForeground(...) داخل onStartCommand.
+            PendingIntent.getService(context, 1000 + minutes, intent, flags)
+        }
     }
 
     // ── حفظ اللحظة (قناة saved_moment، يُلغى تلقائيًا بعد 3 ثوانٍ) ──
@@ -76,6 +84,7 @@ class AtherNotificationCenter @Inject constructor(
         val text = context.getString(R.string.notif_save_moment_text, formatClock(positionMs))
         val notification = NotificationCompat.Builder(context, NotificationChannels.SAVED_MOMENT)
             .setSmallIcon(R.drawable.ic_stat_ather)
+            .setColor(brandAccent())
             .setContentTitle(context.getString(R.string.notif_save_moment_title))
             .setContentText(text)
             .setAutoCancel(true)
@@ -101,6 +110,7 @@ class AtherNotificationCenter @Inject constructor(
         )
         val notification = NotificationCompat.Builder(context, NotificationChannels.ACHIEVEMENTS)
             .setSmallIcon(R.drawable.ic_stat_ather)
+            .setColor(brandAccent())
             .setContentTitle(context.getString(R.string.notif_book_completed_title))
             .setContentText(text)
             .setAutoCancel(true)
@@ -115,6 +125,7 @@ class AtherNotificationCenter @Inject constructor(
         if (!canPost(true)) return
         val notification = NotificationCompat.Builder(context, NotificationChannels.REMINDERS)
             .setSmallIcon(R.drawable.ic_stat_ather)
+            .setColor(brandAccent())
             .setContentTitle(context.getString(R.string.notif_daily_reminder_title))
             .setContentText(context.getString(R.string.notif_daily_reminder_text))
             .setAutoCancel(true)
@@ -130,6 +141,7 @@ class AtherNotificationCenter @Inject constructor(
         if (!canPost(true)) return
         val notification = NotificationCompat.Builder(context, NotificationChannels.REMINDERS)
             .setSmallIcon(R.drawable.ic_stat_ather)
+            .setColor(brandAccent())
             .setContentTitle(context.getString(R.string.notif_resume_reminder_title))
             .setContentText(context.getString(R.string.notif_resume_reminder_text, bookTitle))
             .setAutoCancel(true)
@@ -146,6 +158,9 @@ class AtherNotificationCenter @Inject constructor(
         ) return false
         return manager.areNotificationsEnabled()
     }
+
+    /** لهجة أثير العامة بحسب الوضع الحالي — تُصلي لون الخلفية في كل إشعارات التطبيق. */
+    private fun brandAccent(): Int = AtherAccent.ambientAccentArgb(appSettings.currentThemeMode())
 
     private fun openPlayerIntent(): PendingIntent {
         val playerEditionId = PlaybackStateHolder.editionId

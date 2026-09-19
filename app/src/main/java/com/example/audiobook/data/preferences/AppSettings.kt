@@ -3,6 +3,7 @@ package com.example.audiobook.data.preferences
 import android.content.Context
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.domain.model.AppThemeMode
+import com.example.audiobook.domain.model.LogoColorMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,6 +70,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     // ── Appearance ──
     private val _themeMode = MutableStateFlow(loadThemeMode())
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    private val _logoColor = MutableStateFlow(loadLogoColor())
+    val logoColor: StateFlow<LogoColorMode> = _logoColor.asStateFlow()
 
     // ── Library scanning ──
     private val _intelligenceLevel = MutableStateFlow(loadIntelligenceLevel())
@@ -186,6 +190,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         scanPrefs.edit().putString(KEY_INTELLIGENCE_LEVEL, value.name).apply()
     }
 
+    fun currentLogoColor(): LogoColorMode = _logoColor.value
+
+    fun setLogoColor(value: LogoColorMode) {
+        if (_logoColor.value == value) return
+        _logoColor.value = value
+        appearancePrefs.edit().putString(KEY_LOGO_COLOR, value.name).apply()
+    }
+
     private fun loadThemeMode(): AppThemeMode =
         appearancePrefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
             ?.let { runCatching { AppThemeMode.valueOf(it) }.getOrDefault(AppThemeMode.DARK) }
@@ -195,6 +207,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         scanPrefs.getString(KEY_INTELLIGENCE_LEVEL, IntelligenceLevel.BALANCED.name)
             ?.let { runCatching { IntelligenceLevel.valueOf(it) }.getOrDefault(IntelligenceLevel.BALANCED) }
             ?: IntelligenceLevel.BALANCED
+
+    private fun loadLogoColor(): LogoColorMode =
+        appearancePrefs.getString(KEY_LOGO_COLOR, LogoColorMode.AUTO.name)
+            ?.let { runCatching { LogoColorMode.valueOf(it) }.getOrDefault(LogoColorMode.AUTO) }
+            ?: LogoColorMode.AUTO
 
     private companion object {
         const val PREFS_NAME = "app_settings"
@@ -215,6 +232,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_DAILY_REMINDER_MINUTE = "daily_reminder_minute"
         const val KEY_RESUME_REMINDER = "resume_reminder_enabled"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_LOGO_COLOR = "logo_color"
         const val KEY_INTELLIGENCE_LEVEL = "intelligence_level"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- DemoAudioProvider exists only in debug builds: the class lives in the main
+         source set but is registered here, in the debug overlay, so the release
+         manifest never declares it (and R8 strips the class in release). -->
+    <application>
+        <provider
+            android:name=".data.demo.DemoAudioProvider"
+            android:authorities="com.example.audiobook.demo"
+            android:exported="false" />
+    </application>
+
+</manifest>

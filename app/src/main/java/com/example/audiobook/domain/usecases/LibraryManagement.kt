@@ -1,9 +1,12 @@
 package com.example.audiobook.domain.usecases
 
+import android.net.Uri
+import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.room.dao.*
 import com.example.audiobook.data.room.entity.*
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 class LibraryManagement @Inject constructor(
     private val authorDao: AuthorDao,
@@ -334,6 +337,196 @@ class LibraryManagement @Inject constructor(
     suspend fun updateCollectionName(collectionId: UUID, newName: String) {
         val collection = collectionDao.getById(collectionId) ?: return
         collectionDao.update(collection.copy(name = newName.trim()))
+    }
+
+    // ── Book Management (قائمة خيارات الكتاب + التحديد المتعدد) ──
+
+    /** لقطة كاملة لكتاب: تكفي لإعادة البناء بعد الحذف أو لإرجاع الدمج. */
+    data class BookSnapshot(
+        val book: BookEntity,
+        val editions: List<EditionSnapshot>,
+        val collectionIds: List<UUID>,
+        val isFavorite: Boolean
+    )
+
+    suspend fun snapshotBook(bookId: UUID): BookSnapshot? {
+        val book = bookDao.getById(bookId) ?: return null
+        val editions = editionDao.getByParent(bookId).mapNotNull { snapshotEdition(it.id).takeIf { s -> s.edition.id == it.id } }
+        val collectionIds = crossRefDao.observeAll().first().filter { it.bookId == bookId }.map { it.collectionId }
+        return BookSnapshot(book, editions, collectionIds, favoriteBookDao.getById(bookId) != null)
+    }
+
+    /** نقل جميع إصدارات كتاب إلى كتاب آخر ثم حذف الكتاب المصدر. */
+    data class MergeBooksSnapshot(
+        val source: BookSnapshot,
+        val targetBookId: UUID,
+        val targetDefaultEditionId: UUID?
+    )
+
+    suspend fun mergeBooks(sourceId: UUID, targetId: UUID): MergeBooksSnapshot? {
+        if (sourceId == targetId) throw IllegalArgumentException("Cannot merge book with itself")
+        val source = bookDao.getById(sourceId) ?: return null
+        val target = bookDao.getById(targetId) ?: throw IllegalStateException("Target book not found")
+        val sourceSnapshot = snapshotBook(sourceId) ?: return null
+
+        val editions = editionDao.getByParent(sourceId)
+        var targetDefault = target.defaultEditionId
+        for (edition in editions) {
+            val moved = edition.copy(bookId = targetId)
+            editionDao.update(moved)
+            if (targetDefault == null) targetDefault = moved.id
+        }
+
+        val sourceRefs = crossRefDao.observeAll().first().filter { it.bookId == sourceId }
+        for (ref in sourceRefs) {
+            if (crossRefDao.getById(ref.collectionId, targetId) == null) {
+                crossRefDao.insert(CollectionBookCrossRef(ref.collectionId, targetId))
+            }
+        }
+        if (sourceSnapshot.isFavorite && favoriteBookDao.getById(targetId) == null) {
+            favoriteBookDao.insert(FavoriteBook(targetId, System.currentTimeMillis()))
+        }
+
+        bookDao.update(target.copy(defaultEditionId = targetDefault))
+        bookDao.delete(source)
+        return MergeBooksSnapshot(sourceSnapshot, targetId, targetDefault)
+    }
+
+    suspend fun undoMergeBooks(snapshot: MergeBooksSnapshot) {
+        for (edition in snapshot.source.editions) {
+            editionDao.update(edition.edition.copy(bookId = snapshot.source.book.id))
+        }
+        val targetRefs = crossRefDao.observeAll().first().filter { it.bookId == snapshot.targetBookId }
+        for (ref in targetRefs) {
+            if (ref.collectionId in snapshot.source.collectionIds) {
+                crossRefDao.delete(ref.collectionId, snapshot.targetBookId)
+            }
+        }
+        for (collectionId in snapshot.source.collectionIds) {
+            crossRefDao.insert(CollectionBookCrossRef(collectionId, snapshot.source.book.id))
+        }
+        if (snapshot.source.isFavorite) {
+            favoriteBookDao.delete(snapshot.targetBookId)
+            favoriteBookDao.insert(FavoriteBook(snapshot.source.book.id, System.currentTimeMillis()))
+        }
+        bookDao.getById(snapshot.targetBookId)?.let {
+            bookDao.update(it.copy(defaultEditionId = snapshot.targetDefaultEditionId))
+        }
+        bookDao.insert(snapshot.source.book)
+    }
+
+    /** حذف عدة كتب مع لقطة قابلة للاستعادة. */
+    data class DeletedBooksSnapshot(val books: List<BookSnapshot>)
+
+    suspend fun deleteBooks(bookIds: List<UUID>): DeletedBooksSnapshot {
+        val snapshots = bookIds.mapNotNull { snapshotBook(it) }
+        for (book in snapshots) {
+            deleteBook(book.book.id)
+        }
+        return DeletedBooksSnapshot(snapshots)
+    }
+
+    suspend fun restoreBooks(snapshot: DeletedBooksSnapshot) {
+        for (book in snapshot.books) {
+            bookDao.insert(book.book)
+            for (edition in book.editions) {
+                editionDao.insert(edition.edition)
+                edition.audioFiles.forEach { audioFileDao.insert(it) }
+                edition.chapters.forEach { chapterDao.insert(it) }
+                edition.bookmarks.forEach { bookmarkDao.insert(it) }
+                edition.progress?.let { progressDao.insert(it) }
+            }
+            for (collectionId in book.collectionIds) {
+                crossRefDao.insert(CollectionBookCrossRef(collectionId, book.book.id))
+            }
+            if (book.isFavorite) {
+                favoriteBookDao.insert(FavoriteBook(book.book.id, System.currentTimeMillis()))
+            }
+        }
+    }
+
+    suspend fun moveBooksToAuthor(bookIds: List<UUID>, authorId: UUID) {
+        for (id in bookIds) moveBookToAuthor(id, authorId)
+    }
+
+    suspend fun moveBooksToSeries(bookIds: List<UUID>, seriesId: UUID?) {
+        for (id in bookIds) moveBookToSeries(id, seriesId)
+    }
+
+    suspend fun addBooksToCollection(collectionId: UUID, bookIds: List<UUID>) {
+        for (id in bookIds) addBookToCollection(collectionId, id)
+    }
+
+    suspend fun setBooksFavorite(bookIds: List<UUID>, favorite: Boolean) {
+        for (id in bookIds) {
+            val exists = favoriteBookDao.getById(id) != null
+            if (favorite && !exists) favoriteBookDao.insert(FavoriteBook(id, System.currentTimeMillis()))
+            if (!favorite && exists) favoriteBookDao.delete(id)
+        }
+    }
+
+    suspend fun removeBookFromSeries(bookId: UUID) = moveBookToSeries(bookId, null)
+
+    suspend fun setDefaultEdition(bookId: UUID, editionId: UUID) {
+        val book = bookDao.getById(bookId) ?: return
+        bookDao.update(book.copy(defaultEditionId = editionId))
+    }
+
+    /**
+     * إلحاق ملف صوتي بنسخة: بصمة بنفس نمط الفحص (\*size:lastModified:uri\*),
+     * تحديث مدة النسخة، واستيراد فصول M4B المضمّنة بإزاحة = مجموع مدد الملفات السابقة.
+     * يعيد عدد الفصول المستوردة.
+     */
+    suspend fun addAudioFileToEdition(
+        editionId: UUID,
+        uri: Uri,
+        fileName: String,
+        fileSizeBytes: Long,
+        lastModified: Long,
+        metadata: AudioMetadata
+    ): Int {
+        val edition = editionDao.getById(editionId) ?: throw IllegalStateException("Edition not found")
+        val existing = audioFileDao.getByParent(editionId)
+        val orderIndex = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+        val baseMs = existing.sumOf { it.durationMs }
+
+        audioFileDao.insert(
+            AudioFileEntity(
+                id = UUID.randomUUID(),
+                editionId = editionId,
+                fileUri = uri.toString(),
+                relativePath = fileName,
+                fileName = fileName,
+                orderIndex = orderIndex,
+                durationMs = metadata.durationMs,
+                fileSizeBytes = fileSizeBytes,
+                lastModified = lastModified,
+                contentFingerprint = "$fileSizeBytes:$lastModified:$uri",
+                mimeType = metadata.mimeType,
+                fileStatus = FileStatus.AVAILABLE
+            )
+        )
+
+        var importedChapters = 0
+        if (metadata.embeddedChapters.isNotEmpty()) {
+            val chapterOffset = chapterDao.getByParent(editionId).size
+            metadata.embeddedChapters.forEachIndexed { index, chapter ->
+                chapterDao.insert(
+                    ChapterEntity(
+                        id = UUID.randomUUID(),
+                        editionId = editionId,
+                        title = chapter.title,
+                        startPositionMs = baseMs + chapter.startPositionMs,
+                        orderIndex = chapterOffset + index,
+                        createdFrom = ChapterCreatedFrom.IMPORTED
+                    )
+                )
+                importedChapters++
+            }
+        }
+
+        editionDao.update(edition.copy(totalDurationMs = edition.totalDurationMs + metadata.durationMs))
+        return importedChapters
     }
 
     // ── Demo Data ──

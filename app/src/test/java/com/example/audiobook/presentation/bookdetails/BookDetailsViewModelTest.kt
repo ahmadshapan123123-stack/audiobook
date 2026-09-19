@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.domain.usecases.EditionMerge
+import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.CoverSource
@@ -112,7 +113,8 @@ class BookDetailsViewModelTest {
             chapterDao = database.chapterDao(),
             bookmarkDao = database.bookmarkDao(),
             progressDao = database.progressDao(),
-            editionMerge = EditionMerge(database)
+            editionMerge = EditionMerge(database),
+            management = libraryManagementFor(database)
         )
 
         val state = viewModel.uiState.first { it.book != null }
@@ -141,7 +143,8 @@ class BookDetailsViewModelTest {
             chapterDao = database.chapterDao(),
             bookmarkDao = database.bookmarkDao(),
             progressDao = database.progressDao(),
-            editionMerge = EditionMerge(database)
+            editionMerge = EditionMerge(database),
+            management = libraryManagementFor(database)
         )
         viewModel.updateTitle(book, "عنوان معدل")
 

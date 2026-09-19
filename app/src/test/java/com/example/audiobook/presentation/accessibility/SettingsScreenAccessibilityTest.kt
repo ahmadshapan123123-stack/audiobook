@@ -14,10 +14,15 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.domain.usecases.IntelligenceLevel
+import com.example.audiobook.domain.usecases.ReclassifyLibrary
+import com.example.audiobook.domain.usecases.libraryManagementFor
+import com.example.audiobook.domain.usecases.scanLibraryNowFor
 import com.example.audiobook.presentation.settings.SettingsScreen
 import com.example.audiobook.presentation.settings.SettingsViewModel
 import com.example.audiobook.domain.model.AppThemeMode
@@ -46,17 +51,27 @@ class SettingsScreenAccessibilityTest {
 
     private lateinit var appSettings: AppSettings
     private lateinit var viewModel: SettingsViewModel
+    private lateinit var database: AppDatabase
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         appSettings = AppSettings(context)
         appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
-        viewModel = SettingsViewModel(appSettings, ReminderScheduler(context, appSettings))
+        viewModel = SettingsViewModel(
+            appSettings,
+            ReminderScheduler(context, appSettings),
+            libraryManagementFor(database),
+            database.libraryRootDao(),
+            scanLibraryNowFor(database, appSettings),
+            ReclassifyLibrary(database)
+        )
     }
 
     @After
     fun tearDown() {
+        database.close()
         appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
     }
 

@@ -1,7 +1,10 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.example.audiobook.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.media3.common.Player
@@ -16,10 +19,13 @@ import com.example.audiobook.data.room.dao.AuthorDao
 import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.ChapterDao
 import com.example.audiobook.data.room.dao.EditionDao
+import com.example.audiobook.data.room.dao.SeriesDao
 import com.example.audiobook.data.room.entity.ChapterEntity
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.notifications.AtherMediaNotificationProvider
 import com.example.audiobook.notifications.AtherNotificationCenter
 import com.example.audiobook.playback.SleepTimerPhase
+import com.example.audiobook.presentation.theme.AtherAccent
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,6 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.util.UUID
 import javax.inject.Inject
 
@@ -56,6 +63,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var editionDao: EditionDao
     @Inject lateinit var bookDao: BookDao
     @Inject lateinit var authorDao: AuthorDao
+    @Inject lateinit var seriesDao: SeriesDao
     @Inject lateinit var reminderScheduler: ReminderScheduler
 
     private var mediaSession: MediaSession? = null
@@ -69,6 +77,12 @@ class PlaybackService : MediaSessionService() {
     private var openedEdition: UUID? = null
     private var currentChapterStart = -1L
 
+    // لهجة المشغّل الحيّة + بيانات شاشة القفل (MediaMetadata) — تُحدَّث عند تبديل النسخة/الفصل.
+    private var seriesColorArgb: Int? = null
+    private var authorColorArgb: Int? = null
+    private var latestAlbumName: String? = null
+    private var artworkBytes: ByteArray? = null
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(provider)
@@ -79,6 +93,12 @@ class PlaybackService : MediaSessionService() {
     private fun observeNotificationMode() {
         scope.launch { appSettings.notificationsEnabled.collect { provider.refresh() } }
         scope.launch { appSettings.mediaNotificationMinimal.collect { provider.refresh() } }
+        scope.launch {
+            appSettings.themeMode.collect { mode ->
+                provider.accentArgb = AtherAccent.accentFor(mode, seriesColorArgb, authorColorArgb, null)
+                provider.refresh()
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession {
@@ -150,19 +170,23 @@ class PlaybackService : MediaSessionService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    /** مراقبة حالة التشغيل: تحديث ثيم إشعار التشغيل (عند تبديل الفصل أو النسخة) فقط — لا تكرار. */
+    /** مراقبة حالة التشغيل: تحديث ثيم إشعار التشغيل (عند تبديل الفصل/النسخة/التشغيل) فقط — لا تكرار. */
     private fun observePlayback() {
         var wasPlaying = false
+        var lastPlaying = false
         scope.launch {
             playbackController.state.collect { state ->
                 if (wasPlaying && !state.isPlaying) reminderScheduler.rearmResumeReminder()
                 wasPlaying = state.isPlaying
+                val playingToggled = state.isPlaying != lastPlaying
+                lastPlaying = state.isPlaying
                 val id = state.editionId
                 if (id != null && id != openedEdition) {
                     openedEdition = id
                     loadEditionContext(id)
                 }
                 provider.playing = state.isPlaying
+                if (playingToggled) provider.refresh()
                 if (id != null && chapters.isNotEmpty()) {
                     val current = chapters.lastOrNull { it.startPositionMs <= state.positionMs }
                     val start = current?.startPositionMs ?: 0L
@@ -176,25 +200,50 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    /** تحميل بيانات النسخة (العنوان/المؤلف/الغلاف) وتتبع فصولها للعرض الحي. */
+    /** تحميل بيانات النسخة (العنوان/المؤلف/الغلاف/السلسلة) وتتبع فصولها للعرض الحي. */
     private suspend fun loadEditionContext(editionId: UUID) {
         chapters = runCatching { chapterDao.getByParent(editionId) }.getOrDefault(emptyList())
         currentChapterStart = -1L
         val edition = runCatching { editionDao.getById(editionId) }.getOrNull()
         val book = edition?.let { runCatching { bookDao.getById(it.bookId) }.getOrNull() }
         val author = book?.let { runCatching { authorDao.getById(it.authorId) }.getOrNull() }
+        val series = book?.seriesId?.let { runCatching { seriesDao.getById(it) }.getOrNull() }
         provider.contentTitle = book?.title ?: ""
         provider.contentAuthor = author?.name ?: ""
+        latestAlbumName = series?.name
+        seriesColorArgb = parseColorArgb(series?.colorTheme)
+        authorColorArgb = parseColorArgb(author?.colorTheme)
+        provider.accentArgb = AtherAccent.accentFor(appSettings.currentThemeMode(), seriesColorArgb, authorColorArgb, null)
         val coverPath = book?.coverImagePath
-        provider.artwork = coverPath?.let { path ->
+        val bitmap = coverPath?.let { path ->
             withContext(Dispatchers.IO) { runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
         }
+        provider.artwork = bitmap
+        withContext(Dispatchers.IO) {
+            artworkBytes = bitmap?.let { b ->
+                runCatching {
+                    ByteArrayOutputStream().use { out ->
+                        if (b.compress(Bitmap.CompressFormat.PNG, 100, out)) out.toByteArray() else null
+                    }
+                }.getOrNull()
+            }
+        }
+        (playbackController as ExoPlaybackController).rebuildQueueWithMetadata(
+            bookTitle = provider.contentTitle,
+            albumTitle = latestAlbumName ?: provider.contentAuthor,
+            artworkBytes = artworkBytes
+        )
         scope.launch {
             chapterDao.observeByParent(editionId).collect { updated ->
                 chapters = updated
                 provider.refresh()
             }
         }
+    }
+
+    private fun parseColorArgb(hex: String?): Int? {
+        if (hex.isNullOrBlank()) return null
+        return runCatching { android.graphics.Color.parseColor(hex) }.getOrNull()
     }
 
     private fun chapterLabel(chapter: ChapterEntity?, index: Int): String =

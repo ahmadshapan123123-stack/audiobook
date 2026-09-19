@@ -68,9 +68,10 @@ object EditionIntelligence {
      *  +0.25 تطابق العنوان الداخلي (متساويان = 0.25؛ أحد المجهولين = 0.10؛
      *         مختلفان = 0.00)
      *  +0.20 تطابق اسم المجلد بعد التطبيع
-     *  +0.10 تطابق السلسلة (النمط والرقم)
+     *  +0.10 تطابق السلسلة (نمط/رقم أو مجلد السلسلة)
      *  +0.10 تقارب المدة (فرق ≤ 15%)
      *  +0.05 تطابق الصيغة
+     *  +0.05 تطابق مجلد المؤلف (كسر التعادل بين مجلدات كتاب واحد)
      */
     fun mergeConfidence(subject: EditionSignals, candidate: EditionSignals): Float {
         var score = 0f
@@ -83,18 +84,23 @@ object EditionIntelligence {
         } else {
             0.00f
         }
-        score += seriesAgreement(subject.seriesPart, candidate.seriesPart)
+        score += seriesAgreement(subject, candidate)
         score += durationAgreement(subject.totalDurationMs, candidate.totalDurationMs)
         score += if (subject.format != null && subject.format == candidate.format) 0.05f else 0.00f
+        score += authorFolderAgreement(subject.authorFolderName, candidate.authorFolderName)
         return score.coerceIn(0f, 1f)
     }
 
     /**
      * [النقطة الأهم] قرار الدمج التلقائي الصامت (بوزن قياسي = 1f).
      *
-     * يُطبَّق القيد الصارم أولًا وبشكل مستقل عن level:
+     * يُطبَّق القيد الصارم أولًا وبشكل مستقل عن level وبأي boost:
      *   - اختلاف راوٍ واضح (مُحدَّدان ومختلفان) → false دائمًا.
      *   - فرق المدة الإجمالية > 15% (حين تكون كلتاهما معلومتين) → false دائمًا.
+     *   - اختلاف مجلد المؤلف (مُحدَّدان ومختلفان) → false دائمًا — مجلدان يفصلهم
+     *     مؤلف مختلف لا يندمجان تحت أي ظرف (قاعدة "لا دمج عبر المؤلفين").
+     *   - اختلاف مجلد السلسلة الحاوي (مُحدَّدان ومختلفان) → false دائمًا —
+     *     سلسلتان مختلفتان لا تندمجان مهما تطابق العنوان والمدة (فانتازيا/ما وراء الطبيعة).
      *
      * ثم مستوى الذكاء:
      *   - CONSERVATIVE → false دائمًا (لا دمج تلقائي إطلاقًا).
@@ -112,6 +118,8 @@ object EditionIntelligence {
     fun mergeDecision(subject: EditionSignals, candidate: EditionSignals, level: IntelligenceLevel, boost: Float): Boolean {
         if (narratorsClearlyDistinct(subject.narrator, candidate.narrator)) return false
         if (durationsDivergeBeyondStrictLimit(subject.totalDurationMs, candidate.totalDurationMs)) return false
+        if (authorsClearlyDistinct(subject.authorFolderName, candidate.authorFolderName)) return false
+        if (seriesFoldersClearlyDistinct(subject.seriesFolderName, candidate.seriesFolderName)) return false
         return when (level) {
             IntelligenceLevel.CONSERVATIVE -> false
             IntelligenceLevel.AGGRESSIVE -> false
@@ -121,6 +129,24 @@ object EditionIntelligence {
 
     /** راويان "مختلفان بوضوح": كلاهما محدد وبعد التطبيع غير متساويين. */
     fun narratorsClearlyDistinct(a: String?, b: String?): Boolean {
+        if (a.isNullOrBlank() || b.isNullOrBlank()) return false
+        return ArabicSearchNormalizer.normalize(a) != ArabicSearchNormalizer.normalize(b)
+    }
+
+    /**
+     * مجلدا المؤلف "مختلفان بوضوح": كلاهما محدد واسماهما مختلفان بعد التطبيع.
+     * قاعدة "لا دمج عبر المؤلفين" — مجلدان تحت مؤلفين مختلفين لا يندمجان أبدًا.
+     */
+    fun authorsClearlyDistinct(a: String?, b: String?): Boolean {
+        if (a.isNullOrBlank() || b.isNullOrBlank()) return false
+        return ArabicSearchNormalizer.normalize(a) != ArabicSearchNormalizer.normalize(b)
+    }
+
+    /**
+     * مجلدا السلسلة الحاوية "مختلفان بوضوح": كلاهما محدد ومختلفان بعد التطبيع.
+     * سلسلتان مختلفتان لا تندمجان مهما تطابق العنوان والمدة (فانتازيا/ما وراء الطبيعة).
+     */
+    fun seriesFoldersClearlyDistinct(a: String?, b: String?): Boolean {
         if (a.isNullOrBlank() || b.isNullOrBlank()) return false
         return ArabicSearchNormalizer.normalize(a) != ArabicSearchNormalizer.normalize(b)
     }
@@ -170,10 +196,37 @@ object EditionIntelligence {
         else -> 0.00f
     }
 
-    private fun seriesAgreement(a: SeriesPart?, b: SeriesPart?): Float = when {
+    /**
+     * تطابق السلسلة: يقدّم مجلد السلسلة الحاوي (متساويان = 0.10؛ مختلفان = 0.00؛
+     * أحد المجهولين فقط = 0.00)، وعند غيابه يتراجع إلى نمط/رقم السلسلة المكتشف
+     * من التسمية (نمط/رقم).
+     */
+    private fun seriesAgreement(subject: EditionSignals, candidate: EditionSignals): Float {
+        val subjectKnown = !subject.seriesFolderName.isNullOrBlank()
+        val candidateKnown = !candidate.seriesFolderName.isNullOrBlank()
+        return when {
+            subjectKnown && candidateKnown ->
+                if (ArabicSearchNormalizer.normalize(subject.seriesFolderName) ==
+                    ArabicSearchNormalizer.normalize(candidate.seriesFolderName)
+                ) 0.10f else 0.00f
+            subjectKnown || candidateKnown -> 0.00f
+            else -> legacySeriesPartAgreement(subject.seriesPart, candidate.seriesPart)
+        }
+    }
+
+    private fun legacySeriesPartAgreement(a: SeriesPart?, b: SeriesPart?): Float = when {
         a == null || b == null -> 0.05f
         a.pattern == b.pattern && a.partNumber == b.partNumber -> 0.10f
         else -> 0.00f
+    }
+
+    /**
+     * تطابق مجلد المؤلف: كلاهما محدد ومتساوٍ بعد التطبيع = +0.05، وإلا 0.
+     * (كسر التعادل بين مجلدَي "كتاب واحد" تحت مجلد مؤلف واحد.)
+     */
+    private fun authorFolderAgreement(a: String?, b: String?): Float {
+        if (a.isNullOrBlank() || b.isNullOrBlank()) return 0.00f
+        return if (ArabicSearchNormalizer.normalize(a) == ArabicSearchNormalizer.normalize(b)) 0.05f else 0.00f
     }
 
     private fun durationAgreement(aMs: Long, bMs: Long): Float = when {

@@ -31,7 +31,9 @@ import java.security.MessageDigest
  *  - MISSING files return null so the controller's missing-file handling is exercised.
  * Audio is generated once per URI and cached under cacheDir.
  *
- * Not part of the production path: real books use real files/documents via SAF.
+ * Registered ONLY in the debug manifest overlay (app/src/debug/AndroidManifest.xml):
+ * the release manifest never declares it, and with R8 enabled the class is stripped from
+ * the release APK. Not part of the production path: real books use real files via SAF.
  */
 class DemoAudioProvider : ContentProvider() {
 

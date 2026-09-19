@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.example.audiobook.playback
 
 import android.content.Context
@@ -6,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -33,6 +36,9 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** المسافة الزمنية بين عينات فحص اكتمال الفصول أثناء التشغيل. */
+private const val CHAPTER_COMPLETION_CHECK_INTERVAL_MS = 2_000L
+
 @Singleton
 class ExoPlaybackController @Inject constructor(
     @ApplicationContext context: Context,
@@ -54,6 +60,8 @@ class ExoPlaybackController @Inject constructor(
     private var saveJob: Job? = null
     private var mediaServiceStarted = false
     private var mediaController: MediaController? = null
+    /** اختزال فحص اكتمال الفصول: يُؤخذ عينة كل ثانيتين فقط بدل كل تحديث موضع (500ms). */
+    private var lastChapterCompletionCheckAtMs = 0L
 
     /** يبدأ خدمة التشغيل كخدمة في المقدمة عند أول تشغيل فعلي — Media3 ينشر إشعار التشغيل. */
     private fun ensureMediaServiceStarted() {
@@ -163,6 +171,43 @@ class ExoPlaybackController @Inject constructor(
         player.play()
     }
 
+    /**
+     * تزويد قائمة التشغيل ببيانات شاشة القفل/مركز الوسائط بعد اكتمال تحميل سياق
+     * النسخة في [PlaybackService]: عنوان الفصل + اسم الكتاب (الفنّان) + السلسلة/المؤلف
+     * (الألبوم) + الغلاف. تُعاد القائمة نفسها بنفس الموضع حتى لا تنقطع الجلسة.
+     * أندرويد 13+ يقرأ هذه البيانات مباشرة من MediaSession (NotificationSeat).
+     */
+    suspend fun rebuildQueueWithMetadata(bookTitle: String, albumTitle: String?, artworkBytes: ByteArray?) {
+        if (playableFiles.isEmpty()) return
+        if (player.isReleased) return
+        val currentEdition = editionId ?: return
+        val chapters = database.chapterDao().getByParent(currentEdition)
+        val items = playableFiles.map { file ->
+            val fileIndex = files.indexOfFirst { it.id == file.id }.coerceAtLeast(0)
+            val fileStart = files.take(fileIndex).sumOf { it.durationMs }
+            val chapter = chapters.lastOrNull {
+                it.startPositionMs >= fileStart && it.startPositionMs < fileStart + file.durationMs
+            }
+            val metadataBuilder = MediaMetadata.Builder()
+                .setTitle(chapter?.title?.takeIf { it.isNotBlank() } ?: "الفصل ${fileIndex + 1}")
+                .setArtist(bookTitle)
+                .setAlbumTitle(albumTitle?.takeIf { it.isNotBlank() } ?: "")
+            if (artworkBytes != null) metadataBuilder.setArtworkData(artworkBytes)
+            MediaItem.Builder()
+                .setUri(Uri.parse(file.fileUri))
+                .setMediaId(file.id.toString())
+                .setMediaMetadata(metadataBuilder.build())
+                .build()
+        }
+        val index = player.currentMediaItemIndex.coerceIn(0, items.lastIndex)
+        val positionMs = player.currentPosition
+        runCatching {
+            player.setMediaItems(items, index, positionMs)
+            player.prepare()
+            if (!player.isPlaying) player.pause()
+        }
+    }
+
     override fun pause() {
         player.pause()
         saveProgress()
@@ -254,6 +299,9 @@ class ExoPlaybackController @Inject constructor(
     private fun observeChapterCompletion(positionMs: Long) {
         val id = editionId ?: return
         if (timeline.durationMs <= 0L) return
+        val now = System.currentTimeMillis()
+        if (now - lastChapterCompletionCheckAtMs < CHAPTER_COMPLETION_CHECK_INTERVAL_MS) return
+        lastChapterCompletionCheckAtMs = now
         scope.launch(Dispatchers.IO) {
             val chapters = database.chapterDao().getByParent(id)
             chapterCompletionObserver.onPositionUpdate(id, positionMs, chapters, timeline.durationMs)

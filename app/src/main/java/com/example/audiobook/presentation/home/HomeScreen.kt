@@ -2,6 +2,8 @@ package com.example.audiobook.presentation.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,8 +72,11 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     onOpenSeries: (UUID) -> Unit = {},
     onOpenAuthor: (UUID) -> Unit = {},
+    onOpenSeriesList: () -> Unit = {},
+    onOpenAuthorsList: () -> Unit = {},
     onOpenCollection: (UUID) -> Unit = {},
     onOpenListenNow: () -> Unit = {},
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -79,6 +85,10 @@ fun HomeScreen(
 
     val bookClick: (HomeBook) -> Unit = { book ->
         onBookSelected(book.bookId)
+    }
+
+    val bookLongPress: (HomeBook) -> Unit = { book ->
+        onBookOptions(book.bookId)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -105,7 +115,8 @@ fun HomeScreen(
                     ContinueFeaturedCard(
                         cont = cont,
                         onOpenCard = { onBookSelected(it) },
-                        onOpenPlayer = onOpenPlayer
+                        onOpenPlayer = onOpenPlayer,
+                        onBookOptions = onBookOptions
                     )
                 }
 
@@ -121,7 +132,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(state.nextUp, key = { it.bookId }) { item ->
-                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) })
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
                         }
                     }
                 }
@@ -137,7 +148,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(state.recentlyListened, key = { it.bookId }) { item ->
-                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) })
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
                         }
                     }
                 }
@@ -147,7 +158,11 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
                         modifier = Modifier.padding(top = AppSpacing.sm)
                     ) {
-                        HomeSectionTitle(stringResource(R.string.home_series_title))
+                        HomeSectionTitle(
+                            text = stringResource(R.string.home_series_title),
+                            actionLabel = stringResource(R.string.home_view_all),
+                            onAction = onOpenSeriesList
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(end = AppSpacing.md),
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
@@ -160,7 +175,11 @@ fun HomeScreen(
                 }
 
                 if (state.authors.isNotEmpty()) {
-                    HomeSectionTitle(stringResource(R.string.home_authors_title))
+                    HomeSectionTitle(
+                        text = stringResource(R.string.home_authors_title),
+                        actionLabel = stringResource(R.string.home_view_all),
+                        onAction = onOpenAuthorsList
+                    )
                     LazyRow(
                         contentPadding = PaddingValues(end = AppSpacing.lg),
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
@@ -194,7 +213,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(state.favorites, key = { it.bookId }) { item ->
-                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) })
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
                         }
                     }
                 }
@@ -251,13 +270,19 @@ internal fun HomeSectionPanel(
 internal fun HomeBookCard(
     book: HomeBook,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onBookOptions: (UUID) -> Unit = {}
 ) {
     Column(
         modifier = modifier
             .minTouchTarget()
             .clip(RoundedCornerShape(AppSpacing.sm))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = { onBookOptions(book.bookId) }
+            )
             .padding(AppSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
@@ -302,14 +327,20 @@ internal fun HomeBookCard(
 internal fun ContinueFeaturedCard(
     cont: HomeContinue,
     onOpenCard: (UUID) -> Unit,
-    onOpenPlayer: (UUID) -> Unit
+    onOpenPlayer: (UUID) -> Unit,
+    onBookOptions: (UUID) -> Unit = {}
 ) {
     val book = cont.book
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppSpacing.md))
-            .clickable(onClick = { onOpenCard(book.bookId) })
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onOpenCard(book.bookId) },
+                onLongClick = { onBookOptions(book.bookId) }
+            )
     ) {
         Box(
             modifier = Modifier

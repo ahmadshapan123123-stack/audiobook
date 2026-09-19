@@ -38,6 +38,7 @@ import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.domain.usecases.EditionMerge
+import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.presentation.bookdetails.BookDetailsScreen
 import com.example.audiobook.presentation.bookdetails.BookDetailsViewModel
 import com.example.audiobook.domain.model.AppThemeMode
@@ -142,7 +143,8 @@ class BookDetailsScreenAccessibilityTest {
             chapterDao = database.chapterDao(),
             bookmarkDao = database.bookmarkDao(),
             progressDao = database.progressDao(),
-            editionMerge = EditionMerge(database)
+editionMerge = EditionMerge(database),
+            management = libraryManagementFor(database)
         )
         composeRule.setContent {
             val density = Density(LocalDensity.current.density, fontScale = fontScale)

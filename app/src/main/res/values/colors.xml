@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        أولوية مبدئية لهوية أثير (تُستبدل باللوحة المعتمدة في Prompt 5).
-        Provisional identity color — replaced by the final palette in Prompt 5.
+        خلفية أيقونة أثير الكونية (اللوحة الداكنة) — تُطابق لوحة الشعار الحالية
+       (#0B132B) لتمتزج لوحة الأيقونة مع المعطف الداكن دون قطع.
     -->
-    <color name="ic_launcher_background">#A85F1D</color>
+    <color name="ic_launcher_background">#0B132B</color>
 </resources>

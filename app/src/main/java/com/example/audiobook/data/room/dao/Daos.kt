@@ -77,6 +77,7 @@ interface EditionDao : CrudDao<EditionEntity> {
     @Query("SELECT * FROM editions ORDER BY label") fun observeAll(): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId AND sourceFolderPath = :folderPath LIMIT 1") suspend fun getByRootAndFolder(rootId: UUID, folderPath: String): EditionEntity?
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<EditionEntity>
+    @Query("SELECT COUNT(DISTINCT bookId) FROM editions WHERE libraryRootId IN (:rootIds)") suspend fun countDistinctBooksForRoots(rootIds: List<UUID>): Int
 }
 
 @Dao
@@ -88,6 +89,7 @@ interface AudioFileDao : CrudDao<AudioFileEntity> {
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") suspend fun getByParent(editionId: UUID): List<AudioFileEntity>
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId ORDER BY orderIndex") fun observeByParent(editionId: UUID): Flow<List<AudioFileEntity>>
     @Query("SELECT * FROM audio_files WHERE fileUri = :fileUri LIMIT 1") suspend fun getByUri(fileUri: String): AudioFileEntity?
+    @Query("SELECT * FROM audio_files WHERE editionId = :editionId AND fileName = :fileName AND fileSizeBytes = :size LIMIT 1") suspend fun getByEditionNameSize(editionId: UUID, fileName: String, size: Long): AudioFileEntity?
     @Query("SELECT * FROM audio_files") fun observeAll(): Flow<List<AudioFileEntity>>
     @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
     @Query("SELECT COUNT(*) FROM audio_files") suspend fun countAll(): Int

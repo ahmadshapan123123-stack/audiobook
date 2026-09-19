@@ -29,6 +29,7 @@ data class SeriesDetailsUiState(
     val authorId: UUID? = null,
     val authorName: String = "",
     val books: List<EntityBookRow> = emptyList(),
+    val candidateBooks: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
     val allSeries: List<SeriesEntity> = emptyList()
 )
@@ -71,12 +72,20 @@ class SeriesDetailsViewModel @Inject constructor(
             progressList = progressList,
             series = allSeries
         ).sortedWith(compareBy<EntityBookRow> { it.orderInSeries ?: Int.MAX_VALUE }.thenBy { it.title })
+        val candidates = buildEntityBookRows(
+            books = books.filter { it.seriesId != seriesId },
+            authors = authors,
+            editions = editions,
+            progressList = progressList,
+            series = allSeries
+        ).sortedBy { it.title }
 
         SeriesDetailsUiState(
             series = series,
             authorId = author?.id,
             authorName = author?.name ?: "",
             books = rows,
+            candidateBooks = candidates,
             coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF356B68),
             allSeries = allSeries.filter { it.id != seriesId }
         )
@@ -87,6 +96,29 @@ class SeriesDetailsViewModel @Inject constructor(
             seriesDao.getById(seriesId)?.let { current ->
                 seriesDao.update(current.copy(name = name, description = description, imagePath = imagePath))
             }
+        }
+    }
+
+    fun addBookToSeries(bookId: UUID) {
+        viewModelScope.launch {
+            val book = bookDao.getById(bookId) ?: return@launch
+            if (book.seriesId == seriesId) return@launch
+            val nextOrder = (uiState.value.books.maxOfOrNull { it.orderInSeries ?: 0 } ?: 0) + 1
+            bookDao.update(book.copy(seriesId = seriesId, orderInSeries = nextOrder))
+        }
+    }
+
+    fun removeBookFromSeries(bookId: UUID) {
+        viewModelScope.launch {
+            val book = bookDao.getById(bookId) ?: return@launch
+            if (book.seriesId != seriesId) return@launch
+            bookDao.update(book.copy(seriesId = null, orderInSeries = null))
+        }
+    }
+
+    fun applyBookOrder(bookIds: List<UUID>) {
+        viewModelScope.launch {
+            management.reorderBooksInSeries(seriesId, bookIds)
         }
     }
 

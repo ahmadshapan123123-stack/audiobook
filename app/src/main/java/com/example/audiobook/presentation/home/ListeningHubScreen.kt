@@ -2,7 +2,9 @@ package com.example.audiobook.presentation.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +65,7 @@ fun ListeningHubScreen(
     onOpenSeries: (UUID) -> Unit,
     onOpenLibrarySection: (String) -> Unit,
     onBack: () -> Unit,
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: ListeningHubViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -98,7 +102,8 @@ fun ListeningHubScreen(
                 ContinueFeaturedCard(
                     cont = cont,
                     onOpenCard = { onBookSelected(it) },
-                    onOpenPlayer = onOpenPlayer
+                    onOpenPlayer = onOpenPlayer,
+                    onBookOptions = onBookOptions
                 )
             }
 
@@ -113,7 +118,7 @@ fun ListeningHubScreen(
                     horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     items(state.fitsWindow, key = { it.bookId }) { item ->
-                        HomeBookCard(item, Modifier.width(132.dp), onClick = { item.editionId?.let(onOpenPlayer) })
+                        HomeBookCard(item, Modifier.width(132.dp), onClick = { item.editionId?.let(onOpenPlayer) }, onBookOptions = { onBookOptions(item.bookId) })
                     }
                 }
             }
@@ -121,7 +126,8 @@ fun ListeningHubScreen(
             if (state.bedtime.isNotEmpty()) {
                 HubBedtimeBlock(
                     books = state.bedtime,
-                    onPlay = onPlayWithSleepTimer
+                    onPlay = onPlayWithSleepTimer,
+                    onBookOptions = onBookOptions
                 )
             }
 
@@ -178,7 +184,8 @@ internal fun HubTimeSelector(
 @Composable
 internal fun HubBedtimeBlock(
     books: List<HomeBook>,
-    onPlay: (UUID) -> Unit
+    onPlay: (UUID) -> Unit,
+    onBookOptions: (UUID) -> Unit = {}
 ) {
     val containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
     Column(
@@ -214,7 +221,12 @@ internal fun HubBedtimeBlock(
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .clip(shape)
-                    .clickable { onPlay(book.editionId!!) }
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onPlay(book.editionId!!) },
+                        onLongClick = { onBookOptions(book.bookId) }
+                    )
                     .padding(vertical = AppSpacing.xs),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically

@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DriveFileMove
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -40,12 +44,15 @@ fun AuthorDetailsScreen(
     onBack: () -> Unit,
     onBookSelected: (UUID) -> Unit,
     onSeriesSelected: (UUID) -> Unit,
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: AuthorDetailsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showEntityEdit by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
+    var showAddBook by remember { mutableStateOf(false) }
+    var moveTarget by remember { mutableStateOf<EntityBookRow?>(null) }
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
@@ -101,6 +108,36 @@ fun AuthorDetailsScreen(
                 }
             }
 
+            OutlinedButton(onClick = { showAddBook = true }) {
+                Text(stringResource(R.string.series_add_book))
+            }
+
+            if (showAddBook) {
+                PickBookDialog(
+                    candidates = state.candidateBooks,
+                    titleRes = R.string.author_add_book_title,
+                    emptyMessage = stringResource(R.string.author_add_book_none),
+                    onSelect = { bookId ->
+                        showAddBook = false
+                        viewModel.addBookToAuthor(bookId)
+                    },
+                    onDismiss = { showAddBook = false }
+                )
+            }
+
+            moveTarget?.let { target ->
+                MoveToAuthorDialog(
+                    authors = state.allAuthors,
+                    title = stringResource(R.string.move_to_author_pick),
+                    onSelect = { targetId ->
+                        val bookId = target.bookId
+                        moveTarget = null
+                        viewModel.moveBookToOtherAuthor(bookId, targetId)
+                    },
+                    onDismiss = { moveTarget = null }
+                )
+            }
+
             if (showDeleteDialog) {
                 ConfirmDeleteDialog(
                     title = stringResource(R.string.confirm_delete_title),
@@ -122,6 +159,7 @@ fun AuthorDetailsScreen(
                 )
                 MoveToAuthorDialog(
                     authors = state.allAuthors,
+                    title = stringResource(R.string.author_merge_select),
                     onSelect = { targetId ->
                         showMergeDialog = false
                         viewModel.mergeAuthors(targetId) { onBack() }
@@ -159,7 +197,23 @@ fun AuthorDetailsScreen(
                         )
                     }
                     group.books.forEach { row ->
-                        EntityBookRowItem(row = row, onClick = { onBookSelected(row.bookId) })
+                        EntityBookRowItem(
+                            row = row,
+                            onClick = { onBookSelected(row.bookId) },
+                            onBookOptions = { onBookOptions(row.bookId) },
+                            trailing = {
+                                IconButton(
+                                    onClick = { moveTarget = row },
+                                    modifier = Modifier.minTouchTarget()
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.DriveFileMove,
+                                        contentDescription = stringResource(R.string.move_book_title),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -171,6 +225,7 @@ fun AuthorDetailsScreen(
 @Composable
 private fun MoveToAuthorDialog(
     authors: List<com.example.audiobook.data.room.entity.AuthorEntity>,
+    title: String,
     onSelect: (UUID) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -180,7 +235,7 @@ private fun MoveToAuthorDialog(
     }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.author_merge_select)) },
+        title = { Text(title) },
         text = {
             Column {
                 androidx.compose.material3.OutlinedTextField(

@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,12 +47,16 @@ fun SeriesDetailsScreen(
     onBack: () -> Unit,
     onBookSelected: (UUID) -> Unit,
     onAuthorSelected: (UUID) -> Unit,
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: SeriesDetailsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showEntityEdit by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
+    var showAddBook by remember { mutableStateOf(false) }
+    var showReorder by remember { mutableStateOf(false) }
+    var removeTarget by remember { mutableStateOf<EntityBookRow?>(null) }
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
@@ -104,6 +112,52 @@ fun SeriesDetailsScreen(
                 OutlinedButton(onClick = { showDeleteDialog = true }) {
                     Text(stringResource(R.string.series_menu_delete), color = MaterialTheme.colorScheme.error)
                 }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                OutlinedButton(onClick = { showAddBook = true }) {
+                    Text(stringResource(R.string.series_add_book))
+                }
+                OutlinedButton(onClick = { showReorder = true }, enabled = state.books.size > 1) {
+                    Text(stringResource(R.string.series_menu_reorder))
+                }
+            }
+
+            if (showAddBook) {
+                PickBookDialog(
+                    candidates = state.candidateBooks,
+                    titleRes = R.string.series_add_book_title,
+                    emptyMessage = stringResource(R.string.series_add_book_none),
+                    onSelect = { bookId ->
+                        showAddBook = false
+                        viewModel.addBookToSeries(bookId)
+                    },
+                    onDismiss = { showAddBook = false }
+                )
+            }
+
+            if (showReorder) {
+                ReorderBooksDialog(
+                    order = state.books,
+                    onDone = { orderedIds ->
+                        showReorder = false
+                        viewModel.applyBookOrder(orderedIds)
+                    },
+                    onDismiss = { showReorder = false }
+                )
+            }
+
+            removeTarget?.let { target ->
+                ConfirmDeleteDialog(
+                    title = stringResource(R.string.remove_from_series_title),
+                    message = stringResource(R.string.remove_from_series_confirm, target.title),
+                    confirmText = stringResource(R.string.series_remove_book_cd),
+                    onConfirm = {
+                        removeTarget = null
+                        viewModel.removeBookFromSeries(target.bookId)
+                    },
+                    onDismiss = { removeTarget = null }
+                )
             }
 
             if (showDeleteDialog) {
@@ -173,7 +227,23 @@ fun SeriesDetailsScreen(
                 Text(stringResource(R.string.entity_no_books), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 state.books.forEach { row ->
-                    com.example.audiobook.presentation.entitydetails.EntityBookRowItem(row = row, onClick = { onBookSelected(row.bookId) })
+                    com.example.audiobook.presentation.entitydetails.EntityBookRowItem(
+                        row = row,
+                        onClick = { onBookSelected(row.bookId) },
+                        onBookOptions = { onBookOptions(row.bookId) },
+                        trailing = {
+                            IconButton(
+                                onClick = { removeTarget = row },
+                                modifier = Modifier.minTouchTarget()
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Remove,
+                                    contentDescription = stringResource(R.string.series_remove_book_cd),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    )
                 }
             }
         }

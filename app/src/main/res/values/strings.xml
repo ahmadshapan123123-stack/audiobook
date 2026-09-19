@@ -18,6 +18,7 @@
     <string name="favorite_add">إضافة إلى المفضلة</string>
     <string name="favorite_remove">إزالة من المفضلة</string>
     <string name="missing_file">ملف صوتي ناقص</string>
+    <string name="library_demo_badge">بيانات تجريبية</string>
     <string name="cancel">إلغاء</string>
     <string name="back">رجوع</string>
     <string name="next">التالي</string>
@@ -174,6 +175,7 @@
     <!-- ===== المشغّل (Player) ===== -->
     <string name="player_back">رجوع</string>
     <string name="player_more">المزيد</string>
+    <string name="mini_player_stopped">تم إيقاف التشغيل</string>
     <string name="player_cover_placeholder">غلاف الكتاب</string>
     <string name="player_timeline_overview">نظرة عامة</string>
     <string name="player_timeline_zoom">تكبير ٣٠–٦٠ دقيقة</string>
@@ -282,6 +284,38 @@
 <string name="entity_edit_save">حفظ</string>
     <string name="entity_edit_cancel">إلغاء</string>
 
+    <!-- ===== قوائم المؤلفين والسلاسل (عرض الكل) ===== -->
+    <string name="authors_list_title">المؤلفون</string>
+    <string name="series_list_title">السلاسل</string>
+    <string name="authors_search_hint">ابحث عن مؤلف</string>
+    <string name="series_search_hint">ابحث عن سلسلة</string>
+    <string name="entity_sort_name">الاسم</string>
+    <string name="entity_sort_books">عدد الكتب</string>
+    <string name="entity_empty_authors">لا يوجد مؤلفون بعد.</string>
+    <string name="entity_empty_series">لا توجد سلاسل بعد.</string>
+    <string name="entity_more">الخيارات</string>
+    <string name="entity_context_open">فتح التفاصيل</string>
+    <string name="entity_context_rename">إعادة تسمية</string>
+    <string name="entity_context_delete">حذف</string>
+    <string name="rename_author_title">تسمية المؤلف</string>
+    <string name="rename_series_title">تسمية السلسلة</string>
+
+    <!-- ===== إدارة السلسلة/المؤلف (إضافة/إزالة/ترتيب) ===== -->
+    <string name="series_add_book">إضافة كتاب</string>
+    <string name="series_add_book_title">إضافة كتاب إلى السلسلة</string>
+    <string name="series_add_book_none">كل كتب المكتبة موجودة في هذه السلسلة</string>
+    <string name="author_add_book_title">إضافة كتاب إلى المؤلف</string>
+    <string name="author_add_book_none">كل كتب المكتبة لهذا المؤلف</string>
+    <string name="book_picker_search">ابحث عن كتاب</string>
+    <string name="series_reorder_done">تم</string>
+    <string name="series_remove_book_cd">إزالة من السلسلة</string>
+    <string name="move_to_author_pick">اختر المؤلف الذي سينتقل إليه الكتاب</string>
+    <string name="series_book_moved">تم نقل الكتاب إلى السلسلة</string>
+    <string name="author_book_moved">تم نقل الكتاب إلى المؤلف</string>
+    <string name="reorder_up">تحريك لأعلى</string>
+    <string name="reorder_down">تحريك لأسفل</string>
+    <string name="book_picker_row_cover">غلاف الكتاب</string>
+
 <!-- ===== المحفوظات ===== -->
     <string name="nav_saved">المحفوظات</string>
     <string name="saved_title">المحفوظات</string>
@@ -316,6 +350,16 @@
     <string name="settings_theme_dark_desc">خلفية داكنة لطيفة على العينين ليلًا.</string>
     <string name="settings_theme_amoled">أموليد</string>
     <string name="settings_theme_amoled_desc">أسود كامل للشاشات OLED.</string>
+    <string name="settings_logo_color">لون الشعار</string>
+    <string name="settings_logo_color_desc">لون شعار أثير في شاشة البداية والهوية العامة.</string>
+    <string name="settings_logo_color_auto">تلقائي</string>
+    <string name="settings_logo_color_auto_desc">الألوان الأصلية للشعار كما هي.</string>
+    <string name="settings_logo_color_light">فاتح</string>
+    <string name="settings_logo_color_light_desc">صبغة دافئة فاتحة للشعار.</string>
+    <string name="settings_logo_color_dark">داكن</string>
+    <string name="settings_logo_color_dark_desc">صبغة كونية داكنة للشعار.</string>
+    <string name="settings_logo_color_accent">لهجة التمييز</string>
+    <string name="settings_logo_color_accent_desc">صبغ الشعار بلهجة التمييز الديناميكية.</string>
     <string name="settings_playback">التشغيل</string>
     <string name="settings_default_speed">السرعة الافتراضية</string>
     <string name="settings_auto_resume">استئناف تلقائي</string>
@@ -330,7 +374,7 @@
     <string name="settings_library_roots">مجلدات المكتبة</string>
     <string name="settings_library_roots_desc">إدارة مصادر الفحص وتحديد الأولويات.</string>
     <string name="settings_scan_now">فحص المكتبة الآن</string>
-    <string name="settings_scan_now_desc">تشغيل فحص الخلفية لكل المجلدات الممكّنة.</string>
+    <string name="settings_scan_now_desc">فحص فوري لكل مجلدات المكتبة الممكّنة.</string>
     <string name="settings_notifications">الإشعارات</string>
     <string name="settings_notifications_desc">إشعارات التشغيل في الخلفية ومؤقت النوم.</string>
     <string name="settings_storage">البيانات والتخزين</string>
@@ -607,4 +651,93 @@
     <string name="settings_no_roots_title">لا توجد مجلدات</string>
     <string name="settings_no_roots_desc">أضف مجلد كتبك الصوتية أولاً قبل بدء الفحص</string>
     <string name="settings_add_folder">إضافة مجلد</string>
+
+    <!-- ===== الفحص الفوري + إعادة التصنيف ===== -->
+    <string name="settings_scanning">جارٍ فحص المكتبة…</string>
+    <string name="settings_scan_result">تم فحص %1$d ملفًا، وجدت %2$d كتابًا</string>
+    <string name="settings_scan_failed">تعذّر إكمال الفحص. حاول مرة أخرى.</string>
+    <string name="settings_reclassify">إعادة تصنيف المكتبة</string>
+    <string name="settings_reclassify_desc">تصحيح المؤلفين والسلاسل من بنية المجلدات دون إعادة فحص الملفات.</string>
+    <string name="settings_reclassifying">جارٍ التحقق…</string>
+    <string name="settings_reclassify_confirm">تطبيق</string>
+    <string name="settings_reclassify_confirm_body">سيتم تصحيح تصنيف %1$d كتابًا. لن تُمحى تقدّمات الاستماع أو العلامات أو الفصول. هل تريد المتابعة؟</string>
+    <string name="settings_reclassify_nothing">كل الكتب مصنَّفة بشكل صحيح بالفعل. لا يوجد ما يستدعي التصحيح.</string>
+    <string name="settings_reclassify_result">تم تصحيح تصنيف %1$d كتابًا</string>
+
+    <!-- ===== قائمة خيارات الكتاب (ضغطة مطوّلة) ===== -->
+    <string name="book_options_title">خيارات الكتاب</string>
+    <string name="book_options_move">نقل إلى</string>
+    <string name="book_options_edit">تعديل البيانات</string>
+    <string name="book_options_edit_desc">فتح صفحة تفاصيل الكتاب</string>
+    <string name="book_options_collections">إضافة إلى المجموعات</string>
+    <string name="book_options_add_file">إضافة ملف صوتي</string>
+    <string name="book_options_add_file_desc">إلحاق ملف بالنسخة الحالية</string>
+    <string name="book_options_merge">دمج مع كتاب آخر</string>
+    <string name="book_options_default_edition">تحديد كإصدار افتراضي</string>
+    <string name="book_options_remove_series">إزالة من السلسلة</string>
+    <string name="book_options_delete">حذف الكتاب</string>
+
+    <string name="collection_added_undo">أُضيف إلى المجموعة — تراجع</string>
+
+    <!-- ===== نقل كتاب: ثلاثة أقسام ===== -->
+    <string name="move_book_title">نقل إلى</string>
+    <string name="move_book_tab_author">مؤلف</string>
+    <string name="move_book_tab_series">سلسلة</string>
+    <string name="move_book_tab_collections">مجموعات</string>
+    <string name="move_book_no_series">بدون سلسلة</string>
+    <string name="move_book_new_author">إنشاء مؤلف جديد</string>
+    <string name="move_book_new_series">إنشاء سلسلة جديدة</string>
+    <string name="move_book_new_collection">إنشاء مجموعة جديدة</string>
+    <string name="move_book_new_author_hint">اسم المؤلف الجديد</string>
+    <string name="move_book_new_series_hint">اسم السلسلة الجديدة</string>
+    <string name="move_book_new_collection_hint">اسم المجموعة الجديدة</string>
+    <string name="move_book_series_of_author">سلسلة %1$s</string>
+
+    <!-- ===== إضافة ملف صوتي ===== -->
+    <string name="add_file_launcher">اختيار ملف صوتي</string>
+    <string name="add_file_picked">اختيار ملف صوتي للكتاب \"%1$s\"</string>
+    <string name="add_file_added">تمت الإضافة</string>
+    <string name="add_file_failed">تعذّر قراءة الملف الصوتي.</string>
+    <string name="add_file_no_edition">لا توجد نسخة لإلحاق الملف بها. أنشئ نسخة أولاً.</string>
+    <string name="add_file_chapters_imported">تمت الإضافة — %1$d فصلًا مستورد</string>
+
+    <!-- ===== دمج كتابين ===== -->
+    <string name="merge_book_title">دمج مع كتاب آخر</string>
+    <string name="merge_book_search_hint">ابحث عن الكتاب الهدف</string>
+    <string name="merge_book_confirm">هل تريد دمج \"%1$s\" في \"%2$s\"؟ ستنتقل جميع إصدارات \"%1$s\" إلى \"%2$s\" وتبقى التقدّمات والعلامات.</string>
+    <string name="merge_book_undo">تم الدمج — تراجع</string>
+
+    <!-- ===== النسخة الافتراضية ===== -->
+    <string name="set_default_edition_title">تحديد الإصدار الافتراضي</string>
+    <string name="set_default_edition_done">جُعلت النسخة الافتراضية</string>
+
+    <!-- ===== إزالة من السلسلة ===== -->
+    <string name="remove_from_series_title">إزالة من السلسلة</string>
+    <string name="remove_from_series_confirm">هل تريد إزالة \"%1$s\" من سلسلتها؟ الكتاب سيبقى دون تعديل.</string>
+    <string name="remove_from_series_done">أُزيل من السلسلة — تراجع</string>
+
+    <!-- ===== حذف كتاب ===== -->
+    <string name="delete_book_confirm">هل تريد حذف الكتاب \"%1$s\" وجميع إصداراته وكتبه الصوتية؟ لن تُحذف الملفات من جهازك.</string>
+    <string name="delete_book_undo">تم الحذف — تراجع</string>
+    <string name="book_restored">تمت استعادة الكتاب</string>
+
+    <!-- ===== التحديد المتعدد ===== -->
+    <string name="bulk_selection_title">تحديد متعدد</string>
+    <string name="bulk_selection_count">%1$d محدد</string>
+    <string name="bulk_close_selection">إنهاء التحديد</string>
+    <string name="bulk_select_toggle">تحديد/إلغاء تحديد</string>
+    <string name="bulk_action_delete">حذف</string>
+    <string name="bulk_action_move_author">نقل إلى مؤلف</string>
+    <string name="bulk_action_move_series">نقل إلى سلسلة</string>
+    <string name="bulk_action_add_collection">إضافة إلى مجموعة</string>
+    <string name="bulk_action_favorite">مفضلة</string>
+    <string name="bulk_action_confirm_delete">هل تريد حذف %1$d كتابًا مع جميع إصداراتها؟ ملفاتك على الجهاز لن تُحذف.</string>
+    <string name="bulk_action_confirm_move_author">نقل %1$d كتابًا إلى \"%2$s\"؟</string>
+    <string name="bulk_action_confirm_move_series">نقل %1$d كتابًا إلى \"%2$s\"؟</string>
+    <string name="bulk_action_confirm_add_collection">إضافة %1$d كتابًا إلى المجموعة \"%2$s\"؟</string>
+    <string name="bulk_action_confirm_favorite">تحديد %1$d كتابًا كمفضلة؟</string>
+    <string name="bulk_done">تم تنفيذ العملية — تراجع</string>
+
+    <!-- ===== تراجع ===== -->
+    <string name="move_book_undo">تم النقل — تراجع</string>
 </resources>

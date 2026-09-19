@@ -35,6 +35,7 @@ data class AuthorDetailsUiState(
     val author: AuthorEntity? = null,
     val groups: List<AuthorBookGroup> = emptyList(),
     val totalBooks: Int = 0,
+    val candidateBooks: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
     val allAuthors: List<AuthorEntity> = emptyList()
 )
@@ -79,6 +80,13 @@ class AuthorDetailsViewModel @Inject constructor(
             progressList = progressList,
             series = allSeries
         )
+        val candidateRows = buildEntityBookRows(
+            books = books.filter { it.authorId != authorId },
+            authors = authors,
+            editions = editions,
+            progressList = progressList,
+            series = allSeries
+        ).sortedBy { it.title }
 
         fun sortRows(list: List<EntityBookRow>): List<EntityBookRow> =
             list.sortedWith(compareBy<EntityBookRow> { it.orderInSeries ?: Int.MAX_VALUE }.thenBy { it.title })
@@ -101,6 +109,7 @@ class AuthorDetailsViewModel @Inject constructor(
             author = author,
             groups = allGroups,
             totalBooks = rows.size,
+            candidateBooks = candidateRows,
             coverColor = parseColor(author?.colorTheme, 0xFF356B68),
             allAuthors = authors.filter { it.id != authorId }
         )
@@ -111,6 +120,22 @@ class AuthorDetailsViewModel @Inject constructor(
             authorDao.getById(authorId)?.let { current ->
                 authorDao.update(current.copy(name = name, description = description, imagePath = imagePath))
             }
+        }
+    }
+
+    fun addBookToAuthor(bookId: UUID) {
+        viewModelScope.launch {
+            val book = bookDao.getById(bookId) ?: return@launch
+            if (book.authorId == authorId) return@launch
+            management.moveBookToAuthor(bookId, authorId)
+        }
+    }
+
+    fun moveBookToOtherAuthor(bookId: UUID, targetId: UUID) {
+        viewModelScope.launch {
+            val book = bookDao.getById(bookId) ?: return@launch
+            if (book.authorId == targetId) return@launch
+            management.moveBookToAuthor(bookId, targetId)
         }
     }
 

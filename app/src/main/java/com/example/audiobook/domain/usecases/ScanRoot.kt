@@ -26,7 +26,8 @@ data class ScanReport(
     val importedChapters: Int,
     val editionsCreated: Int = 0,
     val editionsRefined: Int = 0,
-    val editionsAutoMerged: Int = 0
+    val editionsAutoMerged: Int = 0,
+    val filesDeduped: Int = 0
 )
 
 /**
@@ -50,13 +51,14 @@ class ScanRoot @Inject constructor(
             val report = MutableScanReport(root.id)
             val files = fileSource.listAudioFiles(Uri.parse(root.uri))
 
+            val contexts = buildContextByPath(files, root.displayName)
             val prepared = prepareFiles(root.id, files, existing, foundUris, report)
-            val signalsByFolder = resolveEditions(root, prepared, report)
+            val signalsByFolder = resolveEditions(root, prepared, contexts, report)
             markMissingFiles(root.id, existing, foundUris, report)
             reconcileAutoMerges(root.id, signalsByFolder, report)
 
             database.libraryRootDao().markScanFinished(root.id, System.currentTimeMillis(), ScanStatus.IDLE)
-            Log.i(TAG, "scan-complete root=${root.id} files=${report.filesSeen} metadataReads=${report.metadataReads} cacheHits=${report.cacheHits} missing=${report.missingMarked} restored=${report.restored} created=${report.editionsCreated} refined=${report.editionsRefined} autoMerged=${report.editionsAutoMerged}")
+            Log.i(TAG, "scan-complete root=${root.id} files=${report.filesSeen} metadataReads=${report.metadataReads} cacheHits=${report.cacheHits} missing=${report.missingMarked} restored=${report.restored} created=${report.editionsCreated} refined=${report.editionsRefined} autoMerged=${report.editionsAutoMerged} deduped=${report.filesDeduped}")
             report.toReport()
         } catch (error: Throwable) {
             database.libraryRootDao().setScanStatus(root.id, ScanStatus.ERROR)
@@ -93,21 +95,49 @@ class ScanRoot @Inject constructor(
                 previous.lastModified == file.lastModified
             val metadata = if (unchanged) null else metadataReader.read(file.uri, file.fileName).also { report.metadataReads++ }
             if (unchanged) report.cacheHits++
-            byFolder.getOrPut(file.folderPath, ::mutableListOf).add(
-                PreparedFile(file, previous, metadata, metadata?.durationMs ?: previous?.durationMs ?: 0L, index)
-            )
+            val bucket = byFolder.getOrPut(file.folderPath, ::mutableListOf)
+            val isDuplicate = bucket.any { it.scanFile.fileName == file.fileName && it.scanFile.size == file.size }
+            if (isDuplicate) {
+                report.filesDeduped++
+            } else {
+                bucket.add(
+                    PreparedFile(file, previous, metadata, metadata?.durationMs ?: previous?.durationMs ?: 0L, index)
+                )
+            }
         }
         return byFolder.mapValues { (folderPath, files) ->
             PreparedFolder(folderPath, files, hasFreshRead = files.any { it.freshMetadata != null })
         }
     }
 
+    /**
+     * pass 1b: خريطة سياق (المؤلف/السلسلة) لكل مجلد يحوي ملفات — من تصنيف
+     * FolderClassifier (المجلدات التي تحوي صوتًا تظهر كلها في flattenBookNodes)،
+     * مع احتياطي مسار مباشر لأي مجلد غير متوقع (بما في ذلك الملفات المبعثرة
+     * في جذر المصدر حيث folderPath = "").
+     */
+    private fun buildContextByPath(files: List<ScanFile>, fallbackAuthor: String): Map<String, AuthorSeriesContext> {
+        val contexts = LinkedHashMap<String, AuthorSeriesContext>()
+        FolderClassifier.flattenBookNodes(FolderClassifier.classify(files)).forEach { node ->
+            contexts[node.path] = node.context(fallbackAuthor)
+        }
+        files.forEach { file ->
+            contexts.getOrPut(file.folderPath) { pathContext(file.folderPath, fallbackAuthor) }
+        }
+        return contexts
+    }
+
+    /** احتياطي: اشتقاق المؤلف/السلسلة من مسار المجلد مباشرة (قاعدة العمق نفسها). */
+    private fun pathContext(path: String, fallbackAuthor: String): AuthorSeriesContext =
+        FolderClassifier.contextForPath(path, fallbackAuthor)
+
     /** pass 2: بناء الإشارات العشر لكل مجلد ثم حل الإصدار وكتابة الملفات. */
-    private suspend fun resolveEditions(root: LibraryRootEntity, byFolder: Map<String, PreparedFolder>, report: MutableScanReport): Map<String, EditionSignals> {
+    private suspend fun resolveEditions(root: LibraryRootEntity, byFolder: Map<String, PreparedFolder>, contexts: Map<String, AuthorSeriesContext>, report: MutableScanReport): Map<String, EditionSignals> {
         val result = LinkedHashMap<String, EditionSignals>()
         byFolder.forEach { (folderPath, folder) ->
-            val signals = signalsFor(root, folder)
-            val edition = resolveEdition(root, folderPath, signals,
+            val context = contexts[folderPath] ?: pathContext(folderPath, root.displayName)
+            val signals = signalsFor(root, folder, context)
+            val edition = resolveEdition(root, folderPath, signals, context,
                 onCreated = { report.editionsCreated++ },
                 onRefined = { report.editionsRefined++ }
             )
@@ -115,6 +145,12 @@ class ScanRoot @Inject constructor(
             var runningOffsetMs = 0L
             folder.files.forEach { file ->
                 val uri = file.scanFile.uri.toString()
+                if (file.previous == null && database.audioFileDao()
+                        .getByEditionNameSize(edition.id, file.scanFile.fileName, file.scanFile.size) != null
+                ) {
+                    report.filesDeduped++
+                    return@forEach
+                }
                 val entity = AudioFileEntity(
                     id = file.previous?.id ?: UUID.randomUUID(),
                     editionId = edition.id,
@@ -156,14 +192,14 @@ class ScanRoot @Inject constructor(
         return result
     }
 
-    private fun signalsFor(root: LibraryRootEntity, folder: PreparedFolder): EditionSignals {
-        val authorFolder = if (folder.folderPath.contains('/')) folder.folderPath.substringBefore('/') else root.displayName
+    private fun signalsFor(root: LibraryRootEntity, folder: PreparedFolder, context: AuthorSeriesContext): EditionSignals {
         val allMetadata = folder.files.map { file ->
             file.freshMetadata ?: AudioMetadata(file.durationMs, file.previous?.mimeType ?: "", null, null, null, emptyList())
         }
         return EditionSignalExtractor.build(
             folderName = folder.folderPath,
-            authorFolderName = authorFolder,
+            authorFolderName = context.authorName,
+            seriesFolderName = context.seriesFolderName,
             fileNames = folder.files.map { it.scanFile.fileName },
             metadataList = allMetadata
         )
@@ -178,11 +214,12 @@ class ScanRoot @Inject constructor(
         root: LibraryRootEntity,
         folderPath: String,
         signals: EditionSignals,
+        context: AuthorSeriesContext,
         onCreated: () -> Unit,
         onRefined: () -> Unit
     ): EditionEntity {
         val existingEdition = database.editionDao().getByRootAndFolder(root.id, folderPath)
-            ?: return createEdition(root, folderPath, signals).also { onCreated() }
+            ?: return createEdition(root, folderPath, signals, context).also { onCreated() }
         val book = database.bookDao().getById(existingEdition.bookId) ?: return existingEdition
 
         if (!book.isTitleUserConfirmed) {
@@ -208,15 +245,40 @@ class ScanRoot @Inject constructor(
         return refreshed
     }
 
-    private suspend fun createEdition(root: LibraryRootEntity, folderPath: String, signals: EditionSignals): EditionEntity = database.withTransaction {
+    /**
+     * إنشاء إصدار جديد لمجلد جديد — قاعدة "أول ظهور يُثبّت البنية":
+     *  - المؤلف = مجلد المؤلف من التصنيف (signals.authorFolderName)، لا اسم جذر المكتبة.
+     *  - كتاب جديد لكل مجلد (لا إعادة استخدام عبر getByAuthorAndTitle — تمنع دمج سلسلتين
+     *    لهما اسم كتاب مضمّن واحد، مثل "01" الشائعة).
+     *  - سلسلة = مجلد السلسلة الحاوي يُبحث أو يُنشأ تحت المؤلف، ويُثبت seriesId +
+     *    orderInSeries وقت الإنشاء فقط؛ أي إعادة فحص لاحقة لا تكتب رأيًا جديدًا فوق
+     *    التعديلات اليدوية.
+     */
+    private suspend fun createEdition(root: LibraryRootEntity, folderPath: String, signals: EditionSignals, context: AuthorSeriesContext): EditionEntity = database.withTransaction {
         database.editionDao().getByRootAndFolder(root.id, folderPath) ?: run {
-            val author = database.authorDao().getByName(root.displayName) ?: AuthorEntity(name = root.displayName, colorTheme = null).also { database.authorDao().insert(it) }
+            val authorName = context.authorName.takeIf { it.isNotBlank() } ?: root.displayName
+            val author = database.authorDao().getByName(authorName)
+                ?: AuthorEntity(name = authorName, colorTheme = null).also { database.authorDao().insert(it) }
             val title = signals.resolvedTitle()?.takeIf { it.isNotBlank() } ?: root.displayName
-            val book = database.bookDao().getByAuthorAndTitle(author.id, title) ?: BookEntity(
+            val seriesFolder = context.seriesFolderName?.takeIf { it.isNotBlank() }
+            val seriesId: UUID?
+            val orderInSeries: Int?
+            if (seriesFolder != null) {
+                val series = database.seriesDao().getByParent(author.id)
+                    .firstOrNull { it.name == seriesFolder }
+                    ?: SeriesEntity(authorId = author.id, name = seriesFolder, colorTheme = null)
+                        .also { database.seriesDao().insert(it) }
+                seriesId = series.id
+                orderInSeries = signals.seriesPart?.partNumber
+            } else {
+                seriesId = null
+                orderInSeries = null
+            }
+            val book = BookEntity(
                 title = title,
                 authorId = author.id,
-                seriesId = null,
-                orderInSeries = null,
+                seriesId = seriesId,
+                orderInSeries = orderInSeries,
                 genre = signals.embeddedTags?.genre,
                 coverImagePath = null,
                 coverSource = CoverSource.PLACEHOLDER,
@@ -246,7 +308,9 @@ class ScanRoot @Inject constructor(
         if (signalsByFolder.size < 2) return
         val level = appSettings.currentIntelligenceLevel()
         val groups = signalsByFolder.entries.groupBy { (_, signals) ->
-            "${ArabicSearchNormalizer.normalize(signals.authorFolderName.orEmpty())}|${signals.normalizedTitle()}"
+            "${ArabicSearchNormalizer.normalize(signals.authorFolderName.orEmpty())}|" +
+                "${ArabicSearchNormalizer.normalize(signals.seriesFolderName.orEmpty())}|" +
+                signals.normalizedTitle()
         }
         groups.forEach { (_, entries) ->
             if (entries.size < 2) return@forEach
@@ -311,7 +375,8 @@ class ScanRoot @Inject constructor(
         var editionsCreated = 0
         var editionsRefined = 0
         var editionsAutoMerged = 0
-        fun toReport() = ScanReport(rootId, filesSeen, metadataReads, cacheHits, missingMarked, restored, importedChapters, editionsCreated, editionsRefined, editionsAutoMerged)
+        var filesDeduped = 0
+        fun toReport() = ScanReport(rootId, filesSeen, metadataReads, cacheHits, missingMarked, restored, importedChapters, editionsCreated, editionsRefined, editionsAutoMerged, filesDeduped)
     }
 
     companion object {

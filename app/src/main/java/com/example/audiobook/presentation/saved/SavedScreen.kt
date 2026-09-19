@@ -2,7 +2,9 @@ package com.example.audiobook.presentation.saved
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,6 +71,7 @@ private enum class SavedTab { BOOKMARKS, NOTES, CHAPTERS }
 fun SavedScreen(
     onBack: () -> Unit,
     onOpenPlayer: (editionId: UUID, startMs: Long) -> Unit,
+    onBookOptions: (UUID) -> Unit = {},
     viewModel: SavedViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -167,7 +170,8 @@ fun SavedScreen(
                                 SavedGroup(
                                     group = group,
                                     onOpen = { onOpenPlayer(it.editionId, it.positionMs) },
-                                    onDelete = { bookmarkToDelete = it }
+                                    onDelete = { bookmarkToDelete = it },
+                                    onBookOptions = onBookOptions
                                 )
                             }
                         }
@@ -180,7 +184,8 @@ fun SavedScreen(
                                 SavedGroup(
                                     group = group,
                                     onOpen = { onOpenPlayer(it.editionId, it.positionMs) },
-                                    onDelete = { bookmarkToDelete = it }
+                                    onDelete = { bookmarkToDelete = it },
+                                    onBookOptions = onBookOptions
                                 )
                             }
                         }
@@ -270,7 +275,8 @@ fun SavedScreen(
 private fun SavedGroup(
     group: SavedBookGroup,
     onOpen: (SavedBookmark) -> Unit,
-    onDelete: (SavedBookmark) -> Unit
+    onDelete: (SavedBookmark) -> Unit,
+    onBookOptions: (UUID) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
         GroupHeader(bookTitle = group.bookTitle, authorName = group.authorName, seriesName = group.seriesName, coverColor = group.coverColor)
@@ -278,7 +284,8 @@ private fun SavedGroup(
             SavedItemRow(
                 item = item,
                 onOpen = { onOpen(item) },
-                onDelete = { onDelete(item) }
+                onDelete = { onDelete(item) },
+                onBookOptions = { onBookOptions(item.bookId) }
             )
         }
     }
@@ -348,7 +355,8 @@ private fun GroupHeader(
 private fun SavedItemRow(
     item: SavedBookmark,
     onOpen: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onBookOptions: (UUID) -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -356,7 +364,12 @@ private fun SavedItemRow(
             .clip(RoundedCornerShape(AppSpacing.sm))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
             .minTouchTarget()
-            .clickable(onClick = onOpen)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onOpen,
+                onLongClick = { onBookOptions(item.bookId) }
+            )
             .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {

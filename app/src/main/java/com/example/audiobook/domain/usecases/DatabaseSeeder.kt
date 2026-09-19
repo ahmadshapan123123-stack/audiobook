@@ -10,9 +10,10 @@ import javax.inject.Inject
  * Development-only seeder that fills an empty database with a rich, realistic
  * Arabic audiobook library so every screen can be verified visually.
  *
- * Gate: called once under [com.example.audiobook.BuildConfig.DEBUG] in MainActivity,
- * and it no-ops as soon as any book already exists. It is NOT part of the real user
- * path — production data comes exclusively from the user's LibraryRoots via the Scanner.
+ * Gate: invoked only under [com.example.audiobook.BuildConfig.DEBUG] in MainActivity,
+ * and it no-ops as soon as any book already exists. In RELEASE, BuildConfig.DEBUG is
+ * a compile-time false, so R8 strips the call site and the class itself from the APK.
+ * Production data comes exclusively from the user's LibraryRoots via the Scanner.
  *
  * Coverage per the emulator-verification protocol:
  *  - 4 authors with distinct hex colorTheme values (some null-tolerant consumers rely on it).

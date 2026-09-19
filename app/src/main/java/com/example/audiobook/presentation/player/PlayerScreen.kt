@@ -25,6 +25,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -86,6 +87,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -95,6 +97,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,10 +146,12 @@ import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.playback.SleepTimerPhase
 import com.example.audiobook.playback.SleepTimerUiState
-import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.domain.model.AppThemeMode
+import com.example.audiobook.presentation.theme.AppSpacing
+import com.example.audiobook.presentation.theme.AtherAccent
 import com.example.audiobook.presentation.theme.LocalCosmicHeader
 import com.example.audiobook.presentation.theme.SpaceGroteskFamily
+import com.example.audiobook.presentation.theme.argbInt
 import com.example.audiobook.presentation.theme.minTouchTarget
 
 import java.util.UUID
@@ -206,6 +211,14 @@ fun PlayerScreen(
     var consoleHeightPx by remember { mutableIntStateOf(0) }
     var rootHeightPx by remember { mutableIntStateOf(0) }
     var headerBottomPx by remember { mutableIntStateOf(0) }
+    // ---- سحب للأسفل لطي المشغّل إلى المشغّل المصغّر (اختفاء آمن من أي نافذة منبثقة) ----
+    var collapseOffsetPx by remember { mutableFloatStateOf(0f) }
+    var collapseAnimating by remember { mutableStateOf(false) }
+    var contentBoxPosY by remember { mutableIntStateOf(0) }
+    var timelineTopPx by remember { mutableIntStateOf(-1) }
+    var timelineBottomPx by remember { mutableIntStateOf(-1) }
+    val collapseAnim = remember { Animatable(0f) }
+    val latestOnBack = rememberUpdatedState(onBack)
 
     // ---- جهاز الصوت: مراقبة المخرجات وتذكّر الاختيار (التبديل لا يوقف التشغيل) ----
     val context = LocalContext.current
@@ -260,10 +273,12 @@ fun PlayerScreen(
             onFirstPlaybackPermissionRequest()
         }
     }
-    val renderedTimeline = timeline.copy(
-        chapters = if (marks == null) timeline.chapters else storedChapters.map { PlayerChapter(it.id, it.title ?: "فصل", it.startPositionMs) },
-        bookmarks = if (marks == null) timeline.bookmarks else storedBookmarks.map { PlayerBookmark(it.id, it.positionMs, it.noteText) }
-    )
+    val renderedTimeline = remember(timeline, storedChapters, storedBookmarks, marks) {
+        timeline.copy(
+            chapters = if (marks == null) timeline.chapters else storedChapters.map { PlayerChapter(it.id, it.title ?: "فصل", it.startPositionMs) },
+            bookmarks = if (marks == null) timeline.bookmarks else storedBookmarks.map { PlayerBookmark(it.id, it.positionMs, it.noteText) }
+        )
+    }
 
     val gradient = PlayerGradientResolver.resolve(
         mode = themeMode,
@@ -426,7 +441,51 @@ fun PlayerScreen(
                     radius = 14.dp * blurAmount,
                     edgeTreatment = BlurredEdgeTreatment.Unbounded
                 )
-                .onGloballyPositioned { rootHeightPx = it.size.height }
+                .onGloballyPositioned {
+                    rootHeightPx = it.size.height
+                    contentBoxPosY = it.positionInRoot().y.roundToInt()
+                }
+                .graphicsLayer { translationY = collapseOffsetPx }
+                .pointerInput(rootHeightPx, timelineTopPx, timelineBottomPx, anyPopupOpen, editing, collapseAnimating) {
+                    if (rootHeightPx <= 0 || anyPopupOpen || editing || collapseAnimating) return@pointerInput
+                    var gestureOffsetY = 0f
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
+                        // لا تُطوى من فوق الشريط الزمني (يُترك للتعامل مع الفصول والتمرير).
+                        if (timelineBottomPx > 0) {
+                            val y = down.position.y
+                            if (y >= timelineTopPx && y <= timelineBottomPx) return@awaitEachGesture
+                        }
+                        val startY = down.position.y
+                        val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                            ?: return@awaitEachGesture
+                        gestureOffsetY = (slop.position.y - startY).coerceAtLeast(0f)
+                        collapseOffsetPx = gestureOffsetY
+                        drag(slop.id) { change ->
+                            change.consume()
+                            gestureOffsetY = (change.position.y - startY).coerceAtLeast(0f)
+                            collapseOffsetPx = gestureOffsetY
+                        }
+                        if (gestureOffsetY <= 0f) return@awaitEachGesture
+                        val threshold = with(density) {
+                            kotlin.math.min(swipeCollapseThresholdDp.toPx(), rootHeightPx * 0.30f)
+                        }
+                        if (gestureOffsetY >= threshold) {
+                            collapseAnimating = true
+                            scope.launch {
+                                collapseAnim.snapTo(collapseOffsetPx)
+                                collapseAnim.animateTo(rootHeightPx.toFloat() + 120f, tween(240)) { collapseOffsetPx = value }
+                                latestOnBack.value()
+                            }
+                        } else {
+                            scope.launch {
+                                collapseAnim.snapTo(collapseOffsetPx)
+                                collapseAnim.animateTo(0f, tween(220)) { collapseOffsetPx = value }
+                            }
+                        }
+                    }
+                    Unit
+                }
         ) {
         // ---- الخلفية: تدرج هادئ واحد (هوية الكتاب) — سطح المشغّل كله ----
         Box(
@@ -534,7 +593,13 @@ fun PlayerScreen(
                 onPreviewNote = { text, pos ->
                     noteAlerts.trySend(NoteAlert(text, pos))
                 },
-                modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md)
+                modifier = Modifier
+                    .padding(start = AppSpacing.md, end = AppSpacing.md)
+                    .onGloballyPositioned { coords ->
+                        val localTop = (coords.positionInRoot().y - contentBoxPosY).roundToInt()
+                        timelineTopPx = localTop
+                        timelineBottomPx = localTop + coords.size.height
+                    }
             )
 
             // ---- التحكّم الأساسي: التشغيل هو البطل ----
@@ -837,22 +902,10 @@ private const val SCRIM_ACCENT_REDUCE = 0.18f
 /**
  * لهجة المشغّل الوحيدة: تُشتق دائمًا من بداية تدرج الكتاب (السلسلة/المؤلف/الغلاف)
  * — ليست لونًا ثابتًا، بل عائلة لونية من نفس مصدر التدرج، مكيّفة للتباين.
+ * الحساب مشترك مع الإشعارات/شاشة القفل في [AtherAccent] ليتطابق اللون في كل مكان.
  */
-internal fun Color.playerAccent(onLightBackground: Boolean): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.RGBToHSV(
-        (red * 255f + 0.5f).toInt(),
-        (green * 255f + 0.5f).toInt(),
-        (blue * 255f + 0.5f).toInt(),
-        hsv
-    )
-    hsv[1] = (hsv[1] * 1.4f).coerceAtMost(1f)
-    return if (onLightBackground) {
-        Color.hsv(hsv[0], hsv[1], (hsv[2] * 0.4f).coerceAtLeast(0.16f))
-    } else {
-        Color.hsv(hsv[0], hsv[1], (hsv[2] * 1.35f).coerceIn(0.52f, 0.94f))
-    }
-}
+internal fun Color.playerAccent(onLightBackground: Boolean): Color =
+    Color(AtherAccent.accentArgb(argbInt(), onLightBackground))
 
 private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongRange {
     if (state.level != TimelineLevel.ZOOMED || state.durationMs <= 0L) return 0L..state.durationMs.coerceAtLeast(1L)
@@ -995,6 +1048,9 @@ private fun speedLabel(speed: Float): String =
  */
 /** ارتفاع شريط مقابض الفصول (المنطقة "أ": سحب الفصل فقط). */
 private val chapterStripHeight = 48.dp
+
+/** عتبة سحب المشغّل للأسفل لطيِّه إلى المشغّل المصغّر — dp أو 30% من ارتفاع الشاشة (الأصغر). */
+private val swipeCollapseThresholdDp = 150.dp
 
 /** ارتفاع العلامات البصرية في منطقة البحث (تُرسم بلا التقاط لمس). */
 private val markerBarHeight = 46.dp

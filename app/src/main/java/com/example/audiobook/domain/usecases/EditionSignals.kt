@@ -20,6 +20,7 @@ data class EmbeddedTags(val title: String?, val narrator: String?, val genre: St
  *  1. primaryFileName    — اسم الملف (أول ملف، بدون الامتداد)
  *  2. folderName         — اسم المجلد
  *  3. authorFolderName   — اسم مجلد المؤلف (أول مقطع من مسار المجلد، إن وُجد)
+ *  3b. seriesFolderName  — اسم مجلد السلسلة الحاوي مباشرة فوق الكتاب (إن وُجد)
  *  4. seriesPart.pattern — نمط السلسلة المكتشَف (book/juz/kitab/numbered)
  *  5. seriesPart.partNumber — رقم الكتاب في السلسلة (إن وُجد)
  *  6. embeddedTags       — الـMetadata الداخلية الفعلية (tags)
@@ -32,6 +33,7 @@ data class EditionSignals(
     val primaryFileName: String = "",
     val folderName: String = "",
     val authorFolderName: String? = null,
+    val seriesFolderName: String? = null,
     val seriesPart: SeriesPart? = null,
     val embeddedTags: EmbeddedTags? = null,
     val totalDurationMs: Long = 0L,
@@ -44,7 +46,18 @@ data class EditionSignals(
     fun resolvedTitle(): String? =
         embeddedTags?.title?.takeIf { it.isNotBlank() } ?: folderName.substringAfterLast('/').takeIf { it.isNotBlank() }
 
+    /** العنوان البنيوي المستقر: اسم مجلد الكتاب من بنية المجلدات (يُفضَّل على الـmetadata عند التجميع). */
+    fun structuralTitle(): String = folderName.substringAfterLast('/').takeIf { it.isNotBlank() } ?: ""
+
     fun normalizedTitle(): String = ArabicSearchNormalizer.normalize(resolvedTitle().orEmpty())
+
+    fun normalizedStructuralTitle(): String = ArabicSearchNormalizer.normalize(structuralTitle())
+
+    /** مفتاح الهوية الكامل لبناء المجلد بنيويًا (مؤلف ← سلسلة ← كتاب). */
+    fun structuralIdentityKey(): String =
+        "${ArabicSearchNormalizer.normalize(authorFolderName.orEmpty())}|" +
+            "${ArabicSearchNormalizer.normalize(seriesFolderName.orEmpty())}|" +
+            normalizedStructuralTitle()
 
     fun hasKnownDuration(): Boolean = totalDurationMs > 0L
 
@@ -66,7 +79,7 @@ object EditionSignalExtractor {
         if (text.isBlank()) return null
         SERIES_PATTERNS.forEach { patternDef ->
             val match = patternDef.regex.find(text) ?: return@forEach
-            val suffix = match.groups["suffix"]?.value ?: return@forEach
+            val suffix = match.groupValues[1]
             val number = ARABIC_ORDINALS[suffix] ?: arabicDigitToIntOrNull(suffix) ?: return@forEach
             return SeriesPart(patternDef.label, number)
         }
@@ -78,7 +91,7 @@ object EditionSignalExtractor {
         if (name.isBlank()) return null
         NARRATOR_PATTERNS.forEach { regex ->
             val match = regex.find(name) ?: return@forEach
-            val candidate = match.groups["name"]?.value?.trim()?.trimEnd('.', ' ', '،', ',')?.takeIf { it.length >= 2 }
+            val candidate = match.groupValues[1].trim().trimEnd('.', ' ', '،', ',').takeIf { it.length >= 2 }
             if (candidate != null) return candidate
         }
         return null
@@ -89,7 +102,7 @@ object EditionSignalExtractor {
         if (fileNames.size < 2) return false
         val numbered = fileNames.mapNotNull { fileName ->
             val match = SUFFIX_NUMBER.find(fileName) ?: return@mapNotNull null
-            arabicDigitToIntOrNull(match.groups["num"]?.value ?: return@mapNotNull null)
+            arabicDigitToIntOrNull(match.groupValues[1]) ?: return@mapNotNull null
         }
         if (numbered.size < fileNames.size - 1) return false
         return numbered == numbered.sorted()
@@ -111,7 +124,8 @@ object EditionSignalExtractor {
         folderName: String,
         authorFolderName: String?,
         fileNames: List<String>,
-        metadataList: List<AudioMetadata>
+        metadataList: List<AudioMetadata>,
+        seriesFolderName: String? = null
     ): EditionSignals {
         val first = fileNames.firstOrNull().orEmpty()
         val firstStem = withoutExtension(first)
@@ -129,6 +143,7 @@ object EditionSignalExtractor {
             primaryFileName = firstStem,
             folderName = folderName,
             authorFolderName = authorFolderName,
+            seriesFolderName = seriesFolderName,
             seriesPart = series,
             embeddedTags = embedded,
             totalDurationMs = metadataList.sumOf { it.durationMs },
@@ -149,10 +164,10 @@ object EditionSignalExtractor {
     private data class SeriesPatternDef(val label: String, val regex: Regex)
 
     private val SERIES_PATTERNS = listOf(
-        SeriesPatternDef("book", Regex("""(?i)\b(?:book|part|vol(?:ume)?)\s*[:._-]?\s*(?<suffix>\d{1,4}|[٠-٩]{1,4})\b""")),
-        SeriesPatternDef("juz", Regex("""(?:الجزء|جزء)\s*(?:ال)?\s*[:._-]?\s*(?<suffix>الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|\d{1,4}|[٠-٩]{1,4})""")),
-        SeriesPatternDef("kitab", Regex("""(?:الكتاب|كتاب)\s*(?:ال)?\s*[:._-]?\s*(?<suffix>الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|\d{1,4}|[٠-٩]{1,4})""")),
-        SeriesPatternDef("numbered", Regex("""(?:^|\s)[-_]?\s*(?<suffix>\d{1,4}|[٠-٩]{1,4})\s*$"""))
+        SeriesPatternDef("book", Regex("""(?i)\b(?:book|part|vol(?:ume)?)\s*[:._-]?\s*(\d{1,4}|[٠-٩]{1,4})\b""")),
+        SeriesPatternDef("juz", Regex("""(?:الجزء|جزء)\s*(?:ال)?\s*[:._-]?\s*(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|\d{1,4}|[٠-٩]{1,4})""")),
+        SeriesPatternDef("kitab", Regex("""(?:الكتاب|كتاب)\s*(?:ال)?\s*[:._-]?\s*(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|\d{1,4}|[٠-٩]{1,4})""")),
+        SeriesPatternDef("numbered", Regex("""(?:^|\s)[-_]?\s*(\d{1,4}|[٠-٩]{1,4})\s*$"""))
     )
 
     private val ARABIC_ORDINALS = mapOf(
@@ -162,12 +177,12 @@ object EditionSignalExtractor {
     )
 
     private val NARRATOR_PATTERNS = listOf(
-        Regex("""(?i)\bnarrated\s+by\s*[:：]?\s*(?<name>[^,،\-—|]{2,40})"""),
-        Regex("""(?i)\bread\s+by\s*[:：]?\s*(?<name>[^,،\-—|]{2,40})"""),
-        Regex("""\bقراءة\s*(?:(?:ال)?(?:فنان|راوي|أستاذ))?\s*[:：]?\s*(?<name>[^,،\-—|]{2,40})"""),
-        Regex("""\bبرواية\s*[:：]?\s*(?<name>[^,،\-—|]{2,40})"""),
-        Regex("""\b(?:روى|يروي|رويت)\s*[:：]?\s*(?<name>[^,،\-—|]{2,40})""")
+        Regex("""(?i)\bnarrated\s+by\s*[:：]?\s*([^,،\-—|]{2,40})"""),
+        Regex("""(?i)\bread\s+by\s*[:：]?\s*([^,،\-—|]{2,40})"""),
+        Regex("""\bقراءة\s*(?:(?:ال)?(?:فنان|راوي|أستاذ))?\s*[:：]?\s*([^,،\-—|]{2,40})"""),
+        Regex("""\bبرواية\s*[:：]?\s*([^,،\-—|]{2,40})"""),
+        Regex("""\b(?:روى|يروي|رويت)\s*[:：]?\s*([^,،\-—|]{2,40})""")
     )
 
-    private val SUFFIX_NUMBER = Regex("""^.+[ _.\-](?<num>\d{1,4}|[٠-٩]{1,4})(?:\.\w+)?$""")
+    private val SUFFIX_NUMBER = Regex("""^.+[ _.\-](\d{1,4}|[٠-٩]{1,4})(?:\.\w+)?$""")
 }

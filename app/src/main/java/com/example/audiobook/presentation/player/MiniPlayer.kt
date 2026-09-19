@@ -1,8 +1,14 @@
 package com.example.audiobook.presentation.player
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,14 +30,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +59,7 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeChild
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 /**
  * مشغّل مصغّر دائم يظهر فوق شريط التنقل السفلي في كل الشاشات
@@ -62,6 +77,7 @@ fun MiniPlayer(
     haze: HazeState,
     mode: AppThemeMode,
     onClick: () -> Unit,
+    onStopPlayback: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: MiniPlayerViewModel = hiltViewModel()
 ) {
@@ -69,6 +85,17 @@ fun MiniPlayer(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playbackState by controller.state.collectAsStateWithLifecycle()
+
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var dismissOffsetPx by remember { mutableFloatStateOf(0f) }
+    val dismissAnim = remember { Animatable(0f) }
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        appear.snapTo(0f)
+        appear.animateTo(1f, tween(260))
+    }
+    val latestOnStopPlayback = rememberUpdatedState(onStopPlayback)
 
     val progressFraction = if (playbackState.durationMs > 0L) {
         (playbackState.positionMs.toFloat() / playbackState.durationMs).coerceIn(0f, 1f)
@@ -119,6 +146,40 @@ fun MiniPlayer(
             .background(glass, shape)
             .border(1.dp, fg.colors.popupOutline, shape)
             .hazeChild(haze, miniGlassStyle)
+            .graphicsLayer {
+                val slideInPx = (1f - appear.value) * 80.dp.toPx()
+                translationY = dismissOffsetPx + slideInPx
+                alpha = appear.value
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
+                    val startY = down.position.y
+                    val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                        ?: return@awaitEachGesture
+                    var offset = (slop.position.y - startY).coerceAtLeast(0f)
+                    dismissOffsetPx = offset
+                    drag(slop.id) { change ->
+                        change.consume()
+                        offset = (change.position.y - startY).coerceAtLeast(0f)
+                        dismissOffsetPx = offset
+                    }
+                    val threshold = with(density) { miniPlayerDismissThresholdDp.toPx() }
+                    if (offset >= threshold) {
+                        scope.launch {
+                            dismissAnim.snapTo(dismissOffsetPx)
+                            dismissAnim.animateTo(dismissOffsetPx + with(density) { 160.dp.toPx() }, tween(180)) { dismissOffsetPx = value }
+                            latestOnStopPlayback.value()
+                        }
+                    } else {
+                        scope.launch {
+                            dismissAnim.snapTo(dismissOffsetPx)
+                            dismissAnim.animateTo(0f, tween(200)) { dismissOffsetPx = value }
+                        }
+                    }
+                }
+                Unit
+            }
             .clickable(onClick = onClick)
     ) {
         Row(
@@ -196,3 +257,6 @@ fun MiniPlayer(
         )
     }
 }
+
+/** عتبة سحب المشغّل المصغّر للأسفل لإيقاف التشغيل وإخفائه بالكامل. */
+private val miniPlayerDismissThresholdDp = 120.dp

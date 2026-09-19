@@ -1,10 +1,15 @@
-﻿package com.example.audiobook.presentation.settings
+package com.example.audiobook.presentation.settings
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.domain.usecases.IntelligenceLevel
+import com.example.audiobook.domain.usecases.ReclassifyLibrary
+import com.example.audiobook.domain.usecases.libraryManagementFor
+import com.example.audiobook.domain.usecases.scanLibraryNowFor
 import com.example.audiobook.domain.model.AppThemeMode
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -25,24 +30,35 @@ import org.robolectric.RobolectricTestRunner
 class SettingsViewModelTest {
 
     private lateinit var context: Context
+    private lateinit var database: AppDatabase
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext<Context>()
-        // Ù‚ÙŠÙ…Ø© Ù‚Ø§Ø¹Ø¯ÙŠØ© Ø­ØªÙ…ÙŠØ© Ø¨ØºØ¶Ù‘ Ø§Ù„Ù†Ø¸Ø± Ø¹Ù† Ø£ÙŠ Ø§Ø®ØªØ¨Ø§Ø± Ø³Ø§Ø¨Ù‚ ÙƒØªØ¨ ÙÙŠ Ù†ÙØ³ Ø§Ù„Ù€SharedPreferences.
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         AppSettings(context).setIntelligenceLevel(IntelligenceLevel.BALANCED)
         AppSettings(context).setThemeMode(AppThemeMode.DARK)
     }
 
     @After
     fun tearDown() {
+        database.close()
         AppSettings(context).setIntelligenceLevel(IntelligenceLevel.BALANCED)
         AppSettings(context).setThemeMode(AppThemeMode.DARK)
     }
 
+    private fun viewModel(): SettingsViewModel = SettingsViewModel(
+        AppSettings(context),
+        ReminderScheduler(context, AppSettings(context)),
+        libraryManagementFor(database),
+        database.libraryRootDao(),
+        scanLibraryNowFor(database, AppSettings(context)),
+        ReclassifyLibrary(database)
+    )
+
     @Test
     fun chosenLevelThroughViewModelIsPersistedAcrossNewInstance() {
-        val viewModel = SettingsViewModel(AppSettings(context), ReminderScheduler(context, AppSettings(context)))
+        val viewModel = viewModel()
 
         viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE)
 
@@ -52,7 +68,7 @@ class SettingsViewModelTest {
 
     @Test
     fun selectingEveryLevelAppliesPersistentlyThroughAppSettings() {
-        val viewModel = SettingsViewModel(AppSettings(context), ReminderScheduler(context, AppSettings(context)))
+        val viewModel = viewModel()
 
         for (level in IntelligenceLevel.entries) {
             viewModel.selectIntelligenceLevel(level)
@@ -63,7 +79,7 @@ class SettingsViewModelTest {
 
     @Test
     fun chosenThemeThroughViewModelIsPersistedAcrossNewInstance() {
-        val viewModel = SettingsViewModel(AppSettings(context), ReminderScheduler(context, AppSettings(context)))
+        val viewModel = viewModel()
 
         viewModel.selectThemeMode(AppThemeMode.AMOLED)
 

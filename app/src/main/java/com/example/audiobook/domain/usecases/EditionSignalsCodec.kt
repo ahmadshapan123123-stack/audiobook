@@ -30,6 +30,7 @@ object EditionSignalsCodec {
         put("primaryFileName", signals.primaryFileName)
         put("folderName", signals.folderName)
         put("authorFolderName", signals.authorFolderName.orEmpty())
+        put("seriesFolderName", signals.seriesFolderName.orEmpty())
         put("seriesPattern", signals.seriesPart?.pattern.orEmpty())
         put("seriesPartNumber", signals.seriesPart?.partNumber?.toString() ?: JSONObject.NULL)
         put("embeddedTitle", signals.embeddedTags?.title.orEmpty())
@@ -57,6 +58,7 @@ object EditionSignalsCodec {
             primaryFileName = json.optString("primaryFileName"),
             folderName = json.optString("folderName"),
             authorFolderName = json.optString("authorFolderName").takeIf { it.isNotBlank() },
+            seriesFolderName = json.optString("seriesFolderName").takeIf { it.isNotBlank() },
             seriesPart = seriesPart,
             embeddedTags = embedded
                 .let { if (it.title == null && it.narrator == null && it.genre == null) null else it },

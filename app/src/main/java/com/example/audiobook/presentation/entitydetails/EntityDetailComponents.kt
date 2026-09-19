@@ -2,6 +2,8 @@ package com.example.audiobook.presentation.entitydetails
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,14 +86,24 @@ internal fun EntityHeaderBlock(
 
 /** صف كتاب داخل صفحات التفاصيل: غلاف + عنوان + مؤلف/سلسلة + بقي + شريط التقدّم. */
 @Composable
-internal fun EntityBookRowItem(row: EntityBookRow, onClick: () -> Unit) {
+internal fun EntityBookRowItem(
+    row: EntityBookRow,
+    onClick: () -> Unit,
+    onBookOptions: () -> Unit = {},
+    trailing: (@Composable () -> Unit)? = null
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .minTouchTarget()
             .clip(RoundedCornerShape(AppSpacing.sm))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onBookOptions
+            )
             .padding(AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
@@ -125,6 +138,7 @@ internal fun EntityBookRowItem(row: EntityBookRow, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            trailing?.invoke()
         }
         if (row.hasProgress) {
             LinearProgressIndicator(

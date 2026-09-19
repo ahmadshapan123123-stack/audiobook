@@ -55,7 +55,14 @@ class SettingsChoiceDrivesScanIntegrationTest {
         source = FakeFileSource()
         reader = CountingMetadataReader()
         appSettings = AppSettings(context)
-        viewModel = SettingsViewModel(appSettings, ReminderScheduler(context, appSettings))
+        viewModel = SettingsViewModel(
+            appSettings,
+            ReminderScheduler(context, appSettings),
+            libraryManagementFor(database),
+            database.libraryRootDao(),
+            scanLibraryNowFor(database, appSettings),
+            ReclassifyLibrary(database)
+        )
         scanRoot = ScanRoot(database, source, reader, appSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)
         runBlocking { database.libraryRootDao().insert(root) }
