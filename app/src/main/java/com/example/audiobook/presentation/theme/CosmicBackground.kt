@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.theme
 
+import com.example.audiobook.domain.model.AppThemeMode
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier

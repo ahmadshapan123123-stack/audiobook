@@ -39,7 +39,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.presentation.theme.AppSpacing
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint

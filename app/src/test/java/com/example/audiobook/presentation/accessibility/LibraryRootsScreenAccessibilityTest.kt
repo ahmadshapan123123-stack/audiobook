@@ -29,7 +29,7 @@ import com.example.audiobook.data.room.entity.LibraryRootEntity
 import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.presentation.libraryroots.LibraryRootsViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers

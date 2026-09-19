@@ -6,7 +6,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +50,7 @@ import com.example.audiobook.R
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentPadding
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import java.text.SimpleDateFormat
@@ -155,7 +155,7 @@ fun SavedScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(bottom = 168.dp),
+                contentPadding = bottomContentPadding(),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
                 when (selectedTab) {

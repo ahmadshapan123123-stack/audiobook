@@ -1,5 +1,6 @@
 package com.example.audiobook.domain.usecases
 
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.*
 import java.util.UUID
@@ -26,9 +27,13 @@ import javax.inject.Inject
  *  - Listening sessions spread across recent days so History/Statistics have real rows.
  *  - Covers are colored placeholders (coverSource = PLACEHOLDER, no network images).
  */
-class DatabaseSeeder @Inject constructor(private val database: AppDatabase) {
+class DatabaseSeeder @Inject constructor(
+    private val database: AppDatabase,
+    private val appSettings: AppSettings
+) {
 
     suspend operator fun invoke() {
+        if (appSettings.hasSeededDemoData.value) return
         if (database.bookDao().getAll().isNotEmpty()) return
         val now = System.currentTimeMillis()
         val day = 24 * 60 * 60 * 1000L
@@ -69,6 +74,8 @@ class DatabaseSeeder @Inject constructor(private val database: AppDatabase) {
         val bLeilAma = book("الليل الأعمى", samman.id, null, null, "خواطر")
         val books = listOf(bMaWara, bMaWaraAlt, bKanz, bBait, bInsan, bBayn, bQasr, bSukaria, bAzazil, bLeilAma)
         books.forEach { database.bookDao().insert(it) }
+
+        appSettings.setHasSeededDemoData(true)
 
         // --- إصدارات ---
         val eMaWaraComplete = edition(bMaWara.id, rootDemo.id, "النسخة الكاملة", "محمد خضير", 2_700_000, "M4B", "ما-وراء-الطبيعة/كاملة", 0.96f, true)
@@ -174,7 +181,7 @@ class DatabaseSeeder @Inject constructor(private val database: AppDatabase) {
         orderInSeries = orderInSeries, genre = genre, coverImagePath = null,
         coverSource = CoverSource.PLACEHOLDER, isCoverUserSelected = false,
         isTitleUserConfirmed = false, defaultEditionId = null, remoteId = null,
-        syncStatus = SyncStatus.LOCAL_ONLY
+        syncStatus = SyncStatus.LOCAL_ONLY, isDemo = true
     )
 
     private fun edition(

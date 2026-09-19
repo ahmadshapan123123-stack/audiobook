@@ -54,9 +54,11 @@ import com.example.audiobook.data.room.entity.BookmarkType
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.domain.usecases.CoverCandidate
 import com.example.audiobook.domain.usecases.CoverCandidateSource
+import com.example.audiobook.presentation.common.ConfirmDeleteDialog
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import java.util.UUID
@@ -74,6 +76,7 @@ fun BookDetailsScreen(
     var author by remember { mutableStateOf("") }
     var activeTab by remember { mutableStateOf("overview") }
     var saved by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val book = uiState.book
 
@@ -180,6 +183,22 @@ fun BookDetailsScreen(
                         }
                     }
 
+                    TextButton(onClick = { showDeleteDialog = true }, modifier = Modifier.minTouchTarget()) {
+                        Text(stringResource(R.string.book_menu_delete), color = MaterialTheme.colorScheme.error)
+                    }
+
+                    if (showDeleteDialog) {
+                        ConfirmDeleteDialog(
+                            title = stringResource(R.string.confirm_delete_title),
+                            message = stringResource(R.string.confirm_delete_book, book.title),
+                            onConfirm = {
+                                showDeleteDialog = false
+                                viewModel.deleteBook(onBack)
+                            },
+                            onDismiss = { showDeleteDialog = false }
+                        )
+                    }
+
                     SectionTitle(stringResource(R.string.bd_cover_header))
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                         FilledTonalButton(onClick = { viewModel.setUserCover(book, "user-selected-cover.jpg") }, modifier = Modifier.minTouchTarget()) {
@@ -251,7 +270,7 @@ fun BookDetailsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(AppSpacing.lg))
+        Spacer(Modifier.height(bottomContentInset()))
     }
 }
 

@@ -1,7 +1,16 @@
 package com.example.audiobook.presentation.player
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -13,9 +22,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -39,6 +52,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -48,11 +62,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BookmarkAdd
-import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
@@ -60,6 +77,8 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -94,12 +113,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -122,12 +144,13 @@ import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.playback.SleepTimerPhase
 import com.example.audiobook.playback.SleepTimerUiState
 import com.example.audiobook.presentation.theme.AppSpacing
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.LocalCosmicHeader
 import com.example.audiobook.presentation.theme.SpaceGroteskFamily
 import com.example.audiobook.presentation.theme.minTouchTarget
 
 import java.util.UUID
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -145,6 +168,8 @@ fun PlayerScreen(
     themeMode: AppThemeMode,
     marks: MarksCoordinator? = null,
     sleepTimer: SleepTimerController,
+    notificationCenter: com.example.audiobook.notifications.AtherNotificationCenter? = null,
+    onFirstPlaybackPermissionRequest: () -> Unit = {},
     initialPositionMs: Long = -1L,
     onBack: () -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
@@ -175,11 +200,42 @@ fun PlayerScreen(
     var noteComposerPosMs by remember { mutableStateOf<Long?>(null) }
     var chapterComposerPosMs by remember { mutableStateOf<Long?>(null) }
     var captureNotice by remember { mutableStateOf<CaptureNotice?>(null) }
-    var showNoteOverlay by remember { mutableStateOf(false) }
-    var activeNoteText by remember { mutableStateOf("") }
+    var noteVisible by remember { mutableStateOf(false) }
+    var activeNoteAlert by remember { mutableStateOf<NoteAlert?>(null) }
     var headerHeightPx by remember { mutableIntStateOf(0) }
     var consoleHeightPx by remember { mutableIntStateOf(0) }
     var rootHeightPx by remember { mutableIntStateOf(0) }
+    var headerBottomPx by remember { mutableIntStateOf(0) }
+
+    // ---- جهاز الصوت: مراقبة المخرجات وتذكّر الاختيار (التبديل لا يوقف التشغيل) ----
+    val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    var audioDevices by remember { mutableStateOf<List<AudioDeviceInfo>>(emptyList()) }
+    var activeDeviceId by remember { mutableStateOf<Int?>(null) }
+    val canListBt = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    fun refreshAudioDevices() {
+        val found = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.toList().orEmpty()
+        audioDevices = found
+            .filter { it.isSink && isRelevantOutputType(it.type) }
+            .distinctBy { it.id }
+            .sortedBy { outputDeviceSortKey(it.type) }
+        if (audioDevices.none { it.id == activeDeviceId }) {
+            activeDeviceId = audioDevices.firstOrNull()?.id
+        }
+    }
+    DisposableEffect(audioManager, canListBt) {
+        refreshAudioDevices()
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) { refreshAudioDevices() }
+            override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) { refreshAudioDevices() }
+        }
+        audioManager.registerAudioDeviceCallback(callback, null)
+        onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
+    }
+    val btPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        refreshAudioDevices()
+    }
 
     LaunchedEffect(captureNotice) {
         if (captureNotice != null) {
@@ -195,6 +251,13 @@ fun PlayerScreen(
     LaunchedEffect(playback.durationMs) {
         if (playback.durationMs > 0L && timeline.durationMs != playback.durationMs) {
             timeline = timeline.copy(durationMs = playback.durationMs)
+        }
+    }
+    var playbackPermissionRequested by remember { mutableStateOf(false) }
+    LaunchedEffect(playback.isPlaying) {
+        if (playback.isPlaying && !playbackPermissionRequested) {
+            playbackPermissionRequested = true
+            onFirstPlaybackPermissionRequest()
         }
     }
     val renderedTimeline = timeline.copy(
@@ -221,6 +284,13 @@ fun PlayerScreen(
     val navBarInsetPx = WindowInsets.navigationBars.getBottom(density)
     val coverAreaHeightPx = (rootHeightPx - headerHeightPx - consoleHeightPx - navBarInsetPx).coerceAtLeast(0)
     val deckMaxHeight = with(density) { coverAreaHeightPx.toDp() * 0.88f }
+    // موضع تراكب الملاحظة: أسفل الشريط العلوي وفوق المساحة الفارغة أعلى الغلاف مباشرةً —
+    // لا يغطي الغلاف ولا العنوان ولا أدوات التحكّم، ولا يتقاطع مع شريحة الفصل العلوية.
+    val noteTopPadding = if (headerBottomPx > 0) {
+        with(density) { (headerBottomPx + AppSpacing.xs.roundToPx()).toDp() }
+    } else {
+        72.dp
+    }
     val anyPopupOpen = expandedPanel != null ||
         saveMomentPosMs != null ||
         noteComposerPosMs != null ||
@@ -246,6 +316,7 @@ fun PlayerScreen(
                 marks.addBookmark(editionId, pos)
                 sleepTimer.onActiveInteraction(ActiveInteraction.AddBookmark)
             } else timeline = timeline.copy(bookmarks = timeline.bookmarks + PlayerBookmark(positionMs = pos))
+            notificationCenter?.showSaveMoment(pos)
             captureNotice = CaptureNotice(R.string.player_mark_captured, pos)
             saveMomentPosMs = null
         }
@@ -258,6 +329,7 @@ fun PlayerScreen(
                 marks.addBookmark(editionId, pos, note = trimmed.ifBlank { "ملاحظة" })
                 sleepTimer.onActiveInteraction(ActiveInteraction.AddNote)
             } else timeline = timeline.copy(bookmarks = timeline.bookmarks + PlayerBookmark(positionMs = pos, label = trimmed.ifBlank { null }))
+            notificationCenter?.showSaveMoment(pos)
             captureNotice = CaptureNotice(R.string.player_note_saved, pos)
             noteComposerPosMs = null
         }
@@ -268,7 +340,15 @@ fun PlayerScreen(
             marks.addChapter(editionId, pos, title = name.ifBlank { "فصل جديد" })
             sleepTimer.onActiveInteraction(ActiveInteraction.CreateChapter)
         } else timeline = PlayerTimelineEditor.addChapter(timeline, pos, title = name.ifBlank { "فصل جديد" })
+        notificationCenter?.showSaveMoment(pos)
         captureNotice = CaptureNotice(R.string.player_chapter_saved, pos)
+    }
+
+    // منطق موحّد لنقل الفصل: قاعدة البيانات إن توفّرت، وإلا الحالة المحلية (Preview).
+    val onChapterMoved: (UUID, Long) -> Unit = { id, position ->
+        val stored = storedChapters.firstOrNull { it.id == id }
+        if (marks != null && stored != null) scope.launch { marks.updateChapter(stored, position) }
+        else timeline = PlayerTimelineEditor.moveChapter(timeline, id, position)
     }
 
     val saveChapter: (String) -> Unit = { name ->
@@ -278,37 +358,56 @@ fun PlayerScreen(
         }
     }
 
-    // ---- مراقبة عبور الملاحظات: تُعرض ٦ ثوانٍ مع نغمة تنبيه عند تخطّي موضعها ----
+    // ---- عبور الملاحظات: تُعرض النصوص تباعًا (~٦ ثوانٍ لكل ملاحظة) مع نغمة قصيرة هادئة ----
     val noteTone = remember { NoteCueTone() }
-    DisposableEffect(Unit) { onDispose { noteTone.release() } }
+    val noteAlerts = remember { Channel<NoteAlert>(Channel.UNLIMITED) }
+    DisposableEffect(Unit) {
+        onDispose {
+            noteAlerts.close()
+            noteTone.release()
+        }
+    }
     var lastWatchPosMs by remember { mutableStateOf(playback.positionMs) }
-    var triggeredNoteIds by remember { mutableStateOf(emptySet<UUID>()) }
+    var consumedNoteIds by remember { mutableStateOf(emptySet<UUID>()) }
+
+    // جلسة تشغيل جديدة: إعادة ضبط كاملة لحالة العبور.
+    LaunchedEffect(editionId) {
+        consumedNoteIds = emptySet()
+        lastWatchPosMs = playback.positionMs
+    }
+
+    // الكشف عن العبور: مرة واحدة لكل ملاحظة، مع إعادة تسليحها عند الرجوع للخلف فوقها.
     LaunchedEffect(playback.positionMs, renderedTimeline.bookmarks) {
         val notes = renderedTimeline.bookmarks.filter { it.label?.isNotBlank() == true }
         val current = playback.positionMs
         val previous = lastWatchPosMs
-        if (current < previous - 2_000L) {
-            val before = current + 500L
-            triggeredNoteIds = buildSet {
-                for (id in triggeredNoteIds) {
-                    if (notes.none { it.id == id && it.positionMs > before }) add(id)
-                }
-            }
+        if (current < previous - SEEK_BACK_THRESHOLD_MS) {
+            consumedNoteIds = consumedNoteIds.filter { id ->
+                notes.any { it.id == id && it.positionMs > current }
+            }.toSet()
         }
-        if (current != previous) {
-            val crossed = notes.firstOrNull { it.positionMs in previous..current && it.id !in triggeredNoteIds }
-            if (crossed != null) {
-                triggeredNoteIds = triggeredNoteIds + crossed.id
-                activeNoteText = crossed.label.orEmpty()
-                showNoteOverlay = true
-                noteTone.play()
-                launch {
-                    delay(6_000)
-                    showNoteOverlay = false
-                }
+        if (current > previous) {
+            val crossed = notes
+                .filter { it.id !in consumedNoteIds && it.positionMs > previous && it.positionMs <= current }
+                .sortedBy { it.positionMs }
+            if (crossed.isNotEmpty()) {
+                consumedNoteIds = consumedNoteIds + crossed.map { it.id }
+                crossed.forEach { noteAlerts.trySend(NoteAlert(it.label.orEmpty(), it.positionMs)) }
             }
         }
         lastWatchPosMs = current
+    }
+
+    // العرض التسلسلي: ملاحظة واحدة في كل مرة، بلا تكديس، وبلا أي تفاعل مطلوب.
+    LaunchedEffect(Unit) {
+        for (alert in noteAlerts) {
+            activeNoteAlert = alert
+            noteVisible = true
+            noteTone.play()
+            delay(NOTE_OVERLAY_VISIBLE_MS)
+            noteVisible = false
+            delay(NOTE_OVERLAY_GAP_MS)
+        }
     }
 
     CompositionLocalProvider(LocalPlayerColors provides fg.colors) {
@@ -346,7 +445,10 @@ fun PlayerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = AppSpacing.md, end = AppSpacing.md, top = AppSpacing.xs)
-                    .onGloballyPositioned { headerHeightPx = it.size.height },
+                    .onGloballyPositioned {
+                        headerHeightPx = it.size.height
+                        headerBottomPx = (it.positionInRoot().y + it.size.height).roundToInt()
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
             ) {
@@ -359,6 +461,10 @@ fun PlayerScreen(
                     fg = fg,
                     modifier = Modifier.weight(1f)
                 )
+                val activeDeviceType = audioDevices.firstOrNull { it.id == activeDeviceId }?.type ?: AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                IconButton(onClick = { expandedPanel = if (expandedPanel == PlayerControlPanel.DEVICES) null else PlayerControlPanel.DEVICES }, modifier = Modifier.minTouchTarget()) {
+                    Icon(outputDeviceTypeIcon(activeDeviceType), contentDescription = stringResource(R.string.player_device_icon_desc), tint = fg.ink)
+                }
                 IconButton(onClick = { expandedPanel = if (expandedPanel == PlayerControlPanel.MORE) null else PlayerControlPanel.MORE }, modifier = Modifier.minTouchTarget()) {
                     Icon(Icons.Outlined.MoreHoriz, contentDescription = stringResource(R.string.player_more_menu), tint = fg.ink)
                 }
@@ -423,19 +529,10 @@ fun PlayerScreen(
                     sleepTimer.onActiveInteraction(ActiveInteraction.Seek)
                     controller.seekTo(target)
                 },
-                onChapterMoved = { id, position ->
-                    val stored = storedChapters.firstOrNull { it.id == id }
-                    if (marks != null && stored != null) scope.launch { marks.updateChapter(stored, position) }
-                    else timeline = PlayerTimelineEditor.moveChapter(timeline, id, position)
-                },
+                onChapterMoved = onChapterMoved,
                 onSeekToChapter = { target -> controller.seekTo(target) },
-                onPreviewNote = { text ->
-                    activeNoteText = text
-                    showNoteOverlay = true
-                    scope.launch {
-                        delay(4_000)
-                        showNoteOverlay = false
-                    }
+                onPreviewNote = { text, pos ->
+                    noteAlerts.trySend(NoteAlert(text, pos))
                 },
                 modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md)
             )
@@ -519,7 +616,7 @@ fun PlayerScreen(
 
         // ---- لوحات الأدوات (السرعة/النوم/الفصول): فوق الحجاب، فوق منطقة الغلاف ----
         AnimatedVisibility(
-            visible = expandedPanel != null && expandedPanel != PlayerControlPanel.MORE,
+            visible = expandedPanel != null && expandedPanel != PlayerControlPanel.MORE && expandedPanel != PlayerControlPanel.DEVICES,
             modifier = Modifier.fillMaxSize(),
             enter = fadeIn() + expandVertically(expandFrom = Alignment.CenterVertically),
             exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.CenterVertically)
@@ -559,11 +656,7 @@ fun PlayerScreen(
                         timeline = PlayerTimelineEditor.zoom(timeline, playback.positionMs)
                     }
                 },
-                onChapterMoved = { id, position ->
-                    val stored = storedChapters.firstOrNull { it.id == id }
-                    if (marks != null && stored != null) scope.launch { marks.updateChapter(stored, position) }
-                    else timeline = PlayerTimelineEditor.moveChapter(timeline, id, position)
-                },
+                onChapterMoved = onChapterMoved,
                 fg = fg,
                 maxDeckHeight = deckMaxHeight,
                 modifier = Modifier
@@ -606,19 +699,50 @@ fun PlayerScreen(
             onChapters = { expandedPanel = PlayerControlPanel.CHAPTERS },
             onAddChapterHere = { addChapterAt(playback.positionMs, "") }
         )
-        NoteOverlay(
-            visible = showNoteOverlay,
-            text = activeNoteText,
+        DeviceDeck(
+            visible = expandedPanel == PlayerControlPanel.DEVICES,
+            devices = audioDevices,
+            activeDeviceId = activeDeviceId,
+            canListBt = canListBt,
             fg = fg,
-            onDismiss = { showNoteOverlay = false }
+            onRequestPermission = { btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) },
+            onSelect = { device ->
+                val target = if (outputDeviceIsAutoRouted(device.type)) null else device
+                val applied = controller.setPreferredAudioDevice(target)
+                activeDeviceId = device.id
+                if (!applied) Toast.makeText(context, R.string.player_device_switch_failed, Toast.LENGTH_SHORT).show()
+            },
+            onClose = { expandedPanel = null }
+        )
+        NoteOverlay(
+            visible = noteVisible,
+            alert = activeNoteAlert,
+            headerTitle = stringResource(R.string.player_note_overlay_header),
+            fg = fg,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = noteTopPadding)
+                .padding(horizontal = AppSpacing.lg)
         )
     }
     }
 }
 
-private enum class PlayerControlPanel { SPEED, SLEEP, CHAPTERS, MORE }
+private enum class PlayerControlPanel { SPEED, SLEEP, CHAPTERS, MORE, DEVICES }
 
 private data class CaptureNotice(val resId: Int, val posMs: Long)
+
+/** تنبيه ملاحظة عابر: النص الكامل + موضعها الزمني (للترويسة). */
+private data class NoteAlert(val text: String, val positionMs: Long)
+
+/** مدة بقاء تراكب الملاحظة ظاهرًا قبل التلاشي التلقائي. */
+private const val NOTE_OVERLAY_VISIBLE_MS = 6_000L
+
+/** فاصل قصير بين ملاحظتين متتاليتين حتى لا تتكدّسا. */
+private const val NOTE_OVERLAY_GAP_MS = 350L
+
+/** عتبة تمييز الرجوع للخلف (seek/restart) عن التقدّم الطبيعي أثناء التشغيل. */
+private const val SEEK_BACK_THRESHOLD_MS = 2_000L
 
 /**
  * أدوار الألوان في المشغّل — مصدر واحد مشتق من تدرج الكتاب.
@@ -753,6 +877,16 @@ private fun sleepStatusLabel(sleepUi: SleepTimerUiState): String {
 
 private fun formatTime(ms: Long): String = "%02d:%02d".format(ms / 60_000, (ms / 1_000) % 60)
 
+/** ختم زمني للملاحظة: س:د:ث عند تجاوز الساعة، وإلا د:ث. */
+private fun formatNoteTimestamp(ms: Long): String {
+    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%02d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
+}
+
 /** غلاف المشغّل: الحرف الأول فوق تدرج الكتاب. */
 @Composable
 private fun PlayerCoverBlock(
@@ -883,12 +1017,20 @@ private fun PlayerTimelineSection(
     onScrub: (Long) -> Unit,
     onChapterMoved: (UUID, Long) -> Unit,
     onSeekToChapter: (Long) -> Unit,
-    onPreviewNote: (String) -> Unit,
+    onPreviewNote: (String, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val positionFraction = if (visibleWindow.last <= visibleWindow.first) 0f
     else ((positionMs - visibleWindow.first).toFloat() / (visibleWindow.last - visibleWindow.first)).coerceIn(0f, 1f)
     var dragState by remember { mutableStateOf<ChapterDragState?>(null) }
+    var scrubFraction by remember { mutableStateOf<Float?>(null) }
+    val latestWindow = rememberUpdatedState(visibleWindow)
+    val latestScrub = rememberUpdatedState(onScrub)
+    val commitScrub: () -> Unit = {
+        val target = scrubFraction
+        if (target != null) latestScrub.value(mkWindowTime(latestWindow.value, target))
+        scrubFraction = null
+    }
 
     Column(
         modifier = modifier,
@@ -908,10 +1050,12 @@ private fun PlayerTimelineSection(
         SeekTrackZone(
             timelineState = timelineState,
             positionFraction = positionFraction,
+            scrubFraction = scrubFraction,
             visibleWindow = visibleWindow,
             fg = fg,
             editing = editing,
-            onScrub = onScrub,
+            onScrubLive = { scrubFraction = it },
+            onScrubCommit = commitScrub,
             onSeekToChapter = onSeekToChapter,
             onPreviewNote = onPreviewNote
         )
@@ -920,13 +1064,14 @@ private fun PlayerTimelineSection(
             modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            val displayMs = scrubFraction?.let { mkWindowTime(latestWindow.value, it) } ?: positionMs
             Text(
-                formatTime(positionMs),
+                formatTime(displayMs),
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
                 color = fg.ink
             )
             Text(
-                stringResource(R.string.player_remaining, formatTime((durationMs - positionMs).coerceAtLeast(0L))),
+                stringResource(R.string.player_remaining, formatTime((durationMs - displayMs).coerceAtLeast(0L))),
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
                 color = fg.soft
             )
@@ -939,12 +1084,14 @@ private fun PlayerTimelineSection(
 private fun SeekTrackZone(
     timelineState: PlayerTimelineState,
     positionFraction: Float,
+    scrubFraction: Float?,
     visibleWindow: LongRange,
     fg: PlayerFg,
     editing: Boolean,
-    onScrub: (Long) -> Unit,
+    onScrubLive: (Float) -> Unit,
+    onScrubCommit: () -> Unit,
     onSeekToChapter: (Long) -> Unit,
-    onPreviewNote: (String) -> Unit
+    onPreviewNote: (String, Long) -> Unit
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val latestSeek = rememberUpdatedState(onSeekToChapter)
@@ -953,15 +1100,14 @@ private fun SeekTrackZone(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = markerBarHeight)
+            .testTag("seek-track-zone")
     ) {
         if (!editing) {
             Box(modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                 Slider(
-                    value = positionFraction,
-                    onValueChange = { fraction ->
-                        onScrub(mkWindowTime(visibleWindow, fraction))
-                    },
-                    onValueChangeFinished = {},
+                    value = scrubFraction ?: positionFraction,
+                    onValueChange = onScrubLive,
+                    onValueChangeFinished = onScrubCommit,
                     colors = SliderDefaults.colors(
                         thumbColor = fg.colors.accent,
                         activeTrackColor = fg.colors.accent,
@@ -1055,7 +1201,7 @@ private fun SeekMarkerTapLayer(
     visibleWindow: LongRange,
     isRtl: Boolean,
     onSeekToChapter: (Long) -> Unit,
-    onPreviewNote: (String) -> Unit
+    onPreviewNote: (String, Long) -> Unit
 ) {
     val latestWindow = rememberUpdatedState(visibleWindow)
     val latestSeek = rememberUpdatedState(onSeekToChapter)
@@ -1092,7 +1238,7 @@ private fun SeekMarkerTapLayer(
                         .fillMaxHeight()
                         .pointerInput(bookmark.id, isRtl) {
                             detectTapGestures(
-                                onTap = { latestPreview.value(bookmark.label ?: formatTime(bookmark.positionMs)) }
+                                onTap = { latestPreview.value(bookmark.label ?: formatTime(bookmark.positionMs), bookmark.positionMs) }
                             )
                         }
                 ) {}
@@ -1121,9 +1267,55 @@ private fun ChapterHandleStrip(
         modifier = Modifier
             .fillMaxWidth()
             .height(chapterStripHeight)
+            .testTag("chapter-handle-strip")
+            .pointerInput(isRtl, timelineState) {
+                val inset = 12.dp.toPx()
+                val stripSpan = size.width.toFloat() - inset * 2f
+                val grabRadius = 24.dp.toPx()
+                fun epochX(fraction: Float): Float =
+                    if (isRtl) inset + stripSpan * (1f - fraction) else inset + stripSpan * fraction
+                fun fractionAt(stripX: Float): Float {
+                    val f = ((stripX - inset) / stripSpan).coerceIn(0f, 1f)
+                    return if (isRtl) 1f - f else f
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val w = latestWindow.value
+                    val inView = timelineState.chapters
+                        .sortedBy { it.startPositionMs }
+                        .filter { mkFraction(it.startPositionMs, w) in 0f..1f }
+                    var grabId: UUID? = null
+                    var bestDist = Float.MAX_VALUE
+                    inView.forEach { chapter ->
+                        val fx = epochX(mkFraction(chapter.startPositionMs, w))
+                        val dist = kotlin.math.abs(down.position.x - fx)
+                        if (dist <= grabRadius && dist < bestDist) {
+                            bestDist = dist
+                            grabId = chapter.id
+                        }
+                    }
+                    val id = grabId ?: return@awaitEachGesture
+                    val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                        change.consume()
+                    }
+                    if (slop == null) return@awaitEachGesture
+                    var timeMs = mkWindowTime(w, fractionAt(slop.position.x)).coerceIn(w.first, w.last)
+                    latestState.value(ChapterDragState(id, timeMs))
+                    try {
+                        drag(down.id) { change ->
+                            change.consume()
+                            val ww = latestWindow.value
+                            timeMs = mkWindowTime(ww, fractionAt(change.position.x)).coerceIn(ww.first, ww.last)
+                            latestState.value((latestDrag.value ?: ChapterDragState(id, timeMs)).copy(timeMs = timeMs))
+                        }
+                    } finally {
+                        latestState.value(null)
+                    }
+                    latestMove.value(id, timeMs)
+                }
+            }
     ) {
         val spanDp = maxWidth - 24.dp
-        val stripWidthPx = constraints.maxWidth.toFloat()
         ChapterHandleMarksCanvas(
             modifier = Modifier.matchParentSize(),
             timelineState = timelineState,
@@ -1132,59 +1324,12 @@ private fun ChapterHandleStrip(
             fg = fg,
             dragState = dragState
         )
-        timelineState.chapters.sortedBy { it.startPositionMs }.forEach { chapter ->
-            val f = mkFraction(chapter.startPositionMs, visibleWindow)
-            if (f in 0f..1f) {
-                val isDragged = dragState?.id == chapter.id
-                val center = if (isDragged) mkFraction(dragState!!.timeMs, visibleWindow) else f
-                val xDp = if (isRtl) (maxWidth - 12.dp) - spanDp * center else 12.dp + spanDp * center
-                val handleLeftPx = remember(chapter.id) { mutableStateOf(0f) }
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset((xDp - 24.dp).toPx().roundToInt(), 0) }
-                        .onGloballyPositioned { handleLeftPx.value = it.positionInParent().x }
-                        .width(48.dp)
-                        .fillMaxHeight()
-                        .pointerInput(chapter.id, isRtl) {
-                            val inset = 12.dp.toPx()
-                            val handleY = 9.dp.toPx()
-                            val handleRadius = 24.dp.toPx()
-                            fun fractionAt(stripX: Float): Float {
-                                val boxLeft = handleLeftPx.value
-                                val x = boxLeft + stripX
-                                return if (isRtl) (1f - (x - inset) / (stripWidthPx - inset * 2f)).coerceIn(0f, 1f)
-                                else ((x - inset) / (stripWidthPx - inset * 2f)).coerceIn(0f, 1f)
-                            }
-                            detectDragGestures(
-                                onDragStart = { start ->
-                                    if (kotlin.math.abs(start.y - handleY) > handleRadius) return@detectDragGestures
-                                    val w = latestWindow.value
-                                    val handleStart = start
-                                    latestState.value(ChapterDragState(chapter.id, mkWindowTime(w, fractionAt(handleStart.x)).coerceIn(w.first, w.last)))
-                                },
-                                onDrag = { change, _ ->
-                                    change.consume()
-                                    val current = latestDrag.value ?: return@detectDragGestures
-                                    val w = latestWindow.value
-                                    latestState.value(current.copy(timeMs = mkWindowTime(w, fractionAt(change.position.x)).coerceIn(w.first, w.last)))
-                                },
-                                onDragEnd = {
-                                    val current = latestDrag.value
-                                    if (current != null) latestMove.value(current.id, current.timeMs)
-                                    latestState.value(null)
-                                },
-                                onDragCancel = { latestState.value(null) }
-                            )
-                        }
-                ) {}
-            }
-        }
         dragState?.let { state ->
             val f = mkFraction(state.timeMs, visibleWindow)
             val x = if (isRtl) (maxWidth - 12.dp) - spanDp * f else 12.dp + spanDp * f
             Box(
                 modifier = Modifier
-                    .offset { IntOffset((x - 36.dp).toPx().roundToInt(), 0) }
+                    .absoluteOffset { IntOffset((x - 36.dp).toPx().roundToInt(), 0) }
                     .width(72.dp)
                     .clip(RoundedCornerShape(50))
                     .background(fg.colors.accent)
@@ -1630,6 +1775,7 @@ private fun UtilitiesDeck(
                 fg = fg
             )
             PlayerControlPanel.MORE -> {}
+            PlayerControlPanel.DEVICES -> {}
         }
     }
 }
@@ -2110,57 +2256,80 @@ private fun BoxScope.MoreDeck(
     }
 }
 
-/** تراكب الملاحظة العابرة: يُظهر النص ٦ ثوانٍ عند تخطّي موضع الملاحظة — زجاج متجاوب مع المشغّل. */
+/**
+ * تراكب الملاحظة: سطح زجاجي معتم يظهر فوق منطقة الشريط الزمني مباشرةً (فوق أزرار
+ * النقل) — لا يغطي الغلاف ولا العنوان ولا أدوات التحكّم. يحمل ترويسة (أيقونة + عنوان
+ * + ختم زمني) وفاصلًا رقيقًا ثم النص الكامل بلا اقتطاع، ويختفي تلقائيًا بلا تفاعل.
+ */
 @Composable
-private fun BoxScope.NoteOverlay(
+private fun NoteOverlay(
     visible: Boolean,
-    text: String,
+    alert: NoteAlert?,
+    headerTitle: String,
     fg: PlayerFg,
-    onDismiss: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
         visible = visible,
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 128.dp).padding(horizontal = AppSpacing.lg),
-        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+        modifier = modifier,
+        enter = fadeIn(tween(220)),
+        exit = fadeOut(tween(320))
     ) {
-        val shape = RoundedCornerShape(18.dp)
-        Row(
-            modifier = Modifier
-                .clip(shape)
-                .background(fg.colors.popupSurface, shape)
-                .border(1.dp, fg.colors.popupOutline, shape)
-                .padding(start = AppSpacing.md, top = AppSpacing.sm, bottom = AppSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.player_note_overlay_cue),
-                style = MaterialTheme.typography.labelMedium,
-                color = fg.colors.accent,
-                modifier = Modifier.padding(end = AppSpacing.sm)
-            )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = fg.colors.popupInk,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onDismiss, modifier = Modifier.minTouchTarget()) {
-                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.player_note_overlay_close), tint = fg.colors.popupInk)
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val shape = RoundedCornerShape(20.dp)
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 240.dp, max = 460.dp)
+                    .clip(shape)
+                    .background(fg.colors.scrim)
+                    .background(fg.colors.popupSurface)
+                    .border(1.dp, fg.colors.popupOutline, shape)
+                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.StickyNote2,
+                        contentDescription = null,
+                        tint = fg.colors.accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(AppSpacing.xs))
+                    Text(
+                        text = headerTitle,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = fg.colors.popupSoft,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (alert != null) {
+                        Text(
+                            text = formatNoteTimestamp(alert.positionMs),
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
+                            color = fg.colors.popupSoft
+                        )
+                    }
+                }
+                HorizontalDivider(color = fg.colors.popupOutline)
+                if (alert != null) {
+                    Text(
+                        text = alert.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = fg.colors.popupInk,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
 }
 
-/** نغمة قصيرة تُشغَّل عند عبور ملاحظة؛ تُنشأ كسولًا وتُحرَّر عند مغادرة الشاشة. */
+/** نغمة تلميح قصيرة تُشغَّل عند عبور ملاحظة؛ تُنشأ كسولًا وتُحرَّر عند مغادرة الشاشة. */
 private class NoteCueTone {
     private var tone: ToneGenerator? = null
     fun play() {
         try {
-            if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, 70)
-            tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 350)
+            if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, NOTE_CUE_VOLUME)
+            tone?.startTone(ToneGenerator.TONE_PROP_PROMPT, NOTE_CUE_DURATION_MS)
         } catch (_: Throwable) {
             // بعض الأجهزة لا توفّر ToneGenerator؛ تجاهل صامت.
         }
@@ -2168,5 +2337,165 @@ private class NoteCueTone {
     fun release() {
         try { tone?.release() } catch (_: Throwable) { }
         tone = null
+    }
+}
+
+/** مستوى منخفض جدًا للنغمة (٠–١٠٠) فوق مسار الوسائط — هادئة، وتخضع لصوت النظام. */
+private const val NOTE_CUE_VOLUME = 22
+
+/** مدة النغمة: قصيرة جدًا، بلا تكرار ولا إنذار. */
+private const val NOTE_CUE_DURATION_MS = 140
+
+/** مخرجات الصوت ذات الصلة بلوحة "جهاز الصوت" (نسقط قنوات الاتصالات والاستماع الداخلي). */
+private fun isRelevantOutputType(type: Int): Boolean = when (type) {
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_HEARING_AID,
+    AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC,
+    AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL -> true
+    else -> false
+}
+
+/** ترتيب العرض: الخارجي (بلوتوث ثم سلكي ثم USB ثم HDMI) ثم سماعة الهاتف ثم مكبر الصوت. */
+private fun outputDeviceSortKey(type: Int): Int = when (type) {
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_HEARING_AID -> 0
+    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> 1
+    AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> 2
+    AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC -> 3
+    AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL -> 4
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> 5
+    else -> 6
+}
+
+/** مكبر الصوت يُدار عبر التوجيه التلقائي للنظام (بلا جهاز مفضّل). */
+private fun outputDeviceIsAutoRouted(type: Int): Boolean =
+    type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+
+private fun outputDeviceTypeIcon(type: Int): ImageVector = when (type) {
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_HEARING_AID ->
+        Icons.Outlined.Bluetooth
+    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC,
+    AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL -> Icons.Outlined.Headphones
+    else -> Icons.Outlined.VolumeUp
+}
+
+private fun outputDeviceTypeLabelRes(type: Int): Int = when (type) {
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> R.string.player_device_earpiece
+    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> R.string.player_device_speaker
+    AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> R.string.player_device_headphones
+    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL -> R.string.player_device_headset
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_HEARING_AID -> R.string.player_device_bluetooth
+    AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> R.string.player_device_usb
+    AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC -> R.string.player_device_hdmi
+    else -> R.string.player_device_unknown
+}
+
+private fun outputDeviceUsesNamedLabel(type: Int): Boolean = when (type) {
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC -> true
+    else -> false
+}
+
+private fun outputDeviceLabel(context: Context, device: AudioDeviceInfo): String {
+    val name = device.productName?.toString()?.trim().orEmpty()
+    return if (outputDeviceUsesNamedLabel(device.type) && name.isNotBlank()) name
+    else context.getString(outputDeviceTypeLabelRes(device.type))
+}
+
+/** لوحة "جهاز الصوت": تبديل مخرج الصوت بنفس هيكل لوحات Speed/Sleep (حجاب + زجاج + تمركز). */
+@Composable
+private fun BoxScope.DeviceDeck(
+    visible: Boolean,
+    devices: List<AudioDeviceInfo>,
+    activeDeviceId: Int?,
+    canListBt: Boolean,
+    fg: PlayerFg,
+    onRequestPermission: () -> Unit,
+    onSelect: (AudioDeviceInfo) -> Unit,
+    onClose: () -> Unit
+) {
+    GlassSheet(visible = visible, fg = fg, onDismiss = onClose) {
+        val context = LocalContext.current
+        val active = devices.firstOrNull { it.id == activeDeviceId }
+        SheetHeadline(
+            title = stringResource(R.string.player_device_output),
+            subtitle = if (active != null) stringResource(R.string.player_device_current, outputDeviceLabel(context, active))
+            else stringResource(R.string.player_device_available),
+            fg = fg
+        )
+        if (!canListBt) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(fg.colors.popupSurface)
+                    .border(1.dp, fg.colors.popupOutline, RoundedCornerShape(16.dp))
+                    .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.player_device_no_permission),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = fg.colors.popupSoft,
+                    modifier = Modifier.weight(1f)
+                )
+                GlassPillButton(label = stringResource(R.string.player_device_grant), selected = false, onClick = onRequestPermission, fg = fg)
+            }
+        }
+        if (devices.isEmpty()) {
+            Text(
+                stringResource(R.string.player_device_unknown),
+                style = MaterialTheme.typography.bodyMedium,
+                color = fg.colors.popupSoft
+            )
+        }
+        devices.forEach { device ->
+            DeviceOptionRow(
+                icon = { Icon(outputDeviceTypeIcon(device.type), null, modifier = Modifier.size(22.dp), tint = Color.White) },
+                title = outputDeviceLabel(context, device),
+                selected = device.id == activeDeviceId,
+                onClick = { onSelect(device) },
+                fg = fg
+            )
+        }
+    }
+}
+
+/** صف جهاز صوتي: أيقونة + اسم + علامة "محدد" للجهاز النشط. */
+@Composable
+private fun DeviceOptionRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    fg: PlayerFg
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (selected) fg.colors.accent.copy(alpha = 0.14f) else fg.colors.popupSurface)
+            .border(1.dp, if (selected) fg.colors.accent.copy(alpha = 0.55f) else fg.colors.popupOutline, shape)
+            .minTouchTarget()
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp).clip(CircleShape).background(fg.colors.accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+        ) { icon() }
+        Text(title, style = MaterialTheme.typography.titleSmall, color = fg.colors.popupInk, modifier = Modifier.weight(1f))
+        if (selected) {
+            Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(20.dp), tint = fg.colors.accent)
+        }
     }
 }

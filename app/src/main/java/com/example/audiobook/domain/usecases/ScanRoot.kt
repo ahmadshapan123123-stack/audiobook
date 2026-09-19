@@ -8,7 +8,7 @@ import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.ScanFile
-import com.example.audiobook.data.preferences.ScanSettings
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.*
 import java.util.UUID
@@ -38,7 +38,7 @@ class ScanRoot @Inject constructor(
     private val database: AppDatabase,
     private val fileSource: LibraryFileSource,
     private val metadataReader: AudioMetadataReader,
-    private val scanSettings: ScanSettings,
+    private val appSettings: AppSettings,
     private val editionMerge: EditionMerge
 ) {
     suspend operator fun invoke(rootId: UUID): ScanReport = withContext(Dispatchers.IO) {
@@ -244,7 +244,7 @@ class ScanRoot @Inject constructor(
     /** دمج تلقائي (Balanced فقط، وباجتياز القيد الصارم) بين إصدارات مجلدات لنفس الكتاب. */
     private suspend fun reconcileAutoMerges(rootId: UUID, signalsByFolder: Map<String, EditionSignals>, report: MutableScanReport) {
         if (signalsByFolder.size < 2) return
-        val level = scanSettings.currentIntelligenceLevel()
+        val level = appSettings.currentIntelligenceLevel()
         val groups = signalsByFolder.entries.groupBy { (_, signals) ->
             "${ArabicSearchNormalizer.normalize(signals.authorFolderName.orEmpty())}|${signals.normalizedTitle()}"
         }

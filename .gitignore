@@ -18,6 +18,7 @@ local.properties
 # Local dev helpers & artifacts
 *.ps1
 *.png
+*.apk
 docs/
 prompt-verify-and-build-apk.md
 s9.png

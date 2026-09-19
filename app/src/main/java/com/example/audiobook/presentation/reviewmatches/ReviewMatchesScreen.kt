@@ -18,14 +18,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.R
 import com.example.audiobook.domain.usecases.EditionSignals
 import com.example.audiobook.presentation.theme.AppBookCard
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 
@@ -48,47 +51,47 @@ fun ReviewMatchesScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
         CosmicScreenHeader(
-            title = "مراجعة المطابقات",
-            subtitle = "اقتراحات الدمج بانتظار قرارك",
+            title = stringResource(R.string.review_title),
+            subtitle = stringResource(R.string.review_subtitle),
             collapsed = collapsed,
             onBack = onBack,
             backAsTextButton = true
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             AppBookCard(
-                title = "الملفات",
+                title = stringResource(R.string.review_tab_files),
                 subtitle = state.summary.files.toString(),
                 modifier = Modifier.weight(1f)
             )
             AppBookCard(
-                title = "الكتب",
+                title = stringResource(R.string.review_tab_books),
                 subtitle = state.summary.books.toString(),
                 modifier = Modifier.weight(1f)
             )
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             AppBookCard(
-                title = "السلاسل",
+                title = stringResource(R.string.review_tab_series),
                 subtitle = state.summary.series.toString(),
                 modifier = Modifier.weight(1f)
             )
             AppBookCard(
-                title = "المؤلفون",
+                title = stringResource(R.string.review_tab_authors),
                 subtitle = state.summary.authors.toString(),
                 modifier = Modifier.weight(1f)
             )
         }
         AppBookCard(
-            title = "الحالات المشكوك فيها",
+            title = stringResource(R.string.review_suspect_cases),
             subtitle = state.summary.suspectCases.toString()
         )
         if (state.cases.isEmpty()) {
             Text(
-                "لا توجد حالات تحتاج مراجعة",
+                stringResource(R.string.review_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = AppSpacing.lg)
@@ -108,16 +111,16 @@ private fun ReviewCaseCard(uiCase: ReviewCaseUi, viewModel: ReviewMatchesViewMod
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(AppSpacing.md), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-            Text("الإصدار المشكوك فيه", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.review_subject), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Text(uiCase.subjectLabel, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("الثقة: ${percentOf(uiCase.subjectConfidence)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.review_confidence, percentOf(uiCase.subjectConfidence)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SignalRows(uiCase.subjectSignals)
 
             Row(modifier = Modifier.padding(top = AppSpacing.xs)) {
-                Text("يقارن بـ:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+                Text(stringResource(R.string.review_compared_to), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
             }
             Text(uiCase.candidateLabel, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("الثقة: ${percentOf(uiCase.candidateConfidence)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.review_confidence, percentOf(uiCase.candidateConfidence)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SignalRows(uiCase.candidateSignals)
 
             Row(
@@ -127,15 +130,15 @@ private fun ReviewCaseCard(uiCase: ReviewCaseUi, viewModel: ReviewMatchesViewMod
                 TextButton(
                     onClick = { viewModel.decideSameEdition(uiCase.subjectEditionId, uiCase.candidateEditionId) },
                     modifier = Modifier.minTouchTarget()
-                ) { Text("نفس الإصدار") }
+                ) { Text(stringResource(R.string.review_same)) }
                 TextButton(
                     onClick = { viewModel.decideDifferentEdition(uiCase.subjectEditionId, uiCase.candidateEditionId) },
                     modifier = Modifier.minTouchTarget()
-                ) { Text("إصدار مختلف") }
+                ) { Text(stringResource(R.string.review_different)) }
                 TextButton(
                     onClick = { viewModel.decideNotSameBook(uiCase.subjectEditionId, uiCase.candidateEditionId) },
                     modifier = Modifier.minTouchTarget()
-                ) { Text("ليس نفس الكتاب") }
+                ) { Text(stringResource(R.string.review_not_same)) }
             }
         }
     }
@@ -145,7 +148,7 @@ private fun ReviewCaseCard(uiCase: ReviewCaseUi, viewModel: ReviewMatchesViewMod
 private fun SignalRows(signals: EditionSignals) {
     readableSignals(signals).forEach { (label, value) ->
         Text(
-            "$label: $value",
+            stringResource(R.string.review_signal_row, label, value),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -155,22 +158,29 @@ private fun SignalRows(signals: EditionSignals) {
 }
 
 /** الإشارات نفسها التي ستُلتقط إذا اتُّخذ القرار (نفس مصدر EditionStoredSignals). */
+@Composable
 private fun readableSignals(signals: EditionSignals): List<Pair<String, String>> = buildList {
-    signals.resolvedTitle()?.takeIf { it.isNotBlank() }?.let { add("العنوان" to it) }
-    signals.folderName.takeIf { it.isNotBlank() }?.let { add("المجلد" to it) }
-    signals.authorFolderName?.takeIf { it.isNotBlank() }?.let { add("مجلد المؤلف" to it) }
-    signals.narrator?.takeIf { it.isNotBlank() }?.let { add("الراوي" to it) }
-    signals.seriesPart?.let { add("السلسلة" to if (it.partNumber != null) "${it.pattern} ${it.partNumber}" else it.pattern) }
-    if (signals.totalDurationMs > 0L) add("المدة" to formatDuration(signals.totalDurationMs))
-    if (signals.fileCount > 0) add("الملفات" to signals.fileCount.toString())
-    signals.format?.takeIf { it.isNotBlank() }?.let { add("الصيغة" to it) }
+    signals.resolvedTitle()?.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.review_signal_title) to it) }
+    signals.folderName.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.review_signal_folder) to it) }
+    signals.authorFolderName?.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.review_signal_author_folder) to it) }
+    signals.narrator?.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.review_signal_narrator) to it) }
+    signals.seriesPart?.let { add(stringResource(R.string.review_signal_series) to if (it.partNumber != null) "${it.pattern} ${it.partNumber}" else it.pattern) }
+    if (signals.totalDurationMs > 0L) add(stringResource(R.string.review_signal_duration) to formatDuration(signals.totalDurationMs))
+    if (signals.fileCount > 0) add(stringResource(R.string.review_signal_files) to signals.fileCount.toString())
+    signals.format?.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.review_signal_format) to it) }
 }
 
-private fun percentOf(confidence: Float): String = "${(confidence * 100).toInt()}٪"
+@Composable
+private fun percentOf(confidence: Float): String = stringResource(R.string.review_percent, (confidence * 100).toInt())
 
+@Composable
 private fun formatDuration(ms: Long): String {
     val totalMinutes = ms / 60_000L
     val hours = totalMinutes / 60L
     val minutes = totalMinutes % 60L
-    return if (hours > 0L) "${hours} س ${minutes} د" else "${minutes} د"
+    return if (hours > 0L) {
+        stringResource(R.string.review_duration_hm, hours, minutes)
+    } else {
+        stringResource(R.string.review_duration_m, minutes)
+    }
 }

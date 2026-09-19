@@ -1,5 +1,6 @@
 package com.example.audiobook.domain.usecases
 
+import androidx.room.withTransaction
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.*
 import kotlinx.coroutines.flow.Flow
@@ -15,22 +16,33 @@ class MarksCoordinator @Inject constructor(private val database: AppDatabase) {
     }
 
     suspend fun addChapter(editionId: UUID, positionMs: Long, title: String = "فصل جديد"): UUID {
-        val chapter = ChapterEntity(editionId = editionId, title = title, startPositionMs = positionMs, orderIndex = Int.MAX_VALUE, createdFrom = ChapterCreatedFrom.USER_MARK)
+        val chapter = ChapterEntity(editionId = editionId, title = title, startPositionMs = clampChapterStart(editionId, positionMs), orderIndex = Int.MAX_VALUE, createdFrom = ChapterCreatedFrom.USER_MARK)
         database.chapterDao().insert(chapter)
         reorderChapters(editionId)
         return chapter.id
     }
 
     suspend fun updateChapter(chapter: ChapterEntity, positionMs: Long, title: String = chapter.title ?: "فصل") {
-        database.chapterDao().update(chapter.copy(startPositionMs = positionMs, title = title))
+        val clamped = clampChapterStart(chapter.editionId, positionMs)
+        database.chapterDao().update(chapter.copy(startPositionMs = clamped, title = title))
         reorderChapters(chapter.editionId)
+    }
+
+    /**
+     * قص موضع بداية الفصل إلى [0, duration − 1s] حتى لا يُخزَّن فصل عند نهاية
+     * الكتاب بالضبط (كما في البيانات المزروعة). المصدر الوحيد للمدة هو قاعدة البيانات.
+     */
+    private suspend fun clampChapterStart(editionId: UUID, positionMs: Long): Long {
+        val durationMs = database.editionDao().getById(editionId)?.totalDurationMs ?: 0L
+        val maxStart = if (durationMs > 0L) (durationMs - 1_000L).coerceAtLeast(0L) else Long.MAX_VALUE
+        return positionMs.coerceIn(0L, maxStart)
     }
 
     suspend fun deleteChapter(chapter: ChapterEntity) = database.chapterDao().delete(chapter)
     suspend fun deleteBookmark(bookmark: BookmarkEntity) = database.bookmarkDao().delete(bookmark)
     suspend fun seekToBookmark(controller: com.example.audiobook.playback.PlaybackController, bookmark: BookmarkEntity) = controller.seekTo(bookmark.positionMs)
 
-    private suspend fun reorderChapters(editionId: UUID) {
+    private suspend fun reorderChapters(editionId: UUID) = database.withTransaction {
         database.chapterDao().getByParent(editionId).sortedBy { it.startPositionMs }.forEachIndexed { index, chapter ->
             if (chapter.orderIndex != index) database.chapterDao().update(chapter.copy(orderIndex = index))
         }

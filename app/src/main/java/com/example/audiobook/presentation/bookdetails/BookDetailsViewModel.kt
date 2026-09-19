@@ -22,9 +22,11 @@ import com.example.audiobook.domain.usecases.CoverCandidate
 import com.example.audiobook.domain.usecases.CoverPolicy
 import com.example.audiobook.domain.usecases.EditionManagementState
 import com.example.audiobook.domain.usecases.EditionMerge
+import com.example.audiobook.domain.usecases.LibraryManagement
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -48,7 +50,9 @@ data class BookDetailsUiState(
     val chapters: List<ChapterEntity> = emptyList(),
     val bookmarks: List<BookmarkEntity> = emptyList(),
     val progress: ListeningProgressEntity? = null,
-    val coverColor: Long = 0xFF356B68
+    val coverColor: Long = 0xFF356B68,
+    val allAuthors: List<AuthorEntity> = emptyList(),
+    val allSeries: List<SeriesEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -61,7 +65,8 @@ class BookDetailsViewModel @Inject constructor(
     private val chapterDao: ChapterDao,
     private val bookmarkDao: BookmarkDao,
     private val progressDao: ProgressDao,
-    private val editionMerge: EditionMerge
+    private val editionMerge: EditionMerge,
+    private val management: LibraryManagement
 ) : ViewModel() {
 
     private val manager = BookDetailsManagement()
@@ -124,7 +129,9 @@ class BookDetailsViewModel @Inject constructor(
                 series.firstOrNull { it.id == book?.seriesId }?.colorTheme
                     ?: authors.firstOrNull { it.id == book?.authorId }?.colorTheme,
                 0xFF356B68
-            )
+            ),
+            allAuthors = authors,
+            allSeries = series
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookDetailsUiState())
 
@@ -189,12 +196,30 @@ class BookDetailsViewModel @Inject constructor(
         viewModelScope.launch { editionMerge.merge(subjectId, comparedId, userInitiated = true) }
     }
 
-    /** Reset Metadata: ترفع حماية User Override Wins على الكتاب وكل إصداراته ليعيد الفحص الاكتشاف. */
     fun resetMetadata() {
         viewModelScope.launch {
             val book = bookDao.getById(bookId) ?: return@launch
             bookDao.update(manager.resetMetadata(book))
             editionDao.getByParent(bookId).forEach { editionDao.update(manager.resetEditionMetadata(it)) }
+        }
+    }
+
+    fun deleteBook(onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.deleteBook(bookId)
+            onDone()
+        }
+    }
+
+    fun moveBookToAuthor(authorId: UUID) {
+        viewModelScope.launch {
+            management.moveBookToAuthor(bookId, authorId)
+        }
+    }
+
+    fun moveBookToSeries(seriesId: UUID?) {
+        viewModelScope.launch {
+            management.moveBookToSeries(bookId, seriesId)
         }
     }
 }

@@ -2,7 +2,7 @@ package com.example.audiobook.presentation.player
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue

@@ -11,17 +11,17 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.preferences.AppSettings
-import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.settings.SettingsScreen
 import com.example.audiobook.presentation.settings.SettingsViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
-import com.example.audiobook.presentation.theme.ThemePreference
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,22 +44,20 @@ class SettingsScreenAccessibilityTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
-    private lateinit var scanSettings: ScanSettings
+    private lateinit var appSettings: AppSettings
     private lateinit var viewModel: SettingsViewModel
-    private lateinit var themePreference: ThemePreference
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        scanSettings = ScanSettings(context)
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
-        themePreference = ThemePreference(context)
-        viewModel = SettingsViewModel(scanSettings, AppSettings(context))
+        appSettings = AppSettings(context)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
+        viewModel = SettingsViewModel(appSettings, ReminderScheduler(context, appSettings))
     }
 
     @After
     fun tearDown() {
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
     }
 
     private fun showScreen(fontScale: Float = 1f) {
@@ -69,7 +67,6 @@ class SettingsScreenAccessibilityTest {
             ) {
                 AudiobookTheme(mode = AppThemeMode.LIGHT) {
                     SettingsScreen(
-                        themePreference = themePreference,
                         onBack = {},
                         viewModel = viewModel
                     )
@@ -99,9 +96,9 @@ class SettingsScreenAccessibilityTest {
         composeRule.onAllNodesWithText("اقتراحات أوسع تُعرض في شاشة المراجعة، لكن لا دمج تلقائي صامت إطلاقًا.").assertCountEquals(1)
         composeRule.onAllNodesWithText("فرق مدة أكبر من 15% يمنع أي دمج مهما كانت الثقة", substring = true).assertCountEquals(1)
 
-        composeRule.onNodeWithText("محافظ").performClick()
+        composeRule.onNodeWithText("محافظ").performScrollTo().performClick()
 
-        assertEquals(IntelligenceLevel.CONSERVATIVE, scanSettings.currentIntelligenceLevel())
+        assertEquals(IntelligenceLevel.CONSERVATIVE, appSettings.currentIntelligenceLevel())
         assertEquals(IntelligenceLevel.CONSERVATIVE, viewModel.intelligenceLevel.value)
     }
 

@@ -26,6 +26,7 @@ import com.example.audiobook.R
 import com.example.audiobook.data.room.entity.BookmarkType
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import com.example.audiobook.playback.PlaybackController
@@ -45,10 +46,10 @@ fun BookmarksScreen(
     val collapsed = rememberHeaderCollapsed(scroll)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             CosmicScreenHeader(
                 title = stringResource(R.string.bookmarks_title),
-                subtitle = "إشاراتك وملاحظاتك",
+                subtitle = stringResource(R.string.bookmarks_subtitle),
                 collapsed = collapsed,
                 onBack = onBack
             )
@@ -66,8 +67,8 @@ fun BookmarksScreen(
                         )
                         bookmark.noteText?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
-                    Button(onClick = { controller.seekTo(bookmark.positionMs) }, modifier = Modifier.minTouchTarget()) { Text("انتقال") }
-                    TextButton(onClick = { viewModel.deleteBookmark(bookmark) }, modifier = Modifier.minTouchTarget()) { Text("حذف") }
+                    Button(onClick = { controller.seekTo(bookmark.positionMs) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bookmarks_go_to)) }
+                    TextButton(onClick = { viewModel.deleteBookmark(bookmark) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bookmarks_delete)) }
                 }
             }
         }

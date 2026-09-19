@@ -71,7 +71,8 @@ data class BookEntity(
     val isTitleUserConfirmed: Boolean = false,
     val defaultEditionId: UUID?,
     val remoteId: UUID?,
-    val syncStatus: SyncStatus
+    val syncStatus: SyncStatus,
+    val isDemo: Boolean = false
 )
 
 @Entity(

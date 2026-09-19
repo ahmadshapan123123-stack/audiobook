@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,6 +30,8 @@ import com.example.audiobook.R
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.data.room.entity.LibraryRootEntity
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
+import com.example.audiobook.presentation.theme.LocalAppAccent
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 
@@ -43,7 +46,7 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
         CosmicScreenHeader(
@@ -74,6 +77,15 @@ private fun LibraryRootRow(
     onEnabledChanged: (Boolean) -> Unit,
     onRefresh: () -> Unit
 ) {
+    val appAccent = LocalAppAccent.current
+    val switchColors = SwitchDefaults.colors(
+        checkedThumbColor = appAccent.onAccent,
+        checkedTrackColor = appAccent.accent,
+        checkedBorderColor = appAccent.accent,
+        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+        uncheckedBorderColor = MaterialTheme.colorScheme.outline
+    )
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(root.displayName, style = MaterialTheme.typography.titleMedium)
         Text(root.uri, style = MaterialTheme.typography.bodySmall)
@@ -85,6 +97,7 @@ private fun LibraryRootRow(
                 Switch(
                     checked = root.isPriority,
                     onCheckedChange = onPriorityChanged,
+                    colors = switchColors,
                     modifier = Modifier
                         .minTouchTarget()
                         .semantics { contentDescription = priorityDesc }
@@ -95,6 +108,7 @@ private fun LibraryRootRow(
                 Switch(
                     checked = root.isEnabled,
                     onCheckedChange = onEnabledChanged,
+                    colors = switchColors,
                     modifier = Modifier
                         .minTouchTarget()
                         .semantics { contentDescription = enabledDesc }

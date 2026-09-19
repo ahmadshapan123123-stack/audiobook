@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.theme
 
+import com.example.audiobook.domain.model.AppThemeMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,13 +29,13 @@ import androidx.compose.ui.unit.sp
  * مؤقتة لهذه المرحلة، ويُعاد استخدام عناصرها عند بناء الشاشات الفعلية.
  */
 @Composable
-fun CosmicSmokeScreen(preference: ThemePreference) {
+fun CosmicSmokeScreen(mode: AppThemeMode, onModeChange: (AppThemeMode) -> Unit) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        AudiobookTheme(mode = preference.mode) {
+        AudiobookTheme(mode = mode) {
             Box(modifier = Modifier.fillMaxSize()) {
-                CosmicBackground(mode = preference.mode, modifier = Modifier.fillMaxSize())
+                CosmicBackground(mode = mode, modifier = Modifier.fillMaxSize())
                 Column(
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(AppSpacing.lg),
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(AppSpacing.lg).padding(bottom = bottomContentInset()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                 ) {
                     Spacer(Modifier.height(AppSpacing.md))
@@ -79,9 +80,9 @@ fun CosmicSmokeScreen(preference: ThemePreference) {
                     Spacer(Modifier.height(AppSpacing.md))
                     Text("المظهر", style = MaterialTheme.typography.titleLarge)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                        AppModeChip("سديم", preference.mode == AppThemeMode.LIGHT) { preference.updateMode(AppThemeMode.LIGHT) }
-                        AppModeChip("ليل", preference.mode == AppThemeMode.DARK) { preference.updateMode(AppThemeMode.DARK) }
-                        AppModeChip("عمق الفضاء", preference.mode == AppThemeMode.AMOLED) { preference.updateMode(AppThemeMode.AMOLED) }
+                        AppModeChip("سديم", mode == AppThemeMode.LIGHT) { onModeChange(AppThemeMode.LIGHT) }
+                        AppModeChip("ليل", mode == AppThemeMode.DARK) { onModeChange(AppThemeMode.DARK) }
+                        AppModeChip("عمق الفضاء", mode == AppThemeMode.AMOLED) { onModeChange(AppThemeMode.AMOLED) }
                         }
                     Spacer(Modifier.height(AppSpacing.md))
                     Text("شرائح زجاجية (Haze) وحركة النجوم تبدأ من C2/C7", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)

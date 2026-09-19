@@ -1,7 +1,9 @@
 package com.example.audiobook.presentation.accessibility
 
-import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotSelected
@@ -16,11 +18,9 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.test.core.app.ApplicationProvider
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import com.example.audiobook.presentation.theme.DesignSystemShowcase
-import com.example.audiobook.presentation.theme.ThemePreference
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -36,12 +36,11 @@ class DesignSystemShowcaseAccessibilityTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
-    private lateinit var preference: ThemePreference
+    private var mode by mutableStateOf(AppThemeMode.DARK)
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        preference = ThemePreference(context)
+        mode = AppThemeMode.DARK
     }
 
     private fun showShowcase(fontScale: Float = 1f) {
@@ -50,7 +49,7 @@ class DesignSystemShowcaseAccessibilityTest {
                 LocalDensity provides Density(LocalDensity.current.density, fontScale = fontScale)
             ) {
                 AudiobookTheme(mode = AppThemeMode.LIGHT) {
-                    DesignSystemShowcase(preference = preference)
+                    DesignSystemShowcase(mode = mode, onModeChange = { mode = it })
                 }
             }
         }
@@ -90,7 +89,7 @@ class DesignSystemShowcaseAccessibilityTest {
 
         composeRule.onNodeWithText("AMOLED").assertIsSelected()
         composeRule.onNodeWithText("داكن").assertIsNotSelected()
-        assertTrue("preference.mode لم يتغير إلى AMOLED", preference.mode == AppThemeMode.AMOLED)
+        assertTrue("حالة المظهر لم تتغير إلى AMOLED", mode == AppThemeMode.AMOLED)
     }
 
     @Test

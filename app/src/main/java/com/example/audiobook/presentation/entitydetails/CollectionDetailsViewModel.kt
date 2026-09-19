@@ -17,18 +17,22 @@ import com.example.audiobook.data.room.entity.CollectionEntity
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
+import com.example.audiobook.domain.usecases.LibraryManagement
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class CollectionDetailsUiState(
     val collection: CollectionEntity? = null,
     val books: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF356B68
+    val coverColor: Long = 0xFF356B68,
+    val allBooks: List<BookEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -40,7 +44,8 @@ class CollectionDetailsViewModel @Inject constructor(
     private val seriesDao: SeriesDao,
     private val bookDao: BookDao,
     private val editionDao: EditionDao,
-    private val progressDao: ProgressDao
+    private val progressDao: ProgressDao,
+    private val management: LibraryManagement
 ) : ViewModel() {
 
     private val collectionId: UUID = UUID.fromString(
@@ -80,7 +85,33 @@ class CollectionDetailsViewModel @Inject constructor(
         CollectionDetailsUiState(
             collection = collection,
             books = rows,
-            coverColor = parseColor(null, 0xFF356B68)
+            coverColor = parseColor(null, 0xFF356B68),
+            allBooks = books
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CollectionDetailsUiState())
+
+    fun updateCollectionName(name: String) {
+        viewModelScope.launch {
+            management.updateCollectionName(collectionId, name)
+        }
+    }
+
+    fun deleteCollection(onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.deleteCollection(collectionId)
+            onDone()
+        }
+    }
+
+    fun addBookToCollection(bookId: UUID) {
+        viewModelScope.launch {
+            management.addBookToCollection(collectionId, bookId)
+        }
+    }
+
+    fun removeBookFromCollection(bookId: UUID) {
+        viewModelScope.launch {
+            management.removeBookFromCollection(collectionId, bookId)
+        }
+    }
 }

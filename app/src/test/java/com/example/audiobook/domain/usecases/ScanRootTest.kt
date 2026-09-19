@@ -8,7 +8,7 @@ import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.ScanFile
-import com.example.audiobook.data.preferences.ScanSettings
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.*
 import kotlinx.coroutines.flow.first
@@ -30,7 +30,7 @@ class ScanRootTest {
     private lateinit var source: FakeFileSource
     private lateinit var reader: CountingMetadataReader
     private lateinit var scanRoot: ScanRoot
-    private lateinit var scanSettings: ScanSettings
+    private lateinit var appSettings: AppSettings
     private lateinit var root: LibraryRootEntity
 
     @Before
@@ -39,8 +39,8 @@ class ScanRootTest {
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         source = FakeFileSource()
         reader = CountingMetadataReader()
-        scanSettings = ScanSettings(context)
-        scanRoot = ScanRoot(database, source, reader, scanSettings, EditionMerge(database))
+        appSettings = AppSettings(context)
+        scanRoot = ScanRoot(database, source, reader, appSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)
         runBlocking { database.libraryRootDao().insert(root) }
     }
@@ -118,7 +118,7 @@ class ScanRootTest {
             ScanFile(Uri.parse("content://audio/1.m4b"), "Book A/Intro.m4b", "Book A", "Intro.m4b", 100, 10),
             ScanFile(Uri.parse("content://audio/2.m4b"), "Book B/Intro.m4b", "Book B", "Intro.m4b", 100, 10)
         )
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.AGGRESSIVE)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.AGGRESSIVE)
 
         val report = scanRoot(root.id)
 
@@ -137,7 +137,7 @@ class ScanRootTest {
             ScanFile(Uri.parse("content://audio/1.m4b"), "Book v1/Part 1.m4b", "Book v1", "Part 1.m4b", 100, 10),
             ScanFile(Uri.parse("content://audio/2.m4b"), "Book v2/Part 1.m4b", "Book v2", "Part 1.m4b", 100, 10)
         )
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
 
         val report = scanRoot(root.id)
 
@@ -167,7 +167,7 @@ class ScanRootTest {
         val fileA = ScanFile(Uri.parse(uriA), "Book/Book - 1.m4b", "Book", "Book - 1.m4b", 100, 10)
         val fileB = ScanFile(Uri.parse(uriB), "book/book - 1.mp3", "book", "book - 1.mp3", 100, 10)
         source.files = listOf(fileA, fileB)
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
 
         val first = scanRoot(root.id)
         assertEquals("بدون قرارات سابقة الزوج هامشي ولا يدمج", 0, first.editionsAutoMerged)
@@ -250,7 +250,7 @@ class ScanRootTest {
             ScanFile(Uri.parse("content://audio/1.m4b"), "Book v1/Part 1.m4b", "Book v1", "Part 1.m4b", 100, 10),
             ScanFile(Uri.parse("content://audio/2.m4b"), "Book v2/Part 1.m4b", "Book v2", "Part 1.m4b", 100, 10)
         )
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.CONSERVATIVE)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.CONSERVATIVE)
 
         val report = scanRoot(root.id)
 

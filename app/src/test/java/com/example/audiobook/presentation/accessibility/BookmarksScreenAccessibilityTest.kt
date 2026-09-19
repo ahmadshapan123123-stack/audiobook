@@ -31,7 +31,7 @@ import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.presentation.bookmarks.BookmarksScreen
 import com.example.audiobook.presentation.bookmarks.BookmarksViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers

@@ -3,11 +3,13 @@ package com.example.audiobook
 import android.os.Bundle
 import android.os.Build
 import android.Manifest
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +59,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,8 +80,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.background.scanworker.ScanScheduler
+import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.data.room.dao.StatisticsDao
 import com.example.audiobook.domain.usecases.RecoverInterruptedSession
+import com.example.audiobook.notifications.AtherNotificationCenter
 import com.example.audiobook.presentation.home.HomeScreen
 import com.example.audiobook.presentation.home.ListeningHubScreen
 import com.example.audiobook.presentation.library.LibraryScreen
@@ -88,14 +98,14 @@ import com.example.audiobook.presentation.player.MiniPlayer
 import com.example.audiobook.presentation.bookmarks.BookmarksScreen
 import com.example.audiobook.presentation.saved.SavedScreen
 import com.example.audiobook.presentation.theme.AppSpacing
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
-import com.example.audiobook.presentation.theme.Cosmic
 import com.example.audiobook.presentation.theme.CosmicBackground
 import com.example.audiobook.presentation.theme.CosmicHeaderState
 import com.example.audiobook.presentation.theme.CosmicTopBar
+import com.example.audiobook.presentation.theme.LocalAppAccent
+import com.example.audiobook.presentation.theme.LocalBottomBarInset
 import com.example.audiobook.presentation.theme.LocalCosmicHeader
-import com.example.audiobook.presentation.theme.ThemePreference
 import com.example.audiobook.presentation.theme.cosmicGlassStyle
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.navBarGlassStyle
@@ -103,6 +113,7 @@ import com.example.audiobook.presentation.theme.navLogoGlassStyle
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesScreen
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesViewModel
 import com.example.audiobook.presentation.splash.AtherSplash
+import com.example.audiobook.presentation.onboarding.OnboardingScreen
 import com.example.audiobook.presentation.settings.SettingsScreen
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.presentation.libraryroots.LibraryRootsViewModel
@@ -122,35 +133,50 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     @Inject lateinit var recoverInterruptedSession: RecoverInterruptedSession
     @Inject lateinit var scanScheduler: ScanScheduler
+    @Inject lateinit var reminderScheduler: ReminderScheduler
     @Inject lateinit var playbackController: PlaybackController
     @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var marksCoordinator: MarksCoordinator
     @Inject lateinit var databaseSeeder: DatabaseSeeder
+    @Inject lateinit var appSettings: AppSettings
+    @Inject lateinit var statisticsDao: StatisticsDao
+    @Inject lateinit var notificationCenter: AtherNotificationCenter
     private val libraryRootsViewModel: LibraryRootsViewModel by viewModels()
-    private lateinit var themePreference: ThemePreference
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val pendingNotificationRoute = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(AtherNotificationCenter.EXTRA_ROUTE)
+            ?.let { pendingNotificationRoute.value = it }
+        setIntent(intent)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingNotificationRoute.value = intent.getStringExtra(AtherNotificationCenter.EXTRA_ROUTE)
         enableEdgeToEdge()
         lifecycleScope.launch { recoverInterruptedSession() }
         lifecycleScope.launch { scanScheduler.scheduleStartupScans() }
+        reminderScheduler.syncWithSettings()
         if (BuildConfig.DEBUG) {
             lifecycleScope.launch { databaseSeeder() }
-        }
-        themePreference = ThemePreference(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
             val navController = rememberNavController()
             var showSplash by remember { mutableStateOf(true) }
-            val mode = themePreference.mode
+            val hasOnboarded by appSettings.hasCompletedOnboarding.collectAsStateWithLifecycle()
+            val mode by appSettings.themeMode.collectAsStateWithLifecycle()
             AudiobookTheme(mode) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         if (showSplash) {
                             AtherSplash(onFinished = { showSplash = false })
+                        } else if (!hasOnboarded) {
+                            OnboardingScreen(
+                                onFinish = { appSettings.setHasCompletedOnboarding(true) },
+                                onAddFolder = { navController.navigate("library_roots") }
+                            )
                         } else {
                             AudiobookApp(
                                 navController = navController,
@@ -176,13 +202,47 @@ class MainActivity : ComponentActivity() {
         val playbackState by playbackController.state.collectAsStateWithLifecycle()
         val showMiniPlayer = playbackState.editionId != null && !isPlayerRoute
 
+        // الإزاحة السفلية للواجهة (المشغّل المصغّر + الفجوة + الشريط + هامش النظام).
+        // مصدر واحد للحقيقة يُمرَّر عبر LocalBottomBarInset؛ يتحدّث تلقائيًا عند
+        // ظهور/اختفاء المشغّل المصغّر. القياس الفعلي عبر onSizeChanged يُحسّن القيمة،
+        // لكن على أول إطار تركيب لا يكون القياس قد اكتمل بعد — لذا نبدأ بتقدير معماري
+        // غير صفري (شريط 72dp + هامشه السفلي sm + هامش النظام + المشغّل المصغّر ~64dp
+        // + فجوة md) كحدّ أدنى؛ فينتج المحتوى إزاحة صحيحة من اللحظة الأولى حتى للشاشات
+        // المفتوحة فورًا (كتفاصيل الكتاب) قبل أن يصدر القياس.
+        val density = LocalDensity.current
+        val navBarBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+        val chromeEstimate = if (showBottomBar || showMiniPlayer) {
+            navBarBottomDp + 72.dp + AppSpacing.sm + if (showMiniPlayer) (AppSpacing.md + 64.dp) else 0.dp
+        } else 0.dp
+        var bottomChromeInset by remember(chromeEstimate) { mutableStateOf(chromeEstimate) }
+        val bottomBarInset = if (showBottomBar || showMiniPlayer) bottomChromeInset else 0.dp
+
+        // Auto-Resume: إن كان مفعّلًا، افتح آخر كتاب قيد الاستماع عند موضعه المحفوظ.
+        LaunchedEffect(Unit) {
+            if (!appSettings.autoResume.value) return@LaunchedEffect
+            val lastInProgress = statisticsDao.getInProgressRows().firstOrNull() ?: return@LaunchedEffect
+            navController.navigate("player/${lastInProgress.editionId}") { launchSingleTop = true }
+        }
+
+        // فتح مسار مُرسَل من إشعار (المكتبة / المشغّل).
+        val notificationRoute by pendingNotificationRoute.collectAsStateWithLifecycle()
+        LaunchedEffect(notificationRoute) {
+            notificationRoute?.let { route ->
+                navController.navigate(route) { launchSingleTop = true }
+                pendingNotificationRoute.value = null
+            }
+        }
+
         SideEffect {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
             controller.isAppearanceLightStatusBars = mode == AppThemeMode.LIGHT
             controller.isAppearanceLightNavigationBars = mode == AppThemeMode.LIGHT
         }
 
-        CompositionLocalProvider(LocalCosmicHeader provides header) {
+        CompositionLocalProvider(
+            LocalCosmicHeader provides header,
+            LocalBottomBarInset provides bottomBarInset
+        ) {
             Box(modifier = Modifier.fillMaxSize().haze(hazeState)) {
                 CosmicBackground(mode = mode, modifier = Modifier.fillMaxSize())
 
@@ -190,10 +250,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
                 ) {
-                    appNavHost(navController)
+                    appNavHost(navController, mode)
                 }
 
-                if (header.title.isNotBlank() && header.collapsed && currentRouteBase != "home") {
+                // لا شريط علوي مثبّت في "الرئيسية" ولا في "الإعدادات": عنوان الإعدادات
+                // يتحرّك مع المحتوى ويختفي بالتمرير (العنصر المثبّت الوحيد هو شريط التنقل السفلي).
+                if (header.title.isNotBlank() && header.collapsed && currentRouteBase != "home" && currentRouteBase != "settings") {
                     CosmicTopBar(
                         title = header.title,
                         subtitle = header.subtitle,
@@ -209,7 +271,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                        .onSizeChanged { size ->
+                            if (showBottomBar || showMiniPlayer) {
+                                bottomChromeInset = with(density) { size.height.toDp() }
+                            }
+                        },
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.md, Alignment.Bottom)
                 ) {
                     if (showMiniPlayer) {
@@ -255,7 +322,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun appNavHost(navController: NavHostController) {
+    private fun appNavHost(navController: NavHostController, mode: AppThemeMode) {
         NavHost(
             navController = navController,
             startDestination = "home"
@@ -276,7 +343,7 @@ class MainActivity : ComponentActivity() {
                 ListeningHubScreen(
                     onOpenPlayer = { editionId -> navController.navigate("player/$editionId") },
                     onPlayWithSleepTimer = { editionId ->
-                        sleepTimerController.start(30)
+                        sleepTimerController.start(appSettings.defaultSleepMinutes.value)
                         navController.navigate("player/$editionId")
                     },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
@@ -360,9 +427,15 @@ class MainActivity : ComponentActivity() {
                 val startMs = entry.arguments?.getLong("startMs") ?: -1L
                 PlayerScreen(
                     controller = playbackController,
-                    themeMode = themePreference.mode,
+                    themeMode = mode,
                     marks = marksCoordinator,
                     sleepTimer = sleepTimerController,
+                    notificationCenter = notificationCenter,
+                    onFirstPlaybackPermissionRequest = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
                     initialPositionMs = startMs,
                     onBack = { navController.popBackStack() }
                 )
@@ -399,7 +472,6 @@ class MainActivity : ComponentActivity() {
             composable("settings") {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
-                    themePreference = themePreference,
                     showBack = false,
                     onOpenLibraryRoots = { navController.navigate("library_roots") },
                     onScanNow = { lifecycleScope.launch { scanScheduler.scheduleBackgroundScans() } }
@@ -495,12 +567,13 @@ private fun AppBottomBar(
 @Composable
 private fun NavBarTab(destination: TopLevelDestination, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colorScheme = MaterialTheme.colorScheme
+    val appAccent = LocalAppAccent.current
     val shape = RoundedCornerShape(20.dp)
-    val contentColor = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
+    val contentColor = if (selected) appAccent.accent else colorScheme.onSurfaceVariant
     Column(
         modifier = modifier
             .clip(shape)
-            .background(if (selected) colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent)
+            .background(if (selected) appAccent.accent.copy(alpha = 0.16f) else Color.Transparent)
             .minTouchTarget()
             .clickable(onClick = onClick)
             .padding(horizontal = AppSpacing.xxs, vertical = AppSpacing.xxs),
@@ -523,6 +596,7 @@ private fun NavBarTab(destination: TopLevelDestination, selected: Boolean, onCli
 /** اللوجو الدائري الزجاجي: يستبدل تبويب "الرئيسية" — نقرة عليه تفتح الصفحة الرئيسية. */
 @Composable
 private fun NavHomeLogo(selected: Boolean, onClick: () -> Unit, haze: HazeState) {
+    val appAccent = LocalAppAccent.current
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -530,8 +604,8 @@ private fun NavHomeLogo(selected: Boolean, onClick: () -> Unit, haze: HazeState)
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Cosmic.TealBright.copy(alpha = 0.38f),
-                            Cosmic.Teal.copy(alpha = 0.16f),
+                            appAccent.accent.copy(alpha = 0.38f),
+                            appAccent.accent.copy(alpha = 0.14f),
                             Color.Transparent
                         ),
                         center = Offset(size.width / 2f, size.height / 2f),
@@ -541,30 +615,20 @@ private fun NavHomeLogo(selected: Boolean, onClick: () -> Unit, haze: HazeState)
             }
             .clip(CircleShape)
             .hazeChild(haze, navLogoGlassStyle())
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Cosmic.Teal.copy(alpha = 0.62f),
-                        Cosmic.StardustViolet.copy(alpha = 0.62f),
-                        Cosmic.StardustMagenta.copy(alpha = 0.52f)
-                    )
-                )
-            )
+            .background(appAccent.accent.copy(alpha = if (selected) 0.92f else 0.62f))
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) Cosmic.TealBright.copy(alpha = 0.95f) else Cosmic.TealBright.copy(alpha = 0.55f),
+                color = if (selected) appAccent.accent else appAccent.accent.copy(alpha = 0.55f),
                 shape = CircleShape
             )
             .minTouchTarget()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "أثير",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            maxLines = 1
+        Image(
+            painter = painterResource(id = R.drawable.app_logo),
+            contentDescription = "أثير",
+            modifier = Modifier.size(32.dp)
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.example.audiobook.playback
 
 import android.util.Log
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.dao.ListeningSessionDao
 import com.example.audiobook.data.room.entity.ListeningSessionEntity
 import com.example.audiobook.data.room.entity.SessionEndReason
@@ -103,7 +104,8 @@ sealed class ActiveInteraction {
 class SleepTimerController @Inject constructor(
     private val clock: SleepTimerClock,
     private val playback: PlaybackController,
-    private val sessionDao: ListeningSessionDao
+    private val sessionDao: ListeningSessionDao,
+    private val appSettings: AppSettings
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
@@ -192,6 +194,7 @@ class SleepTimerController @Inject constructor(
         if (!interaction.isInteraction) return
         if (phase != SleepTimerPhase.WARNING_WINDOW && phase != SleepTimerPhase.FADING_OUT) return
         if (deadlineMs == 0L) return
+        if (!appSettings.autoExtendSleep.value) return
         extendBy(SLEEP_AUTO_EXTEND_MINUTES)
         _messages.tryEmit(SLEEP_AUTO_EXTEND_MESSAGE)
     }

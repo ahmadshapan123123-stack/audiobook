@@ -41,7 +41,7 @@ import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.presentation.library.LibraryScreen
 import com.example.audiobook.presentation.library.LibraryViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.runBlocking

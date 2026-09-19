@@ -77,6 +77,21 @@ class MarksCoordinatorIntegrationTest {
         reopened.close()
     }
 
+    @Test
+    fun chapterStartIsClampedToDurationMinusOneSecond() = runBlocking {
+        // المدة الكلية = 120_000 → أقصى بداية مسموحة = 119_000.
+        val atEnd = coordinator.addChapter(editionId, 120_000L, "عند النهاية")
+        var chapter = database.chapterDao().getById(atEnd)!!
+        assertEquals(119_000L, chapter.startPositionMs)
+
+        coordinator.updateChapter(chapter, 999_999L, "بعد النهاية")
+        chapter = database.chapterDao().getById(atEnd)!!
+        assertEquals(119_000L, chapter.startPositionMs)
+
+        val negative = coordinator.addChapter(editionId, -5_000L, "سالب")
+        assertEquals(0L, database.chapterDao().getById(negative)!!.startPositionMs)
+    }
+
     private class RecordingController : PlaybackController {
         override val state: StateFlow<PlaybackState> = MutableStateFlow(PlaybackState())
         var lastSeek = -1L
@@ -91,6 +106,7 @@ class MarksCoordinatorIntegrationTest {
         override fun setSpeed(speed: Float) = Unit
         override fun getVolume(): Float = 1f
         override fun setVolume(volume: Float) = Unit
+        override fun setPreferredAudioDevice(device: android.media.AudioDeviceInfo?): Boolean = true
         override fun release() = Unit
     }
 

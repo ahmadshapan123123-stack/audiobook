@@ -4,12 +4,12 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.ScanFile
 import com.example.audiobook.data.preferences.AppSettings
-import com.example.audiobook.data.preferences.ScanSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.LibraryRootEntity
@@ -34,7 +34,7 @@ import org.robolectric.RobolectricTestRunner
  *  - Conservative (اختيار من الـViewModel): الفحص لا يدمج إطلاقًا رغم الثقة العالية.
  *  - Positive control: نفس البيانات بعد اختيار Balanced من الـViewModel تدمج تلقائيًا.
  * هذا يثبت أن القيمة ليست معروضة بلا أثر، وأن [ScanRoot] يقرأ القيمة المخزَّنة
- * الفعلية من [ScanSettings] (وليس افتراضية ثابتة) — [ScanRoot.kt:231].
+ * الفعلية من [AppSettings] (وليس افتراضية ثابتة) — [ScanRoot.kt:247].
  */
 @RunWith(RobolectricTestRunner::class)
 class SettingsChoiceDrivesScanIntegrationTest {
@@ -43,7 +43,7 @@ class SettingsChoiceDrivesScanIntegrationTest {
     private lateinit var database: AppDatabase
     private lateinit var source: FakeFileSource
     private lateinit var reader: CountingMetadataReader
-    private lateinit var scanSettings: ScanSettings
+    private lateinit var appSettings: AppSettings
     private lateinit var viewModel: SettingsViewModel
     private lateinit var scanRoot: ScanRoot
     private lateinit var root: LibraryRootEntity
@@ -54,9 +54,9 @@ class SettingsChoiceDrivesScanIntegrationTest {
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         source = FakeFileSource()
         reader = CountingMetadataReader()
-        scanSettings = ScanSettings(context)
-        viewModel = SettingsViewModel(scanSettings, AppSettings(context))
-        scanRoot = ScanRoot(database, source, reader, scanSettings, EditionMerge(database))
+        appSettings = AppSettings(context)
+        viewModel = SettingsViewModel(appSettings, ReminderScheduler(context, appSettings))
+        scanRoot = ScanRoot(database, source, reader, appSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)
         runBlocking { database.libraryRootDao().insert(root) }
     }
@@ -64,7 +64,7 @@ class SettingsChoiceDrivesScanIntegrationTest {
     @After
     fun tearDown() {
         database.close()
-        scanSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
+        appSettings.setIntelligenceLevel(IntelligenceLevel.BALANCED)
     }
 
     private suspend fun allEditions(): List<EditionEntity> = database.editionDao().observeAll().first()
@@ -76,8 +76,8 @@ class SettingsChoiceDrivesScanIntegrationTest {
 
         viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE)
 
-        // P1/P3: القيمة المخزَّنة تنجو عبر كائن ScanSettings جديد (= إعادة تشغيل).
-        assertEquals(IntelligenceLevel.CONSERVATIVE, ScanSettings(context).currentIntelligenceLevel())
+        // P1/P3: القيمة المخزَّنة تنجو عبر كائن AppSettings جديد (= إعادة تشغيل).
+        assertEquals(IntelligenceLevel.CONSERVATIVE, AppSettings(context).currentIntelligenceLevel())
 
         // إثبات أن البيانات تجريبيةً عالية الثقة فعلاً (كل القنوات تطابق):
         val signalA = EditionSignalExtractor.build("Book v1", root.displayName, listOf("Part 1.m4b"), listOf(AudioMetadata(1_000_000L, "audio/mp4", "Same Book", "Same Narrator", null, emptyList())))

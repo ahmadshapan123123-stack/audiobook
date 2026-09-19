@@ -1,12 +1,19 @@
 package com.example.audiobook.presentation.settings
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import android.Manifest
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,16 +24,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,121 +50,117 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.theme.AppSpacing
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
-import com.example.audiobook.presentation.theme.ThemePreference
+import com.example.audiobook.presentation.theme.bottomContentInset
+import com.example.audiobook.presentation.theme.LocalAppAccent
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
+import java.io.File
+import java.util.Locale
 
-private val SPEED_OPTIONS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 private val SLEEP_DURATIONS = listOf(5, 10, 15, 30, 45, 60)
+private const val DATABASE_FILE_NAME = "audiobook.db"
+
+private fun checkPostNotifications(context: Context): Boolean =
+    Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
+
+private fun openNotificationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+}
 
 /**
- * شاشة الإعدادات الشاملة: المظهر، التشغيل، مؤقت النوم، مستوى الذكاء في كشف
- * الإصدارات، المكتبة، الإشعارات، البيانات والتخزين، وعن أثير.
+ * شاشة الإعدادات الشاملة، بترتيب أقسام ثابت:
+ * التشغيل، مؤقت النوم، المظهر، المكتبة والفحص، الإشعارات، البيانات والتخزين، عن أثير.
  *
  * كل الخيارات تحكُم داخل الشاشة نفسها (Radios/Switches) — وليست مجرد لوحة تنقل.
+ * القراءة والكتابة تمرّان حصرًا عبر [SettingsViewModel] → [com.example.audiobook.data.preferences.AppSettings].
  * [R8-النقطة 2] تحافظ على عقد الوصولية: نصوص الخيارات الثلاثة لمستوى الذكاء
  * وشرح القيد الصارم وزر الرجوع ≥ 48dp وعدم القصّ مع خط مكبّر.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    themePreference: ThemePreference,
     onBack: () -> Unit,
     showBack: Boolean = true,
     viewModel: SettingsViewModel = hiltViewModel(),
     onOpenLibraryRoots: (() -> Unit)? = null,
     onScanNow: (() -> Unit)? = null
 ) {
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val level by viewModel.intelligenceLevel.collectAsStateWithLifecycle()
     val defaultSpeed by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val autoResume by viewModel.autoResume.collectAsStateWithLifecycle()
     val defaultSleep by viewModel.defaultSleepMinutes.collectAsStateWithLifecycle()
     val autoExtend by viewModel.autoExtendSleep.collectAsStateWithLifecycle()
     val notifications by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    val mediaMinimal by viewModel.mediaNotificationMinimal.collectAsStateWithLifecycle()
+    val sleepTimerNotif by viewModel.sleepTimerNotificationsEnabled.collectAsStateWithLifecycle()
+    val saveMomentNotif by viewModel.saveMomentNotificationsEnabled.collectAsStateWithLifecycle()
+    val bookCompletionNotif by viewModel.bookCompletionNotificationsEnabled.collectAsStateWithLifecycle()
+    val dailyReminder by viewModel.dailyReminderEnabled.collectAsStateWithLifecycle()
+    val dailyHour by viewModel.dailyReminderHour.collectAsStateWithLifecycle()
+    val dailyMinute by viewModel.dailyReminderMinute.collectAsStateWithLifecycle()
+    val resumeReminder by viewModel.resumeReminderEnabled.collectAsStateWithLifecycle()
+    val hasDemoData by viewModel.hasSeededDemoData.collectAsStateWithLifecycle()
+    val hasLibraryRoots by viewModel.hasLibraryRoots.collectAsStateWithLifecycle()
+    var showDailyTimePicker by remember { mutableStateOf(false) }
+    var showNoRootsDialog by remember { mutableStateOf(false) }
+    var showRemoveDemoDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val context = LocalContext.current
+    var postNotificationsGranted by remember { mutableStateOf(checkPostNotifications(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) postNotificationsGranted = checkPostNotifications(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = 168.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             CosmicScreenHeader(
-                title = "الإعدادات",
-                subtitle = "تخصيص أثير",
+                title = stringResource(R.string.settings_title),
+                subtitle = stringResource(R.string.settings_subtitle),
                 collapsed = collapsed,
                 onBack = if (showBack) onBack else null,
                 backAsTextButton = true
             )
 
-            // ── المظهر ──
-            SettingsSectionLabel(stringResource(R.string.settings_appearance))
-            ThemeOption(
-                title = stringResource(R.string.settings_theme_light),
-                description = stringResource(R.string.settings_theme_light_desc),
-                selected = themePreference.mode == AppThemeMode.LIGHT,
-                onSelect = { themePreference.updateMode(AppThemeMode.LIGHT) }
+            // ── 1. التشغيل ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_playback),
+                description = stringResource(R.string.settings_playback_desc)
             )
-            ThemeOption(
-                title = stringResource(R.string.settings_theme_dark),
-                description = stringResource(R.string.settings_theme_dark_desc),
-                selected = themePreference.mode == AppThemeMode.DARK,
-                onSelect = { themePreference.updateMode(AppThemeMode.DARK) }
-            )
-            ThemeOption(
-                title = stringResource(R.string.settings_theme_amoled),
-                description = stringResource(R.string.settings_theme_amoled_desc),
-                selected = themePreference.mode == AppThemeMode.AMOLED,
-                onSelect = { themePreference.updateMode(AppThemeMode.AMOLED) }
-            )
-
-            // ── مستوى الذكاء في كشف الإصدارات (عقد الوصولية R8) ──
-            SettingsSectionLabel(stringResource(R.string.settings_intelligence))
-            Text(
-                stringResource(R.string.settings_intelligence_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            SettingsRadioCard(
-                title = "محافظ",
-                description = "لا دمج تلقائي إطلاقًا؛ كل تجميع مقترح يُعرض عليك في شاشة المراجعة.",
-                selected = level == IntelligenceLevel.CONSERVATIVE,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE) }
-            )
-            SettingsRadioCard(
-                title = "متوازن",
-                description = "دمج تلقائي فقط عند تطابق إشارات قوية جدًا (ثقة شديدة الارتفاع)، وما دون ذلك يُعرض للمراجعة. الافتراضي.",
-                selected = level == IntelligenceLevel.BALANCED,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.BALANCED) }
-            )
-            SettingsRadioCard(
-                title = "ذكي",
-                description = "اقتراحات أوسع تُعرض في شاشة المراجعة، لكن لا دمج تلقائي صامت إطلاقًا.",
-                selected = level == IntelligenceLevel.AGGRESSIVE,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.AGGRESSIVE) }
-            )
-
-            Text(
-                "ابتعد عن الروايات المتباينة: في المستويات الثلاثة يظل القيد الصارم ساريًا — راوٍ مختلف واضح أو فرق مدة أكبر من 15% يمنع أي دمج مهما كانت الثقة.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            // ── التشغيل ──
-            SettingsSectionLabel(stringResource(R.string.settings_playback))
             SettingsCardGroup {
                 SettingsOptionGrid(
                     label = stringResource(R.string.settings_default_speed),
-                    options = SPEED_OPTIONS.map { speedLabel(it) },
+                    options = SPEED_OPTIONS.map { stringResource(R.string.settings_speed_value, speedValue(it)) },
                     selectedIndex = SPEED_OPTIONS.indexOf(defaultSpeed).coerceAtLeast(0),
                     onSelect = { viewModel.setDefaultSpeed(SPEED_OPTIONS[it]) }
                 )
@@ -164,8 +173,11 @@ fun SettingsScreen(
                 )
             }
 
-            // ── مؤقت النوم ──
-            SettingsSectionLabel(stringResource(R.string.settings_sleep_timer))
+            // ── 2. مؤقت النوم ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_sleep_timer),
+                description = stringResource(R.string.settings_sleep_timer_desc)
+            )
             SettingsCardGroup {
                 SettingsOptionGrid(
                     label = stringResource(R.string.settings_default_duration),
@@ -182,9 +194,36 @@ fun SettingsScreen(
                 )
             }
 
-            // ── المكتبة ──
+            // ── 3. المظهر ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_appearance),
+                description = stringResource(R.string.settings_appearance_desc)
+            )
+            ThemeOption(
+                title = stringResource(R.string.settings_theme_light),
+                description = stringResource(R.string.settings_theme_light_desc),
+                selected = themeMode == AppThemeMode.LIGHT,
+                onSelect = { viewModel.selectThemeMode(AppThemeMode.LIGHT) }
+            )
+            ThemeOption(
+                title = stringResource(R.string.settings_theme_dark),
+                description = stringResource(R.string.settings_theme_dark_desc),
+                selected = themeMode == AppThemeMode.DARK,
+                onSelect = { viewModel.selectThemeMode(AppThemeMode.DARK) }
+            )
+            ThemeOption(
+                title = stringResource(R.string.settings_theme_amoled),
+                description = stringResource(R.string.settings_theme_amoled_desc),
+                selected = themeMode == AppThemeMode.AMOLED,
+                onSelect = { viewModel.selectThemeMode(AppThemeMode.AMOLED) }
+            )
+
+            // ── 4. المكتبة والفحص ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_library),
+                description = stringResource(R.string.settings_library_desc)
+            )
             if (onOpenLibraryRoots != null || onScanNow != null) {
-                SettingsSectionLabel(stringResource(R.string.settings_library))
                 SettingsCardGroup {
                     if (onOpenLibraryRoots != null) {
                         SettingsNavRow(
@@ -200,28 +239,189 @@ fun SettingsScreen(
                         SettingsActionRow(
                             title = stringResource(R.string.settings_scan_now),
                             subtitle = stringResource(R.string.settings_scan_now_desc),
-                            onClick = onScanNow
+                            onClick = {
+                                viewModel.refreshRootsCount()
+                                if (hasLibraryRoots) {
+                                    onScanNow()
+                                } else {
+                                    showNoRootsDialog = true
+                                }
+                            }
                         )
                     }
                 }
             }
 
-            // ── الإشعارات ──
-            SettingsSectionLabel(stringResource(R.string.settings_notifications))
+            // مستوى الذكاء في كشف الإصدارات (عقد الوصولية R8) — داخل قسم المكتبة والفحص.
+            SettingsRowContent(title = stringResource(R.string.settings_intelligence)) {
+                Text(
+                    stringResource(R.string.settings_intelligence_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            SettingsRadioCard(
+                title = stringResource(R.string.settings_intelligence_conservative_title),
+                description = stringResource(R.string.settings_intelligence_conservative_desc),
+                selected = level == IntelligenceLevel.CONSERVATIVE,
+                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE) }
+            )
+            SettingsRadioCard(
+                title = stringResource(R.string.settings_intelligence_balanced_title),
+                description = stringResource(R.string.settings_intelligence_balanced_desc),
+                selected = level == IntelligenceLevel.BALANCED,
+                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.BALANCED) }
+            )
+            SettingsRadioCard(
+                title = stringResource(R.string.settings_intelligence_aggressive_title),
+                description = stringResource(R.string.settings_intelligence_aggressive_desc),
+                selected = level == IntelligenceLevel.AGGRESSIVE,
+                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.AGGRESSIVE) }
+            )
+            Text(
+                stringResource(R.string.settings_intelligence_strict_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // ── 5. الإشعارات ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_notifications),
+                description = stringResource(R.string.settings_notifications_desc)
+            )
             SettingsCardGroup {
                 SettingsSwitchRow(
-                    title = stringResource(R.string.settings_notifications),
-                    subtitle = stringResource(R.string.settings_notifications_desc),
+                    title = stringResource(R.string.settings_notifications_title),
+                    subtitle = stringResource(R.string.settings_notifications_row_desc),
                     checked = notifications,
                     onCheckedChange = { viewModel.setNotificationsEnabled(it) }
                 )
+                if (notifications && !postNotificationsGranted) {
+                    SettingsDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().minTouchTarget().clickable(onClick = { openNotificationSettings(context) }).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SettingsRowText(
+                            title = stringResource(R.string.settings_notif_permission_hint),
+                            subtitle = stringResource(R.string.settings_notif_permission_hint_desc),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+            SettingsCardGroup {
+                SettingsOptionGrid(
+                    label = stringResource(R.string.settings_notif_media_title),
+                    options = listOf(
+                        stringResource(R.string.settings_notif_media_full),
+                        stringResource(R.string.settings_notif_media_minimal)
+                    ),
+                    selectedIndex = if (mediaMinimal) 1 else 0,
+                    onSelect = { viewModel.setMediaNotificationMinimal(it == 1) }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_notif_sleep_timer),
+                    subtitle = stringResource(R.string.settings_notif_sleep_timer_desc),
+                    checked = sleepTimerNotif,
+                    onCheckedChange = { viewModel.setSleepTimerNotificationsEnabled(it) }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_notif_save_moment),
+                    subtitle = stringResource(R.string.settings_notif_save_moment_desc),
+                    checked = saveMomentNotif,
+                    onCheckedChange = { viewModel.setSaveMomentNotificationsEnabled(it) }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_notif_book_completed),
+                    subtitle = stringResource(R.string.settings_notif_book_completed_desc),
+                    checked = bookCompletionNotif,
+                    onCheckedChange = { viewModel.setBookCompletionNotificationsEnabled(it) }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_notif_daily_reminder),
+                    subtitle = stringResource(R.string.settings_notif_daily_reminder_desc),
+                    checked = dailyReminder,
+                    onCheckedChange = { viewModel.setDailyReminderEnabled(it) }
+                )
+                if (dailyReminder) {
+                    SettingsDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().minTouchTarget().clickable(onClick = { showDailyTimePicker = true }).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SettingsRowText(
+                            title = stringResource(R.string.settings_notif_daily_time),
+                            subtitle = String.format(Locale.US, "%02d:%02d", dailyHour, dailyMinute),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_notif_resume_reminder),
+                    subtitle = stringResource(R.string.settings_notif_resume_reminder_desc),
+                    checked = resumeReminder,
+                    onCheckedChange = { viewModel.setResumeReminderEnabled(it) }
+                )
+            }
+            if (showDailyTimePicker) {
+                val timeState = rememberTimePickerState(
+                    initialHour = dailyHour,
+                    initialMinute = dailyMinute,
+                    is24Hour = true
+                )
+                AlertDialog(
+                    onDismissRequest = { showDailyTimePicker = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.setDailyReminderTime(timeState.hour, timeState.minute)
+                            showDailyTimePicker = false
+                        }) { Text(stringResource(R.string.settings_time_save)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDailyTimePicker = false }) { Text(stringResource(R.string.settings_time_cancel)) }
+                    },
+                    title = { Text(stringResource(R.string.settings_notif_daily_time)) },
+                    text = { TimePicker(state = timeState) }
+                )
             }
 
-            // ── البيانات والتخزين ──
-            SettingsSectionLabel(stringResource(R.string.settings_storage))
+            // ── 6. البيانات والتخزين ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_storage),
+                description = stringResource(R.string.settings_storage_desc)
+            )
             SettingsCardGroup {
                 val context = LocalContext.current
                 var cacheCleared by remember { mutableStateOf(false) }
+                val databaseSize = remember { formatBytes(databaseSizeBytes(context)) }
+                SettingsRowContent(title = stringResource(R.string.settings_storage_db_size)) {
+                    Text(
+                        databaseSize,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SettingsDivider()
                 SettingsActionRow(
                     title = stringResource(R.string.settings_clear_cache),
                     subtitle = stringResource(
@@ -232,10 +432,21 @@ fun SettingsScreen(
                         cacheCleared = true
                     }
                 )
+                if (hasDemoData) {
+                    SettingsDivider()
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_remove_demo),
+                        subtitle = stringResource(R.string.settings_remove_demo_desc),
+                        onClick = { showRemoveDemoDialog = true }
+                    )
+                }
             }
 
-            // ── عن أثير ──
-            SettingsSectionLabel(stringResource(R.string.settings_about))
+            // ── 7. عن أثير ──
+            SettingsSectionLabel(
+                text = stringResource(R.string.settings_about),
+                description = stringResource(R.string.settings_about_section_desc)
+            )
             SettingsCardGroup {
                 SettingsRowContent(title = stringResource(R.string.settings_version, BuildConfig.VERSION_NAME)) {
                     Text(
@@ -243,26 +454,88 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
             }
         }
     }
+
+    if (showNoRootsDialog) {
+        AlertDialog(
+            onDismissRequest = { showNoRootsDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showNoRootsDialog = false
+                    onOpenLibraryRoots?.invoke()
+                }) { Text(stringResource(R.string.settings_add_folder)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoRootsDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+            title = { Text(stringResource(R.string.settings_no_roots_title)) },
+            text = { Text(stringResource(R.string.settings_no_roots_desc)) }
+        )
+    }
+
+    if (showRemoveDemoDialog) {
+        AlertDialog(
+            onDismissRequest = { showRemoveDemoDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRemoveDemoDialog = false
+                    viewModel.removeDemoData()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveDemoDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+            title = { Text(stringResource(R.string.settings_remove_demo)) },
+            text = { Text(stringResource(R.string.settings_remove_demo_confirm)) }
+        )
+    }
+}
 }
 
+/** حذف الملفات المؤقتة فقط؛ لا يمسّ قاعدة البيانات ولا الإعدادات ولا ملفات الكتب. */
 private fun clearCacheInternal(context: Context) {
     runCatching {
         context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
     }
 }
 
-private fun speedLabel(speed: Float): String {
-    val trimmed = if (speed % 1f == 0f) speed.toInt().toString() else speed.toString()
-    return "$trimmed×"
+/** مجموع أحجام ملف قاعدة البيانات وملفات WAL/SHM المرافقة له. */
+private fun databaseSizeBytes(context: Context): Long {
+    val database = context.getDatabasePath(DATABASE_FILE_NAME)
+    val candidates = listOf(
+        database,
+        File(database.path + "-wal"),
+        File(database.path + "-shm")
+    )
+    return candidates.filter { it.exists() }.sumOf { it.length() }
 }
 
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val kilobytes = bytes / 1024.0
+    if (kilobytes < 1024.0) return String.format(Locale.US, "%.0f KB", kilobytes)
+    val megabytes = kilobytes / 1024.0
+    if (megabytes < 1024.0) return String.format(Locale.US, "%.1f MB", megabytes)
+    return String.format(Locale.US, "%.2f GB", megabytes / 1024.0)
+}
+
+private fun speedValue(speed: Float): String =
+    if (speed % 1f == 0f) speed.toInt().toString() else speed.toString()
+
 @Composable
-private fun SettingsSectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge)
+private fun SettingsSectionLabel(text: String, description: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
+        Text(text, style = MaterialTheme.typography.titleLarge)
+        if (description != null) {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable
@@ -286,7 +559,10 @@ private fun SettingsDivider() {
     )
 }
 
-/** شبكة خيارات 3 أعمدة (آمنة مع الخط المكبّر — لا لفّ أفقي ولا قصّ). */
+/**
+ * شبكة خيارات متناظرة بلا خلايا فارغة مشوّهة: أعمدة 3 للقوائم القصيرة و4 للأطول،
+ * والحشوة الأخيرة تُملأ بفراغات بوزن متساوٍ للحفاظ على عرض الأعمدة (آمنة مع الخط المكبّر).
+ */
 @Composable
 private fun SettingsOptionGrid(
     label: String,
@@ -295,17 +571,23 @@ private fun SettingsOptionGrid(
     onSelect: (Int) -> Unit
 ) {
     SettingsRowContent(title = label)
-    options.chunked(3).forEach { rowOptions ->
-        val startIndex = options.indexOf(rowOptions.first())
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+    val columns = if (options.size <= 6) 3 else 4
+    options.chunked(columns).forEachIndexed { rowIndex, rowOptions ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md, vertical = AppSpacing.xxs),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+        ) {
             rowOptions.forEachIndexed { index, option ->
-                val optionIndex = startIndex + index
+                val optionIndex = rowIndex * columns + index
                 SettingsOptionCell(
                     label = option,
                     selected = optionIndex == selectedIndex,
                     modifier = Modifier.weight(1f),
                     onClick = { onSelect(optionIndex) }
                 )
+            }
+            repeat(columns - rowOptions.size) {
+                Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -318,18 +600,29 @@ private fun SettingsOptionCell(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val container = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    val content = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val appAccent = LocalAppAccent.current
+    val shape = RoundedCornerShape(AppSpacing.sm)
+    val container = if (selected) appAccent.accent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+    val content = if (selected) appAccent.onAccent else MaterialTheme.colorScheme.onSurface
+    val borderColor = if (selected) appAccent.accent else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
     Box(
         modifier = modifier
             .minTouchTarget()
-            .clip(RoundedCornerShape(AppSpacing.sm))
+            .clip(shape)
             .background(container)
+            .border(1.dp, borderColor, shape)
             .clickable(onClick = onClick)
-            .padding(vertical = AppSpacing.sm),
+            .padding(vertical = AppSpacing.sm, horizontal = AppSpacing.xs),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = content,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -340,13 +633,25 @@ private fun SettingsSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val appAccent = LocalAppAccent.current
     Row(
         modifier = Modifier.fillMaxWidth().minTouchTarget().padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SettingsRowText(title, subtitle, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = appAccent.onAccent,
+                checkedTrackColor = appAccent.accent,
+                checkedBorderColor = appAccent.accent,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                uncheckedBorderColor = MaterialTheme.colorScheme.outline
+            )
+        )
     }
 }
 
@@ -416,7 +721,15 @@ private fun SettingsRadioCard(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            RadioButton(selected = selected, onClick = null)
+            val appAccent = LocalAppAccent.current
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = appAccent.accent,
+                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            )
             Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs), modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -38,6 +38,11 @@ object SleepTimerCommands {
         else -> null
     }
 
+    fun commands(): List<SessionCommand> = COMMANDS
+
+    fun sessionCommands(): SessionCommands =
+        SessionCommands.Builder().apply { COMMANDS.forEach { add(it) } }.build()
+
     fun decreaseMinutesFor(action: SessionCommand): Int? = when (action.customAction) {
         ACTION_DECREASE_5 -> 5
         ACTION_DECREASE_10 -> 10
@@ -47,13 +52,16 @@ object SleepTimerCommands {
 
     fun isCancelAction(action: SessionCommand): Boolean = action.customAction == ACTION_CANCEL
 
-    fun sessionCommands(): SessionCommands =
-        SessionCommands.Builder().apply { COMMANDS.forEach { add(it) } }.build()
-
     fun customButtons(): List<CommandButton> = COMMANDS.map { command ->
+        val icon = when (command.customAction) {
+            ACTION_EXTEND_15, ACTION_EXTEND_30, ACTION_EXTEND_60 -> CommandButton.ICON_PLUS
+            ACTION_DECREASE_5, ACTION_DECREASE_10, ACTION_DECREASE_15 -> CommandButton.ICON_MINUS
+            else -> CommandButton.ICON_STOP
+        }
         CommandButton.Builder()
             .setSessionCommand(command)
             .setDisplayName(command.customAction.substringAfterLast('.'))
+            .setIconResId(CommandButton.getIconResIdForIconConstant(icon))
             .setEnabled(true)
             .build()
     }

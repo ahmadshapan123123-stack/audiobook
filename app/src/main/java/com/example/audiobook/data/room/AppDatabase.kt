@@ -31,7 +31,13 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE books ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
 @Database(
 	entities = [
@@ -41,7 +47,7 @@ val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 		FavoriteBook::class, ListeningSessionEntity::class, EditionMatchDecisionEntity::class,
         ChapterCompletionEntity::class
 	],
-	version = 3,
+	version = 4,
 	exportSchema = false
 )
 @TypeConverters(RoomConverters::class)

@@ -18,6 +18,10 @@
     <string name="favorite_add">إضافة إلى المفضلة</string>
     <string name="favorite_remove">إزالة من المفضلة</string>
     <string name="missing_file">ملف صوتي ناقص</string>
+    <string name="cancel">إلغاء</string>
+    <string name="back">رجوع</string>
+    <string name="next">التالي</string>
+    <string name="delete">حذف</string>
 
     <!-- ===== عدّاد الكتب (مصدر واحد) ===== -->
     <plurals name="book_count">
@@ -219,8 +223,7 @@
     <string name="player_note_save">حفظ</string>
     <string name="player_note_cancel">إلغاء</string>
     <string name="player_note_saved">أُضيفت الملاحظة عند %1$s</string>
-    <string name="player_note_overlay_cue">ملاحظة</string>
-    <string name="player_note_overlay_close">إغلاق الملاحظة</string>
+    <string name="player_note_overlay_header">ملاحظة محفوظة</string>
     <string name="player_chapter_name_hint">اسم الفصل (اختياري)</string>
     <string name="player_chapter_save">إنشاء الفصل</string>
     <string name="player_chapter_saved">أُضيف فصلًا عند %1$s</string>
@@ -229,6 +232,21 @@
     <string name="player_sleep_custom_hint">الدقائق</string>
     <string name="player_sleep_custom_start">بدء</string>
     <string name="player_more_menu">قائمة المشغّل</string>
+    <string name="player_device_output">جهاز الصوت</string>
+    <string name="player_device_icon_desc">اختيار جهاز الصوت</string>
+    <string name="player_device_available">الأجهزة المتاحة</string>
+    <string name="player_device_current">الجهاز الحالي: %1$s</string>
+    <string name="player_device_speaker">مكبر الصوت</string>
+    <string name="player_device_earpiece">سماعة الهاتف</string>
+    <string name="player_device_bluetooth">بلوتوث</string>
+    <string name="player_device_headset">سماعة سلكية</string>
+    <string name="player_device_headphones">سماعات رأس</string>
+    <string name="player_device_usb">صوت USB</string>
+    <string name="player_device_hdmi">HDMI</string>
+    <string name="player_device_unknown">جهاز صوت</string>
+    <string name="player_device_no_permission">للوصول إلى الأجهزة اللاسلكية، فعّل إذن البلوتوث.</string>
+    <string name="player_device_grant">منح الإذن</string>
+    <string name="player_device_switch_failed">تعذّر التبديل إلى هذا الجهاز</string>
     <string name="player_more_chapter_now">فصل هنا</string>
     <string name="player_chapter_start_at">من %1$s</string>
     <string name="player_author_series">%1$s · %2$s</string>
@@ -308,7 +326,7 @@
     <string name="settings_auto_extend_desc">تمديد 15 دقيقة تلقائيًا عند تفاعل المستخدم.</string>
     <string name="settings_intelligence">مستوى الذكاء في كشف الإصدارات</string>
     <string name="settings_intelligence_desc">كيف يتصرف الفحص عند رؤية مجلدين قد يكونان لنفس الكتاب.</string>
-    <string name="settings_library">المكتبة</string>
+    <string name="settings_library">المكتبة والفحص</string>
     <string name="settings_library_roots">مجلدات المكتبة</string>
     <string name="settings_library_roots_desc">إدارة مصادر الفحص وتحديد الأولويات.</string>
     <string name="settings_scan_now">فحص المكتبة الآن</string>
@@ -316,10 +334,277 @@
     <string name="settings_notifications">الإشعارات</string>
     <string name="settings_notifications_desc">إشعارات التشغيل في الخلفية ومؤقت النوم.</string>
     <string name="settings_storage">البيانات والتخزين</string>
-    <string name="settings_clear_cache">مسح ذاكرة التخزين المؤقت</string>
-    <string name="settings_clear_cache_desc">حذف الصور المخزّنة مؤقتًا دون حذف الكتب أو الإعدادات.</string>
-    <string name="settings_clear_cache_confirm">تم المسح</string>
+    <string name="settings_clear_cache">مسح الملفات المؤقتة</string>
+    <string name="settings_clear_cache_desc">حذف الملفات المؤقتة فقط دون المساس بالكتب أو الإعدادات أو قاعدة البيانات.</string>
+    <string name="settings_clear_cache_confirm">تم مسح الملفات المؤقتة</string>
     <string name="settings_about">عن أثير</string>
     <string name="settings_version">الإصدار %1$s</string>
     <string name="settings_about_desc">مكتبة صوتية عربية ذكية مفتوحة المصدر.</string>
+
+    <!-- ===== الإعدادات (توحيد العرض: عنوان الرأس + وصف كل قسم + أسماء الخيارات) ===== -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_subtitle">تخصيص أثير</string>
+
+    <string name="settings_playback_desc">السرعة الافتراضية وسلوك الاستئناف عند فتح التطبيق.</string>
+    <string name="settings_speed_value">%1$s×</string>
+
+    <string name="settings_sleep_timer_desc">المدة الافتراضية للمؤقّت وسلوك التمديد عند التفاعل.</string>
+
+    <string name="settings_appearance_desc">اختر السمة المريحة لقراءتك واستماعك.</string>
+
+    <string name="settings_library_desc">مصادر الفحص ومستوى الذكاء في كشف الإصدارات.</string>
+    <string name="settings_intelligence_conservative_title">محافظ</string>
+    <string name="settings_intelligence_conservative_desc">لا دمج تلقائي إطلاقًا؛ كل تجميع مقترح يُعرض عليك في شاشة المراجعة.</string>
+    <string name="settings_intelligence_balanced_title">متوازن</string>
+    <string name="settings_intelligence_balanced_desc">دمج تلقائي فقط عند تطابق إشارات قوية جدًا (ثقة شديدة الارتفاع)، وما دون ذلك يُعرض للمراجعة. الافتراضي.</string>
+    <string name="settings_intelligence_aggressive_title">ذكي</string>
+    <string name="settings_intelligence_aggressive_desc">اقتراحات أوسع تُعرض في شاشة المراجعة، لكن لا دمج تلقائي صامت إطلاقًا.</string>
+    <string name="settings_intelligence_strict_note">ابتعد عن الروايات المتباينة: في المستويات الثلاثة يظل القيد الصارم ساريًا — راوٍ مختلف واضح أو فرق مدة أكبر من 15% يمنع أي دمج مهما كانت الثقة.</string>
+
+    <string name="settings_notifications_title">إشعارات التطبيق</string>
+    <string name="settings_notifications_row_desc">إظهار إشعار التشغيل أثناء الاستماع في الخلفية.</string>
+
+    <!-- ===== تفاصيل الإشعارات ===== -->
+    <string name="settings_notif_media_title">طريقة إشعار التشغيل</string>
+    <string name="settings_notif_media_full">إشعار التشغيل الكامل</string>
+    <string name="settings_notif_media_minimal">إشعار تشغيل مصغّر</string>
+    <string name="settings_notif_sleep_timer">إشعار مؤقت النوم</string>
+    <string name="settings_notif_sleep_timer_desc">عرض الوقت المتبقي وأزرار التمديد والإلغاء.</string>
+    <string name="settings_notif_save_moment">إشعار حفظ اللحظة</string>
+    <string name="settings_notif_save_moment_desc">تأكيد فوري عند حفظ علامة أو ملاحظة أو فصل.</string>
+    <string name="settings_notif_book_completed">إشعار إكمال الكتاب</string>
+    <string name="settings_notif_book_completed_desc">تنبيه فوري عند وصول نهاية الكتاب.</string>
+    <string name="settings_notif_daily_reminder">تذكير يومي بالاستماع</string>
+    <string name="settings_notif_daily_reminder_desc">تذكير يومي في الوقت المحدد.</string>
+    <string name="settings_notif_resume_reminder">تذكير بالمتابعة</string>
+    <string name="settings_notif_resume_reminder_desc">تذكيرك بمتابعة آخر كتاب بعد 24 ساعة من آخر جلسة.</string>
+    <string name="settings_notif_daily_time">وقت التذكير اليومي</string>
+    <string name="settings_time_save">حفظ</string>
+    <string name="settings_time_cancel">إلغاء</string>
+    <string name="settings_notif_permission_hint">تفعيل إذن الإشعارات</string>
+    <string name="settings_notif_permission_hint_desc">الإشعارات غير مفعّلة على مستوى النظام — المس للانتقال إلى الإعدادات.</string>
+
+    <string name="settings_storage_desc">حجم البيانات المؤقتة وقاعدة البيانات المحلية.</string>
+    <string name="settings_storage_db_size">حجم قاعدة البيانات</string>
+
+    <string name="settings_about_section_desc">معلومات الإصدار وتفاصيل التطبيق.</string>
+
+    <!-- ===== الإحصائيات ===== -->
+    <string name="stats_title">إحصائياتك</string>
+    <string name="stats_subtitle">نظرة على وقتك مع الحكايات.</string>
+    <string name="stats_period_week">هذا الأسبوع</string>
+    <string name="stats_period_month">هذا الشهر</string>
+    <string name="stats_period_year">هذا العام</string>
+    <string name="stats_period_all">الكل</string>
+    <string name="stats_listening_time">وقت الاستماع</string>
+    <string name="stats_delta_previous">%1$s عن الفترة السابقة</string>
+    <string name="stats_daily">استماعك يومًا بيوم</string>
+    <string name="stats_no_data">لا توجد بيانات بعد في هذه الفترة</string>
+    <string name="stats_sessions">جلسات</string>
+    <string name="stats_books">كتب</string>
+    <string name="stats_chapters">فصلًا</string>
+    <string name="stats_days">أيام</string>
+    <string name="stats_your_books">كتبك</string>
+    <string name="stats_most_listened">الأكثر استماعًا</string>
+    <string name="stats_progress">تقدّمك</string>
+    <string name="stats_remaining">بقي %1$s</string>
+    <string name="stats_percent">%1$d٪</string>
+    <string name="stats_achievements">إنجازاتك</string>
+    <string name="stats_habits">عادات الاستماع</string>
+    <string name="stats_favorite_time">وقت استماعك المفضل: %1$s</string>
+    <string name="stats_speed">سرعة الاستماع</string>
+    <string name="stats_low_data">بيانات قليلة: كلما استمعت أكثر تظهر سرعتك بدقة أكبر</string>
+    <string name="stats_history">سجل الاستماع</string>
+    <string name="stats_deleted_edition">نسخة محذوفة</string>
+    <string name="stats_view_full_history">عرض السجل كاملًا</string>
+    <string name="stats_count_once">مرة واحدة</string>
+    <string name="stats_count_twice">مرتان</string>
+    <string name="stats_count_times">%1$d مرات</string>
+    <string name="stats_today">اليوم</string>
+    <string name="stats_yesterday">أمس</string>
+    <string name="stats_short_duration_hm">%1$dس %2$dد</string>
+    <string name="stats_short_duration_m">%1$dد</string>
+    <string name="stats_long_duration_hm">%1$d ساعة و%2$d دقيقة</string>
+    <string name="stats_long_duration_h">%1$d ساعة</string>
+    <string name="stats_long_duration_m">%1$d دقيقة</string>
+
+    <!-- ===== سجل الاستماع ===== -->
+    <string name="history_title">السجل</string>
+    <string name="history_subtitle">آخر جلسات الاستماع</string>
+    <string name="history_empty">لا توجد جلسات بعد</string>
+    <string name="history_deleted_edition">نسخة محذوفة</string>
+    <string name="history_duration_hm">%1$d س %2$d د</string>
+    <string name="history_duration_m">%1$d د</string>
+
+    <!-- ===== مراجعة المطابقات ===== -->
+    <string name="review_title">مراجعة المطابقات</string>
+    <string name="review_subtitle">اقتراحات الدمج بانتظار قرارك</string>
+    <string name="review_tab_files">الملفات</string>
+    <string name="review_tab_books">الكتب</string>
+    <string name="review_tab_series">السلاسل</string>
+    <string name="review_tab_authors">المؤلفون</string>
+    <string name="review_suspect_cases">الحالات المشكوك فيها</string>
+    <string name="review_empty">لا توجد حالات تحتاج مراجعة</string>
+    <string name="review_subject">الإصدار المشكوك فيه</string>
+    <string name="review_confidence">الثقة: %1$s</string>
+    <string name="review_compared_to">يقارن بـ:</string>
+    <string name="review_same">نفس الإصدار</string>
+    <string name="review_different">إصدار مختلف</string>
+    <string name="review_not_same">ليس نفس الكتاب</string>
+    <string name="review_signal_row">%1$s: %2$s</string>
+    <string name="review_signal_title">العنوان</string>
+    <string name="review_signal_folder">المجلد</string>
+    <string name="review_signal_author_folder">مجلد المؤلف</string>
+    <string name="review_signal_narrator">الراوي</string>
+    <string name="review_signal_series">السلسلة</string>
+    <string name="review_signal_duration">المدة</string>
+    <string name="review_signal_files">الملفات</string>
+    <string name="review_signal_format">الصيغة</string>
+    <string name="review_percent">%1$d٪</string>
+    <string name="review_duration_hm">%1$d س %2$d د</string>
+    <string name="review_duration_m">%1$d د</string>
+
+    <!-- ===== الإشارات المرجعية ===== -->
+    <string name="bookmarks_subtitle">إشاراتك وملاحظاتك</string>
+    <string name="bookmarks_go_to">انتقال</string>
+    <string name="bookmarks_delete">حذف</string>
+
+    <!-- ===== قنوات الإشعارات ===== -->
+    <string name="channel_playback_full_name">التشغيل</string>
+    <string name="channel_playback_full_desc">إشعار التشغيل الكامل مع أزرار التحكم</string>
+    <string name="channel_playback_minimal_name">التشغيل (مصغّر)</string>
+    <string name="channel_playback_minimal_desc">إشعار تشغيل مصغّر بدون أزرار</string>
+    <string name="channel_sleep_timer_name">مؤقت النوم</string>
+    <string name="channel_sleep_timer_desc">عرض الوقت المتبقي لمؤقت النوم</string>
+    <string name="channel_saved_moment_name">اللحظات المحفوظة</string>
+    <string name="channel_saved_moment_desc">تأكيد حفظ العلامات والملاحظات والفصول</string>
+    <string name="channel_reminders_name">التذكيرات</string>
+    <string name="channel_reminders_desc">تذكير بالاستماع ومتابعة الكتاب</string>
+    <string name="channel_achievements_name">الإنجازات</string>
+    <string name="channel_achievements_desc">إشعارات إكمال الكتب والإحصائيات</string>
+
+    <!-- ===== محتوى الإشعارات ===== -->
+    <string name="notif_playback_minimal_title">يتم التشغيل</string>
+    <string name="notif_playback_minimal_text">أثير — تشغيل في الخلفية</string>
+    <string name="notif_action_play">تشغيل</string>
+    <string name="notif_action_pause">إيقاف مؤقت</string>
+    <string name="notif_sleep_title">مؤقت النوم</string>
+    <string name="notif_sleep_remaining">متبقّي %1$s</string>
+    <string name="notif_sleep_extend_15">+15 دقيقة</string>
+    <string name="notif_sleep_extend_30">+30 دقيقة</string>
+    <string name="notif_sleep_cancel">إلغاء</string>
+    <string name="notif_save_moment_title">تم حفظ اللحظة</string>
+    <string name="notif_save_moment_text">%1$s</string>
+    <string name="notif_book_completed_title">أكملت الكتاب</string>
+    <string name="notif_book_completed_text">%1$s — %2$s</string>
+    <string name="notif_book_completed_action">ابدأ كتابًا جديدًا</string>
+    <string name="notif_daily_reminder_title">لا تنسَ الاستماع اليوم</string>
+    <string name="notif_daily_reminder_text">تابع قصتك المفضلة — أثير بانتظارك</string>
+    <string name="notif_resume_reminder_title">أكمل من حيث توقفت</string>
+    <string name="notif_resume_reminder_text">استمر في %1$s</string>
+
+    <!-- ===== إدارة المكتبة ===== -->
+    <string name="confirm_delete_title">تأكيد الحذف</string>
+    <string name="confirm_delete_author">هل تريد حذف \"%1$s\" وجميع كتبه (%2$d)؟ لن يمكن التراجع.</string>
+    <string name="confirm_delete_series">هل تريد حذف السلسلة \"%1$s\" (%2$d كتب)؟ الكتب ستصبح مستقلة.</string>
+    <string name="confirm_delete_collection">هل تريد حذف المجموعة \"%1$s\" (%2$d كتاب)؟</string>
+    <string name="confirm_delete_book">هل تريد حذف الكتاب \"%1$s\" وجميع إصداراته وبياناته؟</string>
+    <string name="confirm_delete_edition">هل تريد حذف الإصدار \"%1$s\"؟</string>
+    <string name="confirm_delete_root">هل تريد حذف مجلد \"%1$s\" (%2$d إصدار)؟ الملفات لن تُحذف من الجهاز.</string>
+    <string name="confirm_merge_title">تأكيد الدمج</string>
+    <string name="confirm_merge_authors">هل تريد دمج \"%1$s\" في \"%2$s\"؟ جميع كتب \"%1$s\" ستنقل إلى \"%2$s\".</string>
+    <string name="confirm_merge_series">هل تريد دمج \"%1$s\" في \"%2$s\"؟</string>
+    <string name="btn_delete">حذف</string>
+    <string name="btn_merge">دمج</string>
+    <string name="btn_confirm">تأكيد</string>
+    <string name="btn_cancel">إلغاء</string>
+    <string name="btn_undo">تراجع</string>
+    <string name="btn_dismiss">حسنًا</string>
+    <string name="undo_action_deleted">تم الحذف</string>
+    <string name="undo_action_merged">تم الدمج</string>
+    <string name="undo_action_moved">تم النقل</string>
+    <string name="undo_snackbar_message">%1$s — %2$s</string>
+    <string name="undo_tap_to_undo">تراجع</string>
+
+    <!-- ===== حقل السحب/الإفلات ===== -->
+    <string name="move_to_title">نقل إلى</string>
+    <string name="move_to_author">نقل إلى مؤلف</string>
+    <string name="move_to_series">نقل إلى سلسلة</string>
+    <string name="move_to_collection">إضافة إلى مجموعة</string>
+    <string name="move_to_new_author">مؤلف جديد</string>
+    <string name="move_to_new_series">سلسلة جديدة</string>
+    <string name="move_to_new_collection">مجموعة جديدة</string>
+    <string name="move_to_new_author_hint">اسم المؤلف الجديد</string>
+    <string name="move_to_new_series_hint">اسم السلسلة الجديدة</string>
+    <string name="move_to_new_collection_hint">اسم المجموعة الجديدة</string>
+
+    <!-- ===== إدارة الكتب ===== -->
+    <string name="book_menu_move_author">نقل إلى مؤلف آخر</string>
+    <string name="book_menu_move_series">نقل إلى سلسلة</string>
+    <string name="book_menu_change_genre">تعديل النوع</string>
+    <string name="book_menu_description">تعديل النبذة</string>
+    <string name="book_menu_delete">حذف الكتاب</string>
+    <string name="book_description_label">النبذة التعريفية</string>
+    <string name="book_genre_label">النوع</string>
+    <string name="book_genre_novel">رواية</string>
+    <string name="book_genre_short_story">قصة قصيرة</string>
+    <string name="book_genre_nonfiction">غير خيالي</string>
+    <string name="book_genre_biography">سيرة ذاتية</string>
+    <string name="book_genre_history">تاريخ</string>
+    <string name="book_genre_self_help">تطوير ذات</string>
+    <string name="book_genre_religion">ديني</string>
+    <string name="book_genre_philosophy">فلسفة</string>
+    <string name="book_genre_science">علوم</string>
+    <string name="book_genre_other">آخر</string>
+    <string name="book_description_save">حفظ النبذة</string>
+
+    <!-- ===== إدارة المؤلفين ===== -->
+    <string name="author_menu_merge">دمج مع مؤلف آخر</string>
+    <string name="author_menu_delete">حذف المؤلف</string>
+    <string name="author_merge_select">اختر المؤلف الذي سيحتفظ بالكتب</string>
+
+    <!-- ===== إدارة السلاسل ===== -->
+    <string name="series_menu_merge">دمج مع سلسلة أخرى</string>
+    <string name="series_menu_delete">حذف السلسلة</string>
+    <string name="series_menu_reorder">إعادة ترتيب الكتب</string>
+
+    <!-- ===== إدارة الإصدارات ===== -->
+    <string name="edition_menu_split">إنشاء نسخة</string>
+    <string name="edition_menu_delete">حذف الإصدار</string>
+    <string name="edition_menu_rename">إعادة تسمية</string>
+    <string name="edition_menu_narrator">تغيير الرواي</string>
+
+    <!-- ===== إدارة المجموعات ===== -->
+    <string name="collection_menu_edit">تعديل اسم المجموعة</string>
+    <string name="collection_menu_delete">حذف المجموعة</string>
+    <string name="collection_menu_remove_book">إزالة من المجموعة</string>
+    <string name="collection_edit_name_label">اسم المجموعة</string>
+    <string name="collection_edit_save">حفظ</string>
+
+    <!-- ===== إدارة مجلدات المكتبة ===== -->
+    <string name="root_menu_delete">حذف المجلد</string>
+    <string name="root_menu_rescan">إعادة الفحص</string>
+
+    <!-- ===== ISSUE 1: Demo Data Management ===== -->
+    <string name="settings_remove_demo">إزالة بيانات التجربة</string>
+    <string name="settings_remove_demo_desc">حذف جميع الكتب التجريبية من المكتبة</string>
+    <string name="settings_remove_demo_confirm">هل تريد حذف جميع بيانات التجربة؟ لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="demo_badge">تجريبي</string>
+
+    <!-- ===== ISSUE 2: Onboarding ===== -->
+    <string name="onboarding_title">مرحباً بك في أثير</string>
+    <string name="onboarding_subtitle">مكتبة كتب صوتية ذكية</string>
+    <string name="onboarding_step1_title">أضف مجلدات الكتب</string>
+    <string name="onboarding_step1_desc">اختر المجلدات التي تحتوي على كتبك الصوتية ليتم فحصها تلقائياً</string>
+    <string name="onboarding_step2_title">سجّل كتبك</string>
+    <string name="onboarding_step2_desc">سيقوم أثير بتحليل ملفاتك الصوتية وتنظيم الكتب والمؤلفين والسلاسل</string>
+    <string name="onboarding_step3_title">ابدأ الاستماع</string>
+    <string name="onboarding_step3_desc">استمع لكتبك مع تقدم ذكي وتنظيم تلقائي</string>
+    <string name="onboarding_start">ابدأ الآن</string>
+    <string name="onboarding_add_folder">إضافة مجلد</string>
+
+    <!-- ===== ISSUE 3: Scan Button ===== -->
+    <string name="settings_no_roots_title">لا توجد مجلدات</string>
+    <string name="settings_no_roots_desc">أضف مجلد كتبك الصوتية أولاً قبل بدء الفحص</string>
+    <string name="settings_add_folder">إضافة مجلد</string>
 </resources>

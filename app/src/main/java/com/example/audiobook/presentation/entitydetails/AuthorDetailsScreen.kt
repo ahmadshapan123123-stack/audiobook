@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,16 +26,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
+import com.example.audiobook.presentation.common.ConfirmDeleteDialog
+import com.example.audiobook.presentation.common.ConfirmMergeDialog
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import java.util.UUID
 
-/**
- * صفحة تفاصيل المؤلف: اسمه ولونه، ثم كتبه مجمّعة بسلاسلها (نقرة على السلسلة =
- * صفحة السلسلة)، وكل كتاب يفتح صفحة تفاصيله — لا المشغّل مباشرة.
- */
 @Composable
 fun AuthorDetailsScreen(
     onBack: () -> Unit,
@@ -44,6 +44,8 @@ fun AuthorDetailsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showEntityEdit by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showMergeDialog by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
@@ -75,7 +77,7 @@ fun AuthorDetailsScreen(
                 coverColor = Color(state.coverColor.toInt())
             )
 
-                        EntityEditButton(onClick = { showEntityEdit = true })
+            EntityEditButton(onClick = { showEntityEdit = true })
             if (showEntityEdit) {
                 EntityEditDialog(
                     initialName = author.name,
@@ -89,7 +91,46 @@ fun AuthorDetailsScreen(
                     }
                 )
             }
-EntitySectionTitle(stringResource(R.string.entity_author_books_header))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                OutlinedButton(onClick = { showMergeDialog = true }) {
+                    Text(stringResource(R.string.author_menu_merge))
+                }
+                OutlinedButton(onClick = { showDeleteDialog = true }) {
+                    Text(stringResource(R.string.author_menu_delete), color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            if (showDeleteDialog) {
+                ConfirmDeleteDialog(
+                    title = stringResource(R.string.confirm_delete_title),
+                    message = stringResource(R.string.confirm_delete_author, author.name, state.totalBooks),
+                    onConfirm = {
+                        showDeleteDialog = false
+                        viewModel.deleteAuthor(onBack)
+                    },
+                    onDismiss = { showDeleteDialog = false }
+                )
+            }
+
+            if (showMergeDialog) {
+                ConfirmMergeDialog(
+                    title = stringResource(R.string.confirm_merge_title),
+                    message = stringResource(R.string.author_merge_select),
+                    onConfirm = { showMergeDialog = false },
+                    onDismiss = { showMergeDialog = false }
+                )
+                MoveToAuthorDialog(
+                    authors = state.allAuthors,
+                    onSelect = { targetId ->
+                        showMergeDialog = false
+                        viewModel.mergeAuthors(targetId) { onBack() }
+                    },
+                    onDismiss = { showMergeDialog = false }
+                )
+            }
+
+            EntitySectionTitle(stringResource(R.string.entity_author_books_header))
             if (state.groups.isEmpty()) {
                 Text(stringResource(R.string.entity_no_books), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
@@ -123,6 +164,51 @@ EntitySectionTitle(stringResource(R.string.entity_author_books_header))
                 }
             }
         }
-        Spacer(Modifier.height(AppSpacing.lg))
+        Spacer(Modifier.height(bottomContentInset()))
     }
+}
+
+@Composable
+private fun MoveToAuthorDialog(
+    authors: List<com.example.audiobook.data.room.entity.AuthorEntity>,
+    onSelect: (UUID) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchText by remember { mutableStateOf("") }
+    val filtered = authors.filter {
+        it.name.contains(searchText, ignoreCase = true)
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.author_merge_select)) },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(AppSpacing.sm))
+                filtered.forEach { author ->
+                    Text(
+                        author.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .minTouchTarget()
+                            .clickable { onSelect(author.id) }
+                            .padding(AppSpacing.sm)
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.btn_cancel))
+            }
+        }
+    )
 }

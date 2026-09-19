@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -30,11 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.R
 import com.example.audiobook.data.repository.DateRange
 import com.example.audiobook.data.room.dao.ListeningHistoryRow
 import com.example.audiobook.domain.statistics.BookListeningStat
@@ -46,6 +47,7 @@ import com.example.audiobook.domain.statistics.SpeedBucket
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.AppModeChip
 import com.example.audiobook.presentation.theme.AppSpacing
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.Cosmic
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.minTouchTarget
@@ -77,12 +79,13 @@ fun StatisticsScreen(
                 .fillMaxSize()
                 .verticalScroll(scroll)
                 .padding(horizontal = 24.dp)
-                .padding(top = 24.dp, bottom = 200.dp),
+                .padding(top = 24.dp)
+                .padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.lg)
         ) {
             CosmicScreenHeader(
-                title = "إحصائياتك",
-                subtitle = "نظرة على وقتك مع الحكايات.",
+                title = stringResource(R.string.stats_title),
+                subtitle = stringResource(R.string.stats_subtitle),
                 collapsed = collapsed,
                 onBack = if (showBack) onBack else null,
                 backAsTextButton = true
@@ -112,10 +115,10 @@ private fun PeriodChips(selected: DateRange, onSelect: (DateRange) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
         val options = listOf(
-            DateRange.WEEK to "هذا الأسبوع",
-            DateRange.MONTH to "هذا الشهر",
-            DateRange.YEAR to "هذا العام",
-            DateRange.ALL to "الكل"
+            DateRange.WEEK to stringResource(R.string.stats_period_week),
+            DateRange.MONTH to stringResource(R.string.stats_period_month),
+            DateRange.YEAR to stringResource(R.string.stats_period_year),
+            DateRange.ALL to stringResource(R.string.stats_period_all)
         )
         options.forEach { (range, label) ->
             AppModeChip(label = label, selected = selected == range, onClick = { onSelect(range) })
@@ -126,7 +129,7 @@ private fun PeriodChips(selected: DateRange, onSelect: (DateRange) -> Unit) {
 @Composable
 private fun ListeningHero(overview: PeriodOverview) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-        Text("وقت الاستماع", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_listening_time), style = MaterialTheme.typography.titleMedium)
         Text(
             formatLongDuration(overview.listenedMs),
             style = MaterialTheme.typography.headlineMedium,
@@ -136,7 +139,7 @@ private fun ListeningHero(overview: PeriodOverview) {
         if (overview.previousPeriodMs > 0L && overview.deltaMs != 0L) {
             val sign = if (overview.deltaMs > 0L) "+" else "−"
             Text(
-                "${sign}${formatLongDuration(kotlin.math.abs(overview.deltaMs))} عن الفترة السابقة",
+                stringResource(R.string.stats_delta_previous, "$sign${formatLongDuration(kotlin.math.abs(overview.deltaMs))}"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (overview.deltaMs > 0L) Cosmic.Teal else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -147,9 +150,9 @@ private fun ListeningHero(overview: PeriodOverview) {
 @Composable
 private fun ListeningBarsSection(bars: List<ListeningBar>) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("استماعك يومًا بيوم", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_daily), style = MaterialTheme.typography.titleMedium)
         if (bars.isEmpty()) {
-            Text("لا توجد بيانات بعد في هذه الفترة", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.stats_no_data), style = MaterialTheme.typography.bodySmall)
         } else {
             val maxValue = bars.maxOfOrNull { it.valueMs } ?: 0L
             Row(
@@ -200,10 +203,10 @@ private fun CompactIndicators(state: StatisticsUiState) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
         Text(state.periodLabel, style = MaterialTheme.typography.titleMedium)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            CompactStat(value = state.overview.sessionsCount, label = "جلسات", modifier = Modifier.weight(1f))
-            CompactStat(value = state.overview.booksCount, label = "كتب", modifier = Modifier.weight(1f))
-            CompactStat(value = state.overview.chaptersCount, label = "فصلًا", modifier = Modifier.weight(1f))
-            CompactStat(value = state.overview.daysCount, label = "أيام", modifier = Modifier.weight(1f))
+            CompactStat(value = state.overview.sessionsCount, label = stringResource(R.string.stats_sessions), modifier = Modifier.weight(1f))
+            CompactStat(value = state.overview.booksCount, label = stringResource(R.string.stats_books), modifier = Modifier.weight(1f))
+            CompactStat(value = state.overview.chaptersCount, label = stringResource(R.string.stats_chapters), modifier = Modifier.weight(1f))
+            CompactStat(value = state.overview.daysCount, label = stringResource(R.string.stats_days), modifier = Modifier.weight(1f))
         }
     }
 }
@@ -220,9 +223,9 @@ private fun CompactStat(value: Int, label: String, modifier: Modifier = Modifier
 private fun TopBooksSection(books: List<BookListeningStat>, onOpenBook: (UUID) -> Unit) {
     if (books.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("كتبك", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_your_books), style = MaterialTheme.typography.titleMedium)
         Text(
-            "الأكثر استماعًا",
+            stringResource(R.string.stats_most_listened),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -256,7 +259,7 @@ private fun TopBookRow(book: BookListeningStat, onOpenBook: (UUID) -> Unit) {
 private fun InProgressSection(books: List<InProgressStat>, onOpenBook: (UUID) -> Unit) {
     if (books.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("تقدّمك", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_progress), style = MaterialTheme.typography.titleMedium)
         books.forEach { book ->
             val percent = (book.fraction * 100).toInt()
             Column(
@@ -270,9 +273,9 @@ private fun InProgressSection(books: List<InProgressStat>, onOpenBook: (UUID) ->
                     AtherCoverBlock(title = book.title, coverColor = coverColorOf(book.coverColorTheme), modifier = Modifier.size(52.dp))
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                         Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("بقي ${formatShortDuration(book.remainingMs)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.stats_remaining, formatShortDuration(book.remainingMs)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("$percent٪", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.stats_percent, percent), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                 }
                 LinearProgressIndicator(
                     progress = { book.fraction },
@@ -289,7 +292,7 @@ private fun InProgressSection(books: List<InProgressStat>, onOpenBook: (UUID) ->
 private fun AchievementsSection(rows: List<AchievementRow>) {
     if (rows.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("إنجازاتك", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_achievements), style = MaterialTheme.typography.titleMedium)
         rows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
                 Text(row.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -303,7 +306,7 @@ private fun AchievementsSection(rows: List<AchievementRow>) {
 private fun HabitsSection(habits: List<HabitStat>, favoriteTime: String?) {
     if (habits.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("عادات الاستماع", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_habits), style = MaterialTheme.typography.titleMedium)
         val maxValue = habits.maxOfOrNull { it.listenedMs } ?: 0L
         habits.forEach { habit ->
             val fraction = if (maxValue > 0L) (habit.listenedMs.toFloat() / maxValue).coerceIn(0f, 1f) else 0f
@@ -327,7 +330,7 @@ private fun HabitsSection(habits: List<HabitStat>, favoriteTime: String?) {
             }
         }
         favoriteTime?.let {
-            Text("وقت استماعك المفضل: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.stats_favorite_time, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -336,7 +339,7 @@ private fun HabitsSection(habits: List<HabitStat>, favoriteTime: String?) {
 private fun SpeedSection(average: Float, buckets: List<SpeedBucket>, sampleCount: Int) {
     if (average <= 0f && buckets.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("سرعة الاستماع", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_speed), style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (average > 0f) "${String.format(Locale.US, "%.2f", average)}×" else "—",
@@ -354,7 +357,7 @@ private fun SpeedSection(average: Float, buckets: List<SpeedBucket>, sampleCount
         }
         if (sampleCount in 1..2) {
             Text(
-                "بيانات قليلة: كلما استمعت أكثر تظهر سرعتك بدقة أكبر",
+                stringResource(R.string.stats_low_data),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -366,7 +369,7 @@ private fun SpeedSection(average: Float, buckets: List<SpeedBucket>, sampleCount
 private fun HistorySection(rows: List<ListeningHistoryRow>, onShowHistory: () -> Unit, onOpenBook: (UUID) -> Unit) {
     if (rows.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-        Text("سجل الاستماع", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.stats_history), style = MaterialTheme.typography.titleMedium)
         val grouped = GroupedHistory(rows.take(12))
         grouped.forEach { (dayLabel, dayRows) ->
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
@@ -381,7 +384,7 @@ private fun HistorySection(rows: List<ListeningHistoryRow>, onShowHistory: () ->
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            row.bookTitle ?: row.editionLabel ?: "نسخة محذوفة",
+                            row.bookTitle ?: row.editionLabel ?: stringResource(R.string.stats_deleted_edition),
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -394,7 +397,7 @@ private fun HistorySection(rows: List<ListeningHistoryRow>, onShowHistory: () ->
             }
         }
         TextButton(onClick = onShowHistory, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
-            Text("عرض السجل كاملًا")
+            Text(stringResource(R.string.stats_view_full_history))
         }
     }
 }
@@ -404,30 +407,38 @@ private fun coverColorOf(colorTheme: String?): Color {
     return if (parsed != null) Color(parsed.toLong() or 0xFF000000) else Color(0xFF356B68)
 }
 
+@Composable
 private fun formatSessionCount(count: Int): String = when (count) {
-    1 -> "مرة واحدة"
-    2 -> "مرتان"
-    else -> "$count مرات"
+    1 -> stringResource(R.string.stats_count_once)
+    2 -> stringResource(R.string.stats_count_twice)
+    else -> stringResource(R.string.stats_count_times, count)
 }
 
+@Composable
 private fun formatShortDuration(ms: Long): String {
     val totalMinutes = ms / 60_000L
     val hours = totalMinutes / 60L
     val minutes = totalMinutes % 60L
-    return if (hours > 0L) "${hours}س ${minutes}د" else "${minutes}د"
+    return if (hours > 0L) {
+        stringResource(R.string.stats_short_duration_hm, hours, minutes)
+    } else {
+        stringResource(R.string.stats_short_duration_m, minutes)
+    }
 }
 
+@Composable
 private fun formatLongDuration(ms: Long): String {
     val totalMinutes = ms / 60_000L
     val hours = totalMinutes / 60L
     val minutes = totalMinutes % 60L
     return when {
-        hours > 0L && minutes > 0L -> "${hours} ساعة و${minutes} دقيقة"
-        hours > 0L -> "${hours} ساعة"
-        else -> "${minutes} دقيقة"
+        hours > 0L && minutes > 0L -> stringResource(R.string.stats_long_duration_hm, hours, minutes)
+        hours > 0L -> stringResource(R.string.stats_long_duration_h, hours)
+        else -> stringResource(R.string.stats_long_duration_m, minutes)
     }
 }
 
+@Composable
 private fun GroupedHistory(rows: List<ListeningHistoryRow>): List<Pair<String, List<ListeningHistoryRow>>> {
     val today = com.example.audiobook.domain.statistics.StatisticsDates.dayNumber(System.currentTimeMillis())
     val yesterday = today - 1
@@ -436,8 +447,8 @@ private fun GroupedHistory(rows: List<ListeningHistoryRow>): List<Pair<String, L
     }
     return grouped.toSortedMap(compareByDescending { it }).map { (day, dayRows) ->
         val dayLabel = when (day) {
-            today -> "اليوم"
-            yesterday -> "أمس"
+            today -> stringResource(R.string.stats_today)
+            yesterday -> stringResource(R.string.stats_yesterday)
             else -> com.example.audiobook.domain.statistics.arabicDayName(day)
         }
         dayLabel to dayRows

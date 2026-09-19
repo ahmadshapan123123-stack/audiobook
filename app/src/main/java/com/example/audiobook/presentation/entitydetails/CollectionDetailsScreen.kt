@@ -2,6 +2,7 @@ package com.example.audiobook.presentation.entitydetails
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -9,9 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -19,15 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
+import com.example.audiobook.presentation.common.ConfirmDeleteDialog
+import com.example.audiobook.presentation.common.InputDialog
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import java.util.UUID
 
-/**
- * صفحة تفاصيل المجموعة: اسمها ووصفها وقائمة كتبها — كل كتاب يفتح
- * صفحة تفاصيله، لا المشغّل مباشرة.
- */
 @Composable
 fun CollectionDetailsScreen(
     onBack: () -> Unit,
@@ -35,6 +39,8 @@ fun CollectionDetailsScreen(
     viewModel: CollectionDetailsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val collapsed = rememberHeaderCollapsed(scroll)
 
@@ -65,6 +71,40 @@ fun CollectionDetailsScreen(
                 coverColor = Color(state.coverColor.toInt())
             )
 
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                OutlinedButton(onClick = { showEditDialog = true }) {
+                    Text(stringResource(R.string.collection_menu_edit))
+                }
+                OutlinedButton(onClick = { showDeleteDialog = true }) {
+                    Text(stringResource(R.string.collection_menu_delete), color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            if (showEditDialog) {
+                InputDialog(
+                    title = stringResource(R.string.collection_menu_edit),
+                    label = stringResource(R.string.collection_edit_name_label),
+                    initialValue = collection.name,
+                    onConfirm = { newName ->
+                        showEditDialog = false
+                        viewModel.updateCollectionName(newName)
+                    },
+                    onDismiss = { showEditDialog = false }
+                )
+            }
+
+            if (showDeleteDialog) {
+                ConfirmDeleteDialog(
+                    title = stringResource(R.string.confirm_delete_title),
+                    message = stringResource(R.string.confirm_delete_collection, collection.name, state.books.size),
+                    onConfirm = {
+                        showDeleteDialog = false
+                        viewModel.deleteCollection(onBack)
+                    },
+                    onDismiss = { showDeleteDialog = false }
+                )
+            }
+
             EntitySectionTitle(stringResource(R.string.entity_books_header))
             if (state.books.isEmpty()) {
                 Text(stringResource(R.string.entity_no_books), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -74,6 +114,6 @@ fun CollectionDetailsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(AppSpacing.lg))
+        Spacer(Modifier.height(bottomContentInset()))
     }
 }

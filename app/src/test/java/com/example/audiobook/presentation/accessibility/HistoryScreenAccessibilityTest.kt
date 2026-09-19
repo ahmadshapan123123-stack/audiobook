@@ -31,7 +31,7 @@ import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.playback.SleepTimerClock
 import com.example.audiobook.presentation.statistics.HistoryScreen
 import com.example.audiobook.presentation.statistics.StatisticsViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers

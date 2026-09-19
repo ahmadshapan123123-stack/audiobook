@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.theme
 
+import com.example.audiobook.domain.model.AppThemeMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,11 +21,11 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 
 @Composable
-fun DesignSystemShowcase(preference: ThemePreference) {
+fun DesignSystemShowcase(mode: AppThemeMode, onModeChange: (AppThemeMode) -> Unit) {
     var sliderValue by remember { mutableFloatStateOf(0.42f) }
     androidx.compose.runtime.CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(AppSpacing.lg),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(AppSpacing.lg).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
             Text("مساحة الاستماع", style = MaterialTheme.typography.displaySmall)
@@ -32,9 +33,9 @@ fun DesignSystemShowcase(preference: ThemePreference) {
             AppBookCard("رحلة تجريبية", "كتاب صوتي محلي · ٤٢٪ مكتمل", Modifier.fillMaxWidth())
             Text("المظهر", style = MaterialTheme.typography.titleLarge)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                AppModeChip("فاتح", preference.mode == AppThemeMode.LIGHT) { preference.updateMode(AppThemeMode.LIGHT) }
-                AppModeChip("داكن", preference.mode == AppThemeMode.DARK) { preference.updateMode(AppThemeMode.DARK) }
-                AppModeChip("AMOLED", preference.mode == AppThemeMode.AMOLED) { preference.updateMode(AppThemeMode.AMOLED) }
+                AppModeChip("فاتح", mode == AppThemeMode.LIGHT) { onModeChange(AppThemeMode.LIGHT) }
+                AppModeChip("داكن", mode == AppThemeMode.DARK) { onModeChange(AppThemeMode.DARK) }
+                AppModeChip("AMOLED", mode == AppThemeMode.AMOLED) { onModeChange(AppThemeMode.AMOLED) }
             }
             Text("موضع الاستماع", style = MaterialTheme.typography.titleMedium)
             AppProgressSlider(sliderValue, onValueChange = { sliderValue = it })

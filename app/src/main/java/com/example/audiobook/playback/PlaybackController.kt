@@ -27,6 +27,7 @@ interface PlaybackController {
 	fun setSpeed(speed: Float)
 	fun getVolume(): Float
 	fun setVolume(volume: Float)
+	fun setPreferredAudioDevice(device: android.media.AudioDeviceInfo?): Boolean
 	fun release()
 }
 

@@ -1,16 +1,13 @@
 package com.example.audiobook.presentation.theme
 
-import android.content.Context
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -18,8 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audiobook.R
-
-enum class AppThemeMode { LIGHT, DARK, AMOLED }
+import com.example.audiobook.domain.model.AppThemeMode
 
 object AppSpacing {
     val xxs = 4.dp
@@ -37,6 +33,7 @@ object Cosmic {
     val InkBottom = Color(0xFF0B0F24)
     val NavBarBlue = Color(0xFF16306B)
     val Teal = Color(0xFF2DD4BF)
+    val TealDeep = Color(0xFF0B6E63)
     val TealBright = Color(0xFF45E0CC)
     val StardustViolet = Color(0xFF7C3AED)
     val StardustMagenta = Color(0xFFD946EF)
@@ -144,10 +141,26 @@ private val CosmicTypography = Typography(
     labelSmall = TextStyle(fontFamily = CairoFamily, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, lineHeight = 16.sp)
 )
 
+/**
+ * دور "الأكسنت" الموحّد خارج المشغّل (شريط التنقل، الإعدادات، الأزرار) — لا يتلوّن من
+ * Material primary/secondary/tertiary، بل من لوحة أثير بحسب الوضع (فاتح/داكن/AMOLED).
+ */
+data class AppAccent(val accent: Color, val onAccent: Color)
+
+fun appAccentFor(mode: AppThemeMode): AppAccent = when (mode) {
+    AppThemeMode.LIGHT -> AppAccent(accent = Cosmic.TealDeep, onAccent = Color(0xFFFFFFFF))
+    AppThemeMode.DARK -> AppAccent(accent = Cosmic.TealBright, onAccent = Color(0xFF04302B))
+    AppThemeMode.AMOLED -> AppAccent(accent = Cosmic.TealBright, onAccent = Color(0xFF04302B))
+}
+
+val LocalAppAccent = staticCompositionLocalOf { AppAccent(Color.Unspecified, Color.Unspecified) }
+
 @Composable
 fun AudiobookTheme(mode: AppThemeMode, content: @Composable () -> Unit) {
     val scheme = appColorScheme(mode)
-    MaterialTheme(colorScheme = scheme, typography = CosmicTypography, content = content)
+    CompositionLocalProvider(LocalAppAccent provides appAccentFor(mode)) {
+        MaterialTheme(colorScheme = scheme, typography = CosmicTypography, content = content)
+    }
 }
 
 fun appColorScheme(mode: AppThemeMode): ColorScheme = when (mode) {
@@ -155,21 +168,3 @@ fun appColorScheme(mode: AppThemeMode): ColorScheme = when (mode) {
         AppThemeMode.DARK -> nightScheme(amoled = false)
         AppThemeMode.AMOLED -> nightScheme(amoled = true)
     }
-
-@Immutable
-class ThemePreference(context: Context) {
-    private val preferences = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
-    var mode by mutableStateOf(load())
-        private set
-
-    fun updateMode(value: AppThemeMode) {
-        mode = value
-        preferences.edit().putString(KEY_MODE, value.name).apply()
-    }
-
-    private fun load() = preferences.getString(KEY_MODE, AppThemeMode.DARK.name)
-        ?.let { runCatching { AppThemeMode.valueOf(it) }.getOrDefault(AppThemeMode.DARK) }
-        ?: AppThemeMode.DARK
-
-    private companion object { const val KEY_MODE = "theme_mode" }
-}

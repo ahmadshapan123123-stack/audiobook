@@ -1,6 +1,7 @@
 package com.example.audiobook.presentation.splash
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -19,15 +20,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audiobook.R
 import kotlinx.coroutines.delay
 
-/**
- * شاشة ترحيب "أثير": الاسم العربي بارزًا و"Ather" بعلامة لاتينية مصغرة تحته،
- * مع موتيف صوت هادئ — تتوارى بعد لحظة قصيرة دون أن تُحفظ في حزمة التنقل.
- */
 @Composable
 fun AtherSplash(onFinished: () -> Unit, durationMs: Long = 1_600L) {
     LaunchedEffect(Unit) {
@@ -36,9 +35,10 @@ fun AtherSplash(onFinished: () -> Unit, durationMs: Long = 1_600L) {
     }
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            AudioBars(
-                modifier = Modifier.size(width = 72.dp, height = 40.dp),
-                color = MaterialTheme.colorScheme.primary
+            Image(
+                painter = painterResource(id = R.drawable.app_logo),
+                contentDescription = null,
+                modifier = Modifier.size(120.dp)
             )
             Spacer(Modifier.height(20.dp))
             Text(
@@ -56,24 +56,4 @@ fun AtherSplash(onFinished: () -> Unit, durationMs: Long = 1_600L) {
             )
         }
     }
-}
-
-private fun DrawScope.AudioBars(color: Color) {
-    val barW = size.width / 7f
-    val bars = floatArrayOf(0.45f, 0.72f, 1f, 0.6f)
-    bars.forEachIndexed { i, h ->
-        val bx = i * (barW * 1.6f) + barW * 0.4f
-        val bh = size.height * h
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(bx, size.height - bh),
-            size = Size(barW, bh),
-            cornerRadius = CornerRadius(barW / 2f, barW / 2f)
-        )
-    }
-}
-
-@Composable
-private fun AudioBars(modifier: Modifier, color: Color) {
-    Canvas(modifier) { AudioBars(color) }
 }

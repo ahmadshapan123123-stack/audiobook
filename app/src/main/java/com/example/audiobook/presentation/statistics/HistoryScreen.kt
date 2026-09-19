@@ -18,11 +18,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audiobook.R
 import com.example.audiobook.data.room.dao.ListeningHistoryRow
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 import java.text.SimpleDateFormat
@@ -48,18 +51,18 @@ fun HistoryScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp).padding(bottom = bottomContentInset()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
         CosmicScreenHeader(
-            title = "السجل",
-            subtitle = "آخر جلسات الاستماع",
+            title = stringResource(R.string.history_title),
+            subtitle = stringResource(R.string.history_subtitle),
             collapsed = collapsed,
             onBack = onBack,
             backAsTextButton = true
         )
         if (history.sessions.isEmpty()) {
-            Text("لا توجد جلسات بعد", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.history_empty), style = MaterialTheme.typography.bodyMedium)
         } else {
             history.sessions.forEach { session ->
                 HistoryRow(session, onOpen = {
@@ -77,7 +80,7 @@ private fun HistoryRow(row: ListeningHistoryRow, onOpen: () -> Unit) {
     Column(
         modifier = if (bookId != null) Modifier.fillMaxWidth().clickable(onClick = onOpen).minTouchTarget() else Modifier.fillMaxWidth()
     ) {
-        Text(row.bookTitle ?: row.editionLabel ?: "نسخة محذوفة", style = MaterialTheme.typography.titleMedium)
+        Text(row.bookTitle ?: row.editionLabel ?: stringResource(R.string.history_deleted_edition), style = MaterialTheme.typography.titleMedium)
         Text(
             "${formatDate(row.startedAt)} · ${formatDuration(row.durationListenedMs)}",
             style = MaterialTheme.typography.bodySmall,
@@ -90,9 +93,14 @@ private fun HistoryRow(row: ListeningHistoryRow, onOpen: () -> Unit) {
 private fun formatDate(millis: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(millis))
 
+@Composable
 private fun formatDuration(ms: Long): String {
     val totalMinutes = ms / 60_000L
     val hours = totalMinutes / 60L
     val minutes = totalMinutes % 60L
-    return if (hours > 0L) "${hours} س ${minutes} د" else "${minutes} د"
+    return if (hours > 0L) {
+        stringResource(R.string.history_duration_hm, hours, minutes)
+    } else {
+        stringResource(R.string.history_duration_m, minutes)
+    }
 }

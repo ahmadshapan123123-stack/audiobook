@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.Cosmic
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.minTouchTarget
@@ -145,7 +146,7 @@ fun ListeningHubScreen(
             }
         }
 
-        Spacer(Modifier.height(168.dp))
+        Spacer(Modifier.height(bottomContentInset()))
     }
 }
 

@@ -25,6 +25,8 @@ interface LibraryRootDao : CrudDao<LibraryRootEntity> {
         @Query("UPDATE library_roots SET lastScanAt = :timestamp, scanStatus = :status WHERE id = :id") suspend fun markScanFinished(id: UUID, timestamp: Long, status: ScanStatus)
         @Query("SELECT * FROM library_roots WHERE isEnabled = 1 AND isPriority = 0 ORDER BY displayName") suspend fun getEnabledBackgroundRoots(): List<LibraryRootEntity>
         @Query("SELECT * FROM library_roots WHERE isEnabled = 1 AND isPriority = 1 ORDER BY displayName") suspend fun getEnabledPriorityRoots(): List<LibraryRootEntity>
+    @Query("SELECT COUNT(*) FROM library_roots") suspend fun countAll(): Int
+    @Query("SELECT * FROM library_roots ORDER BY displayName") suspend fun getAll(): List<LibraryRootEntity>
 }
 
 @Dao
@@ -59,6 +61,8 @@ interface BookDao : CrudDao<BookEntity> {
     @Query("SELECT * FROM books WHERE authorId = :authorId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getByParent(authorId: UUID): List<BookEntity>
     @Query("SELECT * FROM books WHERE seriesId = :seriesId ORDER BY COALESCE(orderInSeries, 2147483647), title") suspend fun getBySeries(seriesId: UUID): List<BookEntity>
     @Query("SELECT * FROM books WHERE authorId = :authorId AND title = :title LIMIT 1") suspend fun getByAuthorAndTitle(authorId: UUID, title: String): BookEntity?
+    @Query("SELECT * FROM books WHERE isDemo = 1") suspend fun getDemoBooks(): List<BookEntity>
+    @Query("DELETE FROM books WHERE isDemo = 1") suspend fun deleteDemoBooks()
 }
 
 @Dao
@@ -72,6 +76,7 @@ interface EditionDao : CrudDao<EditionEntity> {
     @Query("SELECT * FROM editions WHERE bookId = :bookId ORDER BY label") fun observeByParent(bookId: UUID): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions ORDER BY label") fun observeAll(): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId AND sourceFolderPath = :folderPath LIMIT 1") suspend fun getByRootAndFolder(rootId: UUID, folderPath: String): EditionEntity?
+    @Query("SELECT * FROM editions WHERE libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<EditionEntity>
 }
 
 @Dao

@@ -11,7 +11,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -81,6 +80,7 @@ import com.example.audiobook.R
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
+import com.example.audiobook.presentation.theme.bottomContentPadding
 import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
 
@@ -225,7 +225,7 @@ fun LibraryScreen(
             verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
             state = gridState,
-            contentPadding = PaddingValues(bottom = 168.dp),
+            contentPadding = bottomContentPadding(),
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {

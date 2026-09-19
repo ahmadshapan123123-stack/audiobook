@@ -1,15 +1,23 @@
 package com.example.audiobook.playback
 
 import android.content.Context
+import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AudioFileEntity
 import com.example.audiobook.data.room.entity.FileStatus
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.ProgressStatus
+import com.example.audiobook.notifications.BookCompletionNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,8 +36,11 @@ import javax.inject.Singleton
 @Singleton
 class ExoPlaybackController @Inject constructor(
     @ApplicationContext context: Context,
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val appSettings: AppSettings,
+    private val bookCompletionNotifier: BookCompletionNotifier
 ) : PlaybackController {
+    private val appContext: Context = context.applicationContext
     /** كائن ExoPlayer الفعلي؛ يُكشَف فقط لبناء MediaSession في PlaybackService. */
     internal val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
@@ -41,6 +52,33 @@ class ExoPlaybackController @Inject constructor(
     private var timeline: EditionTimeline = EditionTimeline(emptyList())
     private var lastOriginalIndex = -1
     private var saveJob: Job? = null
+    private var mediaServiceStarted = false
+    private var mediaController: MediaController? = null
+
+    /** يبدأ خدمة التشغيل كخدمة في المقدمة عند أول تشغيل فعلي — Media3 ينشر إشعار التشغيل. */
+    private fun ensureMediaServiceStarted() {
+        if (mediaServiceStarted) return
+        mediaServiceStarted = true
+        val intent = Intent(appContext, PlaybackService::class.java)
+        ContextCompat.startForegroundService(appContext, intent)
+        connectMediaController()
+    }
+
+    /** يربط MediaController بخدمة الجلسة حتى تُبنى MediaSession وتُنشر خدمة المقدمة والإشعار. */
+    private fun connectMediaController() {
+        val token = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(appContext, token).buildAsync()
+        controllerFuture.addListener(
+            {
+                try {
+                    mediaController = controllerFuture.get()
+                } catch (e: Exception) {
+                    mediaServiceStarted = false
+                }
+            },
+            MoreExecutors.directExecutor()
+        )
+    }
 
     private val chapterCompletionObserver = ChapterCompletionObserver(
         clock = { System.currentTimeMillis() },
@@ -51,8 +89,10 @@ class ExoPlaybackController @Inject constructor(
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updateState()
-                if (isPlaying) startPeriodicSave()
-                else saveProgress()
+                if (isPlaying) {
+                    ensureMediaServiceStarted()
+                    startPeriodicSave()
+                } else saveProgress()
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -91,18 +131,21 @@ class ExoPlaybackController @Inject constructor(
 
     override suspend fun openEdition(editionId: UUID) {
         this.editionId = editionId
+        PlaybackStateHolder.update(editionId)
         files = database.audioFileDao().getByParent(editionId)
         playableFiles = files.filter { it.fileStatus == FileStatus.AVAILABLE }
         timeline = EditionTimeline(files.map { TimelineItem(it.fileUri, it.durationMs, it.fileStatus == FileStatus.AVAILABLE) })
         val progress = database.progressDao().getByParent(editionId)
+        // أولوية السرعة: سرعة الكتاب المحفوظة، وإلا السرعة الافتراضية من الإعدادات.
+        val resolvedSpeed = progress?.playbackSpeed ?: appSettings.defaultSpeed.value
         val missingFirst = files.firstOrNull()?.fileStatus == FileStatus.MISSING
         if (playableFiles.isEmpty()) {
-            mutableState.value = PlaybackState(editionId = editionId, durationMs = timeline.durationMs, speed = progress?.playbackSpeed ?: 1f, missingFileMessage = "لا توجد ملفات صوتية متاحة لهذا الإصدار")
+            mutableState.value = PlaybackState(editionId = editionId, durationMs = timeline.durationMs, speed = resolvedSpeed, missingFileMessage = "لا توجد ملفات صوتية متاحة لهذا الإصدار")
             return
         }
         player.setMediaItems(playableFiles.map { MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString()).build() })
         player.prepare()
-        player.setPlaybackSpeed(progress?.playbackSpeed ?: 1f)
+        player.setPlaybackSpeed(resolvedSpeed)
         player.volume = 1f
         seekToGlobal(progress?.currentPositionMs ?: 0L)
         lastOriginalIndex = files.indexOfFirst { it.id == playableFiles.firstOrNull()?.id }
@@ -111,7 +154,7 @@ class ExoPlaybackController @Inject constructor(
             isPlaying = false,
             positionMs = progress?.currentPositionMs ?: 0L,
             durationMs = timeline.durationMs,
-            speed = progress?.playbackSpeed ?: 1f,
+            speed = resolvedSpeed,
             missingFileMessage = if (missingFirst) "الجزء الأول مفقود؛ بدأ التشغيل من أول ملف متاح" else null
         )
     }
@@ -153,6 +196,16 @@ class ExoPlaybackController @Inject constructor(
 
     override fun setVolume(volume: Float) {
         player.volume = volume.coerceIn(0f, 1f)
+    }
+
+    override fun setPreferredAudioDevice(device: android.media.AudioDeviceInfo?): Boolean {
+        if (player.isReleased) return false
+        return try {
+            player.setPreferredAudioDevice(device)
+            true
+        } catch (t: Exception) {
+            false
+        }
     }
 
     override fun release() {
@@ -232,12 +285,14 @@ class ExoPlaybackController @Inject constructor(
         val speed = player.playbackParameters.speed
         scope.launch(Dispatchers.IO) {
             val existing = database.progressDao().getByParent(id)
+            val finishedNow = position >= timeline.durationMs && timeline.durationMs > 0 && existing?.status != ProgressStatus.FINISHED
             val progress = ListeningProgressEntity(
                 id = existing?.id ?: UUID.randomUUID(), editionId = id, currentPositionMs = position,
                 lastPlayedAt = System.currentTimeMillis(), status = if (position >= timeline.durationMs && timeline.durationMs > 0) ProgressStatus.FINISHED else if (position > 0) ProgressStatus.IN_PROGRESS else ProgressStatus.NOT_STARTED,
                 playbackSpeed = speed, remoteId = existing?.remoteId, syncStatus = existing?.syncStatus ?: com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY
             )
             if (existing == null) database.progressDao().insert(progress) else database.progressDao().update(progress)
+            if (finishedNow) bookCompletionNotifier.onPlaybackEnded(id)
         }
     }
 }

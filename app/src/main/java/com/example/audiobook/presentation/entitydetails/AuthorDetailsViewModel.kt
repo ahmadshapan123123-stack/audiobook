@@ -13,16 +13,17 @@ import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
+import com.example.audiobook.domain.usecases.LibraryManagement
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
-/** مجموعة كتب داخل صفحة المؤلف: سلسلة (أو null للكتب المستقلة). */
 data class AuthorBookGroup(
     val seriesId: UUID?,
     val seriesName: String?,
@@ -34,7 +35,8 @@ data class AuthorDetailsUiState(
     val author: AuthorEntity? = null,
     val groups: List<AuthorBookGroup> = emptyList(),
     val totalBooks: Int = 0,
-    val coverColor: Long = 0xFF356B68
+    val coverColor: Long = 0xFF356B68,
+    val allAuthors: List<AuthorEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -44,12 +46,16 @@ class AuthorDetailsViewModel @Inject constructor(
     private val seriesDao: SeriesDao,
     private val bookDao: BookDao,
     private val editionDao: EditionDao,
-    private val progressDao: ProgressDao
+    private val progressDao: ProgressDao,
+    private val management: LibraryManagement
 ) : ViewModel() {
 
     private val authorId: UUID = UUID.fromString(
         savedStateHandle.get<String>("id") ?: throw IllegalArgumentException("author id navigation argument missing")
     )
+
+    private val _undoEvent = MutableStateFlow<String?>(null)
+    val undoEvent: StateFlow<String?> = _undoEvent
 
     val uiState: StateFlow<AuthorDetailsUiState> = combine(
         authorDao.observeAll(),
@@ -95,7 +101,8 @@ class AuthorDetailsViewModel @Inject constructor(
             author = author,
             groups = allGroups,
             totalBooks = rows.size,
-            coverColor = parseColor(author?.colorTheme, 0xFF356B68)
+            coverColor = parseColor(author?.colorTheme, 0xFF356B68),
+            allAuthors = authors.filter { it.id != authorId }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuthorDetailsUiState())
 
@@ -104,6 +111,21 @@ class AuthorDetailsViewModel @Inject constructor(
             authorDao.getById(authorId)?.let { current ->
                 authorDao.update(current.copy(name = name, description = description, imagePath = imagePath))
             }
+        }
+    }
+
+    fun deleteAuthor(onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.deleteAuthor(authorId)
+            onDone()
+        }
+    }
+
+    fun mergeAuthors(targetId: UUID, onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.mergeAuthors(authorId, targetId)
+            _undoEvent.value = "merged"
+            onDone()
         }
     }
 }

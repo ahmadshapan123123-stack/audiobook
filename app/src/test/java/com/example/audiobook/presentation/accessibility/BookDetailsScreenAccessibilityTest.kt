@@ -40,7 +40,7 @@ import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.domain.usecases.EditionMerge
 import com.example.audiobook.presentation.bookdetails.BookDetailsScreen
 import com.example.audiobook.presentation.bookdetails.BookDetailsViewModel
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers

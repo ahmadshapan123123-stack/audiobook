@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.media3.session.SessionCommand
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.BookEntity
@@ -41,11 +42,13 @@ import java.util.concurrent.Executors
 class SleepTimerControllerTest {
 
     private lateinit var database: AppDatabase
+    private lateinit var appSettings: AppSettings
     private lateinit var dbExecutor: java.util.concurrent.ExecutorService
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        appSettings = AppSettings(context)
         // SQLite في الذاكرة: اتصال واحد لكل خيط، ولأن runLoop ينفّذ الإدراج من خيط خلفي
         // أحيانًا، منفّذ واحد وحيد الخيط يضمن اتصالًا واحدًا — قراءة الكتابة بعد التوقف دائمًا تراها.
         dbExecutor = Executors.newSingleThreadExecutor()
@@ -63,7 +66,7 @@ class SleepTimerControllerTest {
     }
 
     private fun controller(clock: FakeClock, playback: FakePlayback) =
-        SleepTimerController(clock, playback, database.listeningSessionDao())
+        SleepTimerController(clock, playback, database.listeningSessionDao(), appSettings)
 
     // ---- النقطة 1: آلة الحالات الصريحة IDLE → RUNNING → WARNING_WINDOW → FADING_OUT → STOPPED ----
 
@@ -198,6 +201,24 @@ class SleepTimerControllerTest {
         val collected = async { controller.messages.first() }
         controller.onActiveInteraction(ActiveInteraction.Seek)
         assertEquals("رسالة التمديد التلقائي", SLEEP_AUTO_EXTEND_MESSAGE, collected.await())
+    }
+
+    @Test
+    fun autoExtendDoesNothingWhenSettingDisabled() = runBlocking {
+        appSettings.setAutoExtendSleep(false)
+        try {
+            val clock = FakeClock()
+            val playback = FakePlayback(clock = clock)
+            val controller = controller(clock, playback)
+            controller.start(15)
+            clock.set(FAKE_EPOCH + 15 * 60_000L - 2 * 60_000L)
+            controller.tickClock()
+            val before = controller.uiState.value.remainingMs!!
+            controller.onActiveInteraction(ActiveInteraction.Seek)
+            assertEquals("معطّل: لا يجب أي تمديد", before, controller.uiState.value.remainingMs!!)
+        } finally {
+            appSettings.setAutoExtendSleep(true)
+        }
     }
 
     @Test
@@ -449,6 +470,7 @@ class SleepTimerControllerTest {
             synchronized(volumeEvents) { volumeEvents += clock.nowMillis() to volume }
         }
         override fun release() = Unit
+        override fun setPreferredAudioDevice(device: android.media.AudioDeviceInfo?): Boolean = true
     }
 
     companion object {

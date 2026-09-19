@@ -2,7 +2,7 @@ package com.example.audiobook.presentation.player
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import com.example.audiobook.presentation.theme.AppThemeMode
+import com.example.audiobook.domain.model.AppThemeMode
 
 data class PlayerGradient(val start: Color, val end: Color, val source: GradientSource)
 enum class GradientSource { SERIES, AUTHOR, COVER, DEFAULT }

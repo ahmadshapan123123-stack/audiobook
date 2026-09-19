@@ -50,6 +50,11 @@ object PlayerTimelineEditor {
 
     fun maxChapterStartMs(durationMs: Long): Long = (durationMs - 1).coerceAtLeast(0L)
 
+    /**
+     * TODO(غير مستخدمة حاليًا): تقسيم تلقائي للفصول حسب المدة. لا يوجد أي
+     * مستدعٍ لهذه الدالة، وقيمة ChapterCreatedFrom.AUTO_SPLIT تُكتب حاليًا
+     * من بذرة البيانات فقط. أُبقيت دون حذف لأنها جزء من تصميم قادم.
+     */
     fun adaptiveAutoSplit(durationMs: Long, targetChapterMinutes: Int = 30): List<PlayerChapter> {
         if (durationMs <= 0L) return emptyList()
         val interval = targetChapterMinutes * 60_000L

@@ -13,10 +13,12 @@ import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
+import com.example.audiobook.domain.usecases.LibraryManagement
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,7 +29,8 @@ data class SeriesDetailsUiState(
     val authorId: UUID? = null,
     val authorName: String = "",
     val books: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF356B68
+    val coverColor: Long = 0xFF356B68,
+    val allSeries: List<SeriesEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -37,7 +40,8 @@ class SeriesDetailsViewModel @Inject constructor(
     private val authorDao: AuthorDao,
     private val bookDao: BookDao,
     private val editionDao: EditionDao,
-    private val progressDao: ProgressDao
+    private val progressDao: ProgressDao,
+    private val management: LibraryManagement
 ) : ViewModel() {
 
     private val seriesId: UUID = UUID.fromString(
@@ -73,7 +77,8 @@ class SeriesDetailsViewModel @Inject constructor(
             authorId = author?.id,
             authorName = author?.name ?: "",
             books = rows,
-            coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF356B68)
+            coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF356B68),
+            allSeries = allSeries.filter { it.id != seriesId }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SeriesDetailsUiState())
 
@@ -82,6 +87,20 @@ class SeriesDetailsViewModel @Inject constructor(
             seriesDao.getById(seriesId)?.let { current ->
                 seriesDao.update(current.copy(name = name, description = description, imagePath = imagePath))
             }
+        }
+    }
+
+    fun deleteSeries(onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.deleteSeries(seriesId)
+            onDone()
+        }
+    }
+
+    fun mergeSeries(targetId: UUID, onDone: () -> Unit) {
+        viewModelScope.launch {
+            management.mergeSeries(seriesId, targetId)
+            onDone()
         }
     }
 }
