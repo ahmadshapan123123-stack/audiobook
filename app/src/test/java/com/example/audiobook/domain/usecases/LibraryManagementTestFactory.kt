@@ -53,3 +53,11 @@ fun scanLibraryNowFor(database: AppDatabase, appSettings: AppSettings): ScanLibr
         scanRootFor(database, appSettings),
         database
     )
+
+/** LibraryClassificationPreview backed by an empty source + repository (safe when never invoked). */
+fun classificationPreviewFor(database: AppDatabase, appSettings: AppSettings): LibraryClassificationPreview =
+    LibraryClassificationPreview(
+        EmptyFileSource(),
+        LocalOnlyLibraryRootRepository(database.libraryRootDao()),
+        appSettings
+    )

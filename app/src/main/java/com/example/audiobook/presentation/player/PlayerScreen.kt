@@ -63,6 +63,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.Bedtime
@@ -155,6 +156,7 @@ import com.example.audiobook.presentation.theme.argbInt
 import com.example.audiobook.presentation.theme.minTouchTarget
 
 import java.util.UUID
+import android.util.Log
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
@@ -176,7 +178,7 @@ fun PlayerScreen(
     notificationCenter: com.example.audiobook.notifications.AtherNotificationCenter? = null,
     onFirstPlaybackPermissionRequest: () -> Unit = {},
     initialPositionMs: Long = -1L,
-    onBack: () -> Unit = {},
+    onBack: () -> Boolean = { true },
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val playerUi by viewModel.uiState.collectAsStateWithLifecycle()
@@ -219,6 +221,19 @@ fun PlayerScreen(
     var timelineBottomPx by remember { mutableIntStateOf(-1) }
     val collapseAnim = remember { Animatable(0f) }
     val latestOnBack = rememberUpdatedState(onBack)
+
+    // حارس أمان مؤقّت: أي طيّ يعلّم collapseAnimating=true دون أن يصل إلى الإعادة الفورية
+    // (إلغاءُ حركة، إعادة تنسيق، popBackStack فاشل) يُحرَّر تلقائيًا بعد 500ms كي لا يتجمّد
+    // المشغّل ويُحرم من أي سحب لاحق. يُلغي نفسه حال تصفير العلم في المسار الطبيعي.
+    LaunchedEffect(collapseAnimating) {
+        if (collapseAnimating) {
+            delay(500)
+            if (collapseAnimating) {
+                Log.w(TAG, "collapseAnimating stuck — resetting")
+                collapseAnimating = false
+            }
+        }
+    }
 
     // ---- جهاز الصوت: مراقبة المخرجات وتذكّر الاختيار (التبديل لا يوقف التشغيل) ----
     val context = LocalContext.current
@@ -472,10 +487,19 @@ fun PlayerScreen(
                         }
                         if (gestureOffsetY >= threshold) {
                             collapseAnimating = true
+                            Log.d(TAG, "collapse: threshold reached (${gestureOffsetY}px) — animating down then back")
                             scope.launch {
                                 collapseAnim.snapTo(collapseOffsetPx)
                                 collapseAnim.animateTo(rootHeightPx.toFloat() + 120f, tween(240)) { collapseOffsetPx = value }
-                                latestOnBack.value()
+                                // إعادة الضبط قبل الخروج حتى لا يعلق collapseAnimating مسمّرًا
+                                // (السبب الجذري للتجمّد: تعيينه true بلا reset أبدًا).
+                                collapseAnimating = false
+                                Log.d(TAG, "collapse: animation complete — invoking onBack")
+                                val popped = latestOnBack.value()
+                                Log.d(TAG, "collapse: popBackStack returned $popped")
+                                if (!popped) {
+                                    Log.w(TAG, "collapse: nothing to pop — MainActivity falls back to home route")
+                                }
                             }
                         } else {
                             scope.launch {
@@ -511,7 +535,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.minTouchTarget()) {
+                IconButton(onClick = { onBack() }, modifier = Modifier.minTouchTarget()) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.player_back), tint = fg.ink)
                 }
                 CurrentChapterChip(
@@ -661,6 +685,26 @@ fun PlayerScreen(
             }
         }
         } // ---- نهاية الطبقة 1 (محتوى المشغّل المموّه) ----
+
+        // ---- سهم الطي: يظهر أعلى المشغّل أثناء السحب ويصرّ كلما اقتربنا من عتبة الطي ----
+        val collapseThresholdPx = with(density) {
+            if (rootHeightPx > 0) kotlin.math.min(swipeCollapseThresholdDp.toPx(), rootHeightPx * 0.30f)
+            else swipeCollapseThresholdDp.toPx()
+        }
+        val collapseFraction = (collapseOffsetPx / collapseThresholdPx).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = AppSpacing.xs)
+                .graphicsLayer { alpha = collapseFraction * 0.9f }
+        ) {
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = fg.ink.copy(alpha = 0.7f),
+                modifier = Modifier.size(20.dp + 20.dp * collapseFraction)
+            )
+        }
 
         // ---- الطبقة 2: الحجاب الكامل + فوق المحتوى المموّه ----
         AnimatedVisibility(
@@ -1051,6 +1095,9 @@ private val chapterStripHeight = 48.dp
 
 /** عتبة سحب المشغّل للأسفل لطيِّه إلى المشغّل المصغّر — dp أو 30% من ارتفاع الشاشة (الأصغر). */
 private val swipeCollapseThresholdDp = 150.dp
+
+/** وسوم التشخيص لأحداث الطي/الانكماش (Bug 3). */
+private const val TAG = "PlayerScreen"
 
 /** ارتفاع العلامات البصرية في منطقة البحث (تُرسم بلا التقاط لمس). */
 private val markerBarHeight = 46.dp

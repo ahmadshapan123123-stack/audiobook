@@ -78,6 +78,13 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _intelligenceLevel = MutableStateFlow(loadIntelligenceLevel())
     val intelligenceLevel: StateFlow<IntelligenceLevel> = _intelligenceLevel.asStateFlow()
 
+    /**
+     * تصنيف تلقائي للسلاسل (افتراضي مُفعَّل): عند إيقافه يوقّع المصنِّف أي
+     * مجلد عمق ٢ ككتاب (التصنيف المحافظ) ولا تُكتشف السلاسل إلا باجراء المستخدم اليدوي.
+     */
+    private val _autoSeriesClassification = MutableStateFlow(prefs.getBoolean(KEY_AUTO_SERIES, true))
+    val autoSeriesClassification: StateFlow<Boolean> = _autoSeriesClassification.asStateFlow()
+
     // ── Onboarding / Demo ──
     private val _hasCompletedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false))
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
@@ -90,6 +97,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     /** قراءة متزامنة لوضع المظهر — يستخدمها من يحتاج القيمة خارج Compose. */
     fun currentThemeMode(): AppThemeMode = _themeMode.value
+
+    /** قراءة متزامنة لوضع تصنيف السلاسل — يستخدمها المصنِّف أثناء الفحص/إعادة التصنيف. */
+    fun currentAutoSeriesClassification(): Boolean = _autoSeriesClassification.value
 
     // ── Setters ──
 
@@ -190,6 +200,12 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         scanPrefs.edit().putString(KEY_INTELLIGENCE_LEVEL, value.name).apply()
     }
 
+    fun setAutoSeriesClassification(value: Boolean) {
+        if (_autoSeriesClassification.value == value) return
+        _autoSeriesClassification.value = value
+        prefs.edit().putBoolean(KEY_AUTO_SERIES, value).apply()
+    }
+
     fun currentLogoColor(): LogoColorMode = _logoColor.value
 
     fun setLogoColor(value: LogoColorMode) {
@@ -234,6 +250,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LOGO_COLOR = "logo_color"
         const val KEY_INTELLIGENCE_LEVEL = "intelligence_level"
+        const val KEY_AUTO_SERIES = "auto_series_classification"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"
 

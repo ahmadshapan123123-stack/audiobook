@@ -38,7 +38,7 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
-private val DEMO_AUTHOR_IDS = listOf("author.tawfiq", "author.mahfouz", "author.zaidan", "author.samman")
+val DEMO_AUTHOR_IDS = listOf("author.tawfiq", "author.mahfouz", "author.zaidan", "author.samman")
     .map { UUID.nameUUIDFromBytes(it.toByteArray()).toString() }
 private val DEMO_SERIES_IDS = listOf("series.assateer", "series.thalathia")
     .map { UUID.nameUUIDFromBytes(it.toByteArray()).toString() }
@@ -103,7 +103,30 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
-val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+/**
+ * Migration 6→7: تسوية كتب التجربة القديمة في جدول الكتب.
+ *
+ * في v4 أُضيف books.isDemo، لكن هجرة v4→v5 وسّمت المؤلفين/السلاسل/المجموعات/
+ * الجذور بالمعرفات الذاتيّة ولم تُسوِّ كتبهم — فالكتب التي بذرها DatabaseSeeder قبل v4
+ * بقيت isDemo=0 فتعجز «إزالة بيانات التجربة» عن حذفها (DELETE/WHERE isDemo=1).
+ * هنا نعلّم كل كتاب مؤلفُه أحد مؤلفي البذر الذاتيّين (نفس المعرفات الثابتة) isDemo=1،
+ * مع استثناء الكتب التي أكّد المستخدم عنوانها يدويًا (isTitleUserConfirmed=1) كي لا
+ * تُحذف لاحقًا رغم انتمائها لمعرّف تجريبي.
+ *
+ * exact SQL:
+ *   UPDATE books
+ *   SET isDemo = 1
+ *   WHERE authorId IN (<معرفات مؤلفي البذر…>)
+ *     AND isTitleUserConfirmed = 0
+ */
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val placeholders = DEMO_AUTHOR_IDS.joinToString(",") { "'$it'" }
+        db.execSQL("UPDATE books SET isDemo = 1 WHERE authorId IN ($placeholders) AND isTitleUserConfirmed = 0")
+    }
+}
+
+val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
 @Database(
 	entities = [
@@ -113,7 +136,7 @@ val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, M
 		FavoriteBook::class, ListeningSessionEntity::class, EditionMatchDecisionEntity::class,
         ChapterCompletionEntity::class, PendingDiscoveryEntity::class
 	],
-	version = 6,
+	version = 7,
 	exportSchema = false
 )
 @TypeConverters(RoomConverters::class)

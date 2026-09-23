@@ -1,6 +1,7 @@
 package com.example.audiobook.domain.usecases
 
 import androidx.room.withTransaction
+import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
@@ -17,12 +18,15 @@ data class ReclassifyPreview(
  * مسار مجلد كل إصدار (sourceFolderPath) ويصحّح ربط الكتاب بهما. لا يُنشئ/يحذف
  * ملفات ولا يلمس الإصدارات، ولا يكتب فوق كتاب عنوانه مؤكَّد من المستخدم أو
  * كتاب له أكثر من إصدار (مُدمج/مُوحَّد) لأن مالكه غير محسوم من مجلد واحد.
+ * يحترم إعداد «تصنيف تلقائي للسلاسل»: عند إيقافه لا يُنسب أي كتاب لسلسلة.
  */
 class ReclassifyLibrary @Inject constructor(
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val appSettings: AppSettings
 ) {
 
     suspend operator fun invoke(dryRun: Boolean = false): ReclassifyPreview = database.withTransaction {
+        val autoSeries = appSettings.currentAutoSeriesClassification()
         val roots = database.libraryRootDao().getAll()
         val editions = roots.flatMap { root ->
             database.editionDao().getByRoot(root.id).map { edition -> root to edition }
@@ -36,7 +40,7 @@ class ReclassifyLibrary @Inject constructor(
             val bookEditions = database.editionDao().getByParent(book.id)
             if (bookEditions.size > 1) return@forEach
 
-            val context = FolderClassifier.contextForPath(edition.sourceFolderPath, root.displayName)
+            val context = FolderClassifier.contextForPath(edition.sourceFolderPath, root.displayName, autoSeries)
             val targetAuthor = database.authorDao().getByName(context.authorName)
             val authorMatches = targetAuthor?.id == book.authorId
 

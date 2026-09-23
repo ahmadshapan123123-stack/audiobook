@@ -1,12 +1,22 @@
 package com.example.audiobook.domain.usecases
 
 import android.net.Uri
+import android.util.Log
 import com.example.audiobook.data.localfilesystem.AudioMetadata
+import com.example.audiobook.data.room.DEMO_AUTHOR_IDS
 import com.example.audiobook.data.room.dao.*
 import com.example.audiobook.data.room.entity.*
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
+
+private const val TAG = "LibraryManagement"
+
+/** حصيلة تنظيف بيانات التجربة: عدد الكتب المحذوفة + وجود بقايا تجريبية يُعرض للمستخدم. */
+data class ClearDemoDataResult(
+    val removedBooks: Int,
+    val hasRemainingDemoEntities: Boolean
+)
 
 class LibraryManagement @Inject constructor(
     private val authorDao: AuthorDao,
@@ -496,21 +506,37 @@ class LibraryManagement @Inject constructor(
      *
      * الترتيب حاسم بسبب قيود المفاتيح الأجنبية:
      *  1) الكتب التجريبية أولًا (بـ clearOps Cascade كامل ليُحذف ما تحتها من إصدارات/فصول/ملفات…).
-     *  2) جذور التجربة (isDemo=1) — تُحذف فقط ما لم يبقَ تحتها إصدار (إصدارات الكتب التجريبية
+     *  2) الكتب التجريبية «القديمة» التي بُذرت قبل v4 فبقيت بلا isDemo=1 (قد تُعامل الآن أيضًا
+     *     عبر Migration 6→7 عند الترقية): مؤلفُها معرف بذر ذاتي أو نسخةٌ تحت مجلد %demo% —
+     *     ودائمًا نستثني الكتب التي أكّد المستخدم عنوانها يدويًا (isTitleUserConfirmed=1).
+     *  3) جذور التجربة (isDemo=1) — تُحذف فقط ما لم يبقَ تحتها إصدار (إصدارات الكتب التجريبية
      *     كانت تشير إليها، وقد رُحِّلت في الخطوة 1؛ الإصدارات الحقيقية تشير لاحقًا لجذر مستخدم).
-     *  3) المؤلفون/السلاسل/المجموعات التجريبية اليتيمة: isDemo=1 وبلا أي كتب/أعضاء حقيقية.
+     *  4) المؤلفون/السلاسل/المجموعات التجريبية اليتيمة: isDemo=1 وبلا أي كتب/أعضاء حقيقية.
      *     قاعدة «يتيم = لا كتب حقيقية» تحمي المؤلف التجريبي الذي أعاد الفحص الحقيقي استخدامه
      *     (مثل «أحمد خالد توفيق»): يبقى إن كانت تحته كتب حقيقية، وتُرفع علامة isDemo عنه.
      *
      * ملاحظة: لا تُحذف العناصر إلا إذا كان isDemo=1، فأي مؤلف/سلسلة/مجموعة أنشأها المستخدم
      * (حتى لو أصبحت فارغة لاحقًا) تبقى بلا مساس مهما تكرر هذا التنظيف.
+     *
+     * @return عدد الكتب المحذوفة + ما إذا بقيت عناصر تجريبية (لرسالة التأكيد في الإعدادات).
      */
-    suspend fun clearDemoData() {
+    suspend fun clearDemoData(): ClearDemoDataResult {
+        val beforeFlagged = bookDao.countDemoBooks()
+        val beforeByAuthor = bookDao.countBooksByDemoAuthors(DEMO_AUTHOR_IDS)
+        Log.i(TAG, "clearDemoData: before → isDemo=1: $beforeFlagged, demoAuthor: $beforeByAuthor")
+
         val demoBooks = bookDao.getDemoBooks()
         for (book in demoBooks) {
             deleteBookCascade(book.id)
         }
         bookDao.deleteDemoBooks()
+
+        // كتب تجريبية قديمة بلا وسم isDemo (احتياط لبيئات لم يمرّ بها Migration 6→7):
+        // authorId أحد معرفات البذر الذاتية OR نسخة تحت مجلد %demo% — دون الكتب المؤكَّدة يدويًا.
+        val legacyDemoBooks = bookDao.getLegacyDemoBooks(DEMO_AUTHOR_IDS)
+        for (book in legacyDemoBooks) {
+            deleteBookCascade(book.id)
+        }
 
         for (root in libraryRootDao.getDemoRoots()) {
             if (editionDao.getByRoot(root.id).isEmpty()) {
@@ -526,5 +552,16 @@ class LibraryManagement @Inject constructor(
 
         collectionDao.getDemoOrphans().forEach { collectionDao.delete(it) }
         collectionDao.clearDemoFlagForCollectionsWithMembers()
+
+        val afterFlagged = bookDao.countDemoBooks()
+        val afterByAuthor = bookDao.countBooksByDemoAuthors(DEMO_AUTHOR_IDS)
+        if (afterFlagged == 0 && afterByAuthor == 0) {
+            Log.i(TAG, "clearDemoData: after → isDemo=1: 0, demoAuthor: 0 — verified clean")
+        } else {
+            Log.w(TAG, "clearDemoData: residual demo books remain (≈ كتب مؤكَّدة يدويًا) isDemo=1: $afterFlagged, demoAuthor: $afterByAuthor")
+        }
+
+        val removedIds = (demoBooks.map { it.id } + legacyDemoBooks.map { it.id }).toSet().size
+        return ClearDemoDataResult(removedIds, afterFlagged + afterByAuthor > 0)
     }
 }

@@ -14,7 +14,8 @@ data class AudioMetadata(
     val title: String?,
     val narratorName: String?,
     val genre: String?,
-    val embeddedChapters: List<EmbeddedChapter>
+    val embeddedChapters: List<EmbeddedChapter>,
+    val album: String? = null
 )
 
 interface AudioMetadataReader {
@@ -41,7 +42,8 @@ class MediaAudioMetadataReader(private val context: Context) : AudioMetadataRead
                     M4bChapterParser.parse(context.contentResolver.openInputStream(uri))
                 } else {
                     emptyList()
-                }
+                },
+                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
             )
         } finally {
             retriever.release()

@@ -112,24 +112,24 @@ class ScanRoot @Inject constructor(
 
     /**
      * pass 1b: خريطة سياق (المؤلف/السلسلة) لكل مجلد يحوي ملفات — من تصنيف
-     * FolderClassifier (المجلدات التي تحوي صوتًا تظهر كلها في flattenBookNodes)،
-     * مع احتياطي مسار مباشر لأي مجلد غير متوقع (بما في ذلك الملفات المبعثرة
-     * في جذر المصدر حيث folderPath = "").
+     * FolderClassifier (contextsByPath: كل مجلد ذي ملفات يظهر كعقدة كتاب عادية
+     * أو اصطناعية داخل حاوية/سلسلة أو كتاب مجموعة SPLIT)، مع احتياطي مسار مباشر
+     * لأي مجلد غير متوقع (بما في ذلك الملفات المبعثرة في جذر المصدر folderPath="").
+     * تُنقل قيمة إعداد «تصنيف تلقائي للسلاسل» الحالي إلى المصنِّف.
      */
     private fun buildContextByPath(files: List<ScanFile>, fallbackAuthor: String): Map<String, AuthorSeriesContext> {
+        val autoSeries = appSettings.currentAutoSeriesClassification()
         val contexts = LinkedHashMap<String, AuthorSeriesContext>()
-        FolderClassifier.flattenBookNodes(FolderClassifier.classify(files)).forEach { node ->
-            contexts[node.path] = node.context(fallbackAuthor)
-        }
+        contexts.putAll(FolderClassifier.contextsByPath(FolderClassifier.classify(files, autoSeries), fallbackAuthor))
         files.forEach { file ->
-            contexts.getOrPut(file.folderPath) { pathContext(file.folderPath, fallbackAuthor) }
+            contexts.getOrPut(file.folderPath) { pathContext(file.folderPath, fallbackAuthor, autoSeries) }
         }
         return contexts
     }
 
     /** احتياطي: اشتقاق المؤلف/السلسلة من مسار المجلد مباشرة (قاعدة العمق نفسها). */
-    private fun pathContext(path: String, fallbackAuthor: String): AuthorSeriesContext =
-        FolderClassifier.contextForPath(path, fallbackAuthor)
+    private fun pathContext(path: String, fallbackAuthor: String, autoSeries: Boolean = appSettings.currentAutoSeriesClassification()): AuthorSeriesContext =
+        FolderClassifier.contextForPath(path, fallbackAuthor, autoSeries)
 
     /** pass 2: بناء الإشارات العشر لكل مجلد ثم حل الإصدار وكتابة الملفات. */
     private suspend fun resolveEditions(root: LibraryRootEntity, byFolder: Map<String, PreparedFolder>, contexts: Map<String, AuthorSeriesContext>, report: MutableScanReport): Map<String, EditionSignals> {
@@ -271,7 +271,12 @@ class ScanRoot @Inject constructor(
             val author = database.authorDao().getByName(authorName)
                 ?: AuthorEntity(name = authorName, colorTheme = null).also { database.authorDao().insert(it) }
             val title = signals.resolvedTitle()?.takeIf { it.isNotBlank() } ?: root.displayName
+            val autoSeries = appSettings.currentAutoSeriesClassification()
+            // السلسلة من مجلد الحاوية؛ وإن لم يحسم المجلد سلسلة، يُؤخذ تلميح الألبوم
+            // من الـMetadata (ميزة اختيارية) — فقط عند الإنشاء، ولا يتجاوز قرار المجلد
+            // ولا قرار المستخدم ولا يعمل ضمن التصنيف المحافظ.
             val seriesFolder = context.seriesFolderName?.takeIf { it.isNotBlank() }
+                ?: if (autoSeries) signals.seriesAlbumHint?.takeIf { it.isNotBlank() } else null
             val seriesId: UUID?
             val orderInSeries: Int?
             if (seriesFolder != null) {

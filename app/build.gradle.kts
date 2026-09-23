@@ -24,8 +24,8 @@ android {
         applicationId = "com.example.audiobook"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+    versionCode = 3
+    versionName = "1.0.0-beta2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

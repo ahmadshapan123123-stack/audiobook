@@ -40,7 +40,9 @@ data class EditionSignals(
     val fileCount: Int = 0,
     val filesOrdered: Boolean = false,
     val narrator: String? = null,
-    val format: String? = null
+    val format: String? = null,
+    /** تلميح سلسلة من وسم الألبوم (album) في الـMetadata — يُستعمل فقط إن لم يحسم المجلد سلسلة. */
+    val seriesAlbumHint: String? = null
 ) {
     /** العنوان المحلول: من الـMetadata الداخلية إن وُجدت، وإلا اسم المجلد. */
     fun resolvedTitle(): String? =
@@ -139,6 +141,7 @@ object EditionSignalExtractor {
         }
         val series = extractSeriesPart(folderName) ?: extractSeriesPart(firstStem)
         val narrator = narratorTag ?: extractNarratorFromName(folderName) ?: extractNarratorFromName(firstStem)
+        val albumHint = metadataList.mapNotNull { it.album?.takeIf { s -> s.isNotBlank() } }.firstOrNull()
         return EditionSignals(
             primaryFileName = firstStem,
             folderName = folderName,
@@ -150,7 +153,8 @@ object EditionSignalExtractor {
             fileCount = metadataList.size,
             filesOrdered = detectFileOrder(fileNames),
             narrator = narrator,
-            format = fileNames.mapNotNull { formatLabelFor(it) }.firstOrNull()
+            format = fileNames.mapNotNull { formatLabelFor(it) }.firstOrNull(),
+            seriesAlbumHint = albumHint
         )
     }
 

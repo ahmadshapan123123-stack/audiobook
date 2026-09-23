@@ -17,10 +17,12 @@ import androidx.compose.ui.unit.dp
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.background.reminders.ReminderScheduler
+import com.example.audiobook.background.reclassify.ReclassifyScheduler
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.domain.usecases.ReclassifyLibrary
+import com.example.audiobook.domain.usecases.classificationPreviewFor
 import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.domain.usecases.scanLibraryNowFor
 import com.example.audiobook.presentation.settings.SettingsScreen
@@ -65,7 +67,9 @@ class SettingsScreenAccessibilityTest {
             libraryManagementFor(database),
             database.libraryRootDao(),
             scanLibraryNowFor(database, appSettings),
-            ReclassifyLibrary(database)
+            ReclassifyLibrary(database, appSettings),
+            classificationPreviewFor(database, appSettings),
+            ReclassifyScheduler(context)
         )
     }
 

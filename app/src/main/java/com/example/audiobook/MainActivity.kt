@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Build
 import android.Manifest
 import android.content.Intent
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -642,7 +643,19 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     initialPositionMs = startMs,
-                    onBack = { navController.popBackStack() }
+                    onBack = {
+                        val popped = navController.popBackStack()
+                        if (!popped) {
+                            // نقطتا الدخول المباشر (Auto-Resume/إشعار) قد تُبقيان المشغّل بلا مكدّس
+                            // خلفه — نلجأ إلى الرئيسية بمسح المكدّس بدلًا من بقاء المشغّل عالقًا.
+                            Log.w("PlayerBack", "player onBack: nothing to pop — navigating to home")
+                            navController.navigate("home") {
+                                popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                        popped
+                    }
                 )
             }
             composable(

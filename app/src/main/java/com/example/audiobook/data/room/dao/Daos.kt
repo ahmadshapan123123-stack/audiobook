@@ -39,7 +39,7 @@ interface AuthorDao : CrudDao<AuthorEntity> {
     @Query("SELECT * FROM authors WHERE name = :name LIMIT 1") suspend fun getByName(name: String): AuthorEntity?
     @Query("SELECT * FROM authors") fun observeAll(): Flow<List<AuthorEntity>>
     @Query("SELECT * FROM authors WHERE isDemo = 1 AND id NOT IN (SELECT authorId FROM books)") suspend fun getDemoOrphans(): List<AuthorEntity>
-    @Query("UPDATE authors SET isDemo = 0 WHERE isDemo = 1 AND id IN (SELECT authorId FROM books)") suspend fun clearDemoFlagForAuthorsWithBooks()
+    @Query("UPDATE authors SET isDemo = 0 WHERE isDemo = 1 AND id IN (SELECT authorId FROM books WHERE isDemo = 0)") suspend fun clearDemoFlagForAuthorsWithBooks()
 }
 
 @Dao
@@ -68,6 +68,14 @@ interface BookDao : CrudDao<BookEntity> {
     @Query("SELECT * FROM books WHERE authorId = :authorId AND title = :title LIMIT 1") suspend fun getByAuthorAndTitle(authorId: UUID, title: String): BookEntity?
     @Query("SELECT * FROM books WHERE isDemo = 1") suspend fun getDemoBooks(): List<BookEntity>
     @Query("DELETE FROM books WHERE isDemo = 1") suspend fun deleteDemoBooks()
+    @Query("SELECT COUNT(*) FROM books WHERE isDemo = 1") suspend fun countDemoBooks(): Int
+    @Query("SELECT COUNT(*) FROM books WHERE authorId IN (:demoAuthorIds)") suspend fun countBooksByDemoAuthors(demoAuthorIds: List<String>): Int
+    @Query(
+        "SELECT * FROM books WHERE isTitleUserConfirmed = 0 AND (" +
+            "authorId IN (:demoAuthorIds) OR " +
+            "EXISTS (SELECT 1 FROM editions e WHERE e.bookId = books.id AND e.sourceFolderPath LIKE '%demo%'))"
+    )
+    suspend fun getLegacyDemoBooks(demoAuthorIds: List<String>): List<BookEntity>
 }
 
 @Dao

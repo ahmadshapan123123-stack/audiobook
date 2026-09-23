@@ -7,8 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -149,23 +147,61 @@ fun MiniPlayer(
             .graphicsLayer {
                 val slideInPx = (1f - appear.value) * 80.dp.toPx()
                 translationY = dismissOffsetPx + slideInPx
-                alpha = appear.value
+                // تغذية بصرية حية أثناء السحب: يتقلّص قليلًا ويشحب كلما اقتربنا من عتبة الطي.
+                val thresholdPx = with(density) { miniPlayerDismissThresholdDp.toPx() }
+                val progress = (dismissOffsetPx / thresholdPx).coerceIn(0f, 1f)
+                alpha = appear.value * (1f - 0.2f * progress)
+                val shrink = 1f - 0.05f * progress
+                scaleX = shrink
+                scaleY = shrink
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
                     val startY = down.position.y
-                    val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                        ?: return@awaitEachGesture
-                    var offset = (slop.position.y - startY).coerceAtLeast(0f)
-                    dismissOffsetPx = offset
-                    drag(slop.id) { change ->
-                        change.consume()
-                        offset = (change.position.y - startY).coerceAtLeast(0f)
-                        dismissOffsetPx = offset
+                    val startX = down.position.x
+                    val slop = viewConfiguration.touchSlop
+                    var dragActive = false
+                    var offset = 0f
+                    // عيّنات سرعة السحب: نُحتسب سرعة اللحظة الأخيرة قبل ترك الإصبع (بكسل/ثانية).
+                    var lastPos = down.position
+                    var lastTime = down.uptimeMillis
+                    var prevPos = down.position
+                    var prevTime = down.uptimeMillis
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val totalDy = change.position.y - startY
+                        val totalDx = change.position.x - startX
+                        if (!dragActive) {
+                            // تحرّك أفقي طاغٍ (سحب من الحافة أو تمرير جانبي) → لا نخطف الإيماءة.
+                            if (kotlin.math.abs(totalDx) > slop && kotlin.math.abs(totalDx) > kotlin.math.abs(totalDy)) break
+                            // تحرّك لأعلى (خارج نطاق السحب للأسفل) → عودة فورية.
+                            if (totalDy <= -slop) break
+                            if (totalDy >= slop && totalDy >= kotlin.math.abs(totalDx)) {
+                                dragActive = true
+                                change.consume()
+                            }
+                        }
+                        if (dragActive) {
+                            offset = (change.position.y - startY).coerceAtLeast(0f)
+                            dismissOffsetPx = offset
+                            change.consume()
+                            if (change.uptimeMillis != lastTime) {
+                                prevPos = lastPos
+                                prevTime = lastTime
+                                lastPos = change.position
+                                lastTime = change.uptimeMillis
+                            }
+                        }
+                        if (!change.pressed) break
                     }
+                    if (!dragActive) return@awaitEachGesture
+                    val dtMs = lastTime - prevTime
+                    val velocityPxPerSec = if (dtMs > 0L) (lastPos.y - prevPos.y) * 1000f / dtMs else 0f
                     val threshold = with(density) { miniPlayerDismissThresholdDp.toPx() }
-                    if (offset >= threshold) {
+                    // عتبة المسافة، أو مسرعة سحب عالية (>500px/s) تطوي المشغّل حتى قبل تجاوز العتبة.
+                    if (offset >= threshold || velocityPxPerSec > miniPlayerFlingVelocityPxPerSec) {
                         scope.launch {
                             dismissAnim.snapTo(dismissOffsetPx)
                             dismissAnim.animateTo(dismissOffsetPx + with(density) { 160.dp.toPx() }, tween(180)) { dismissOffsetPx = value }
@@ -259,4 +295,7 @@ fun MiniPlayer(
 }
 
 /** عتبة سحب المشغّل المصغّر للأسفل لإيقاف التشغيل وإخفائه بالكامل. */
-private val miniPlayerDismissThresholdDp = 120.dp
+private val miniPlayerDismissThresholdDp = 60.dp
+
+/** سرعة الرمية (بكسل/ثانية) التي تطوي المشغّل حتى دون بلوغ عتبة المسافة. */
+private const val miniPlayerFlingVelocityPxPerSec = 500f

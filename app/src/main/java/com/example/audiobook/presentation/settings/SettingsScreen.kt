@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.content.ContextCompat
@@ -60,6 +61,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
+import com.example.audiobook.domain.usecases.ClassificationPreviewLine
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.domain.model.AppThemeMode
@@ -128,9 +130,14 @@ fun SettingsScreen(
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
+    val demoCleanupResult by viewModel.demoCleanupResult.collectAsStateWithLifecycle()
     val isReclassifying by viewModel.isReclassifying.collectAsStateWithLifecycle()
     val reclassifyPreview by viewModel.reclassifyPreview.collectAsStateWithLifecycle()
+    val reclassifyTree by viewModel.reclassifyTree.collectAsStateWithLifecycle()
     val reclassifyApplied by viewModel.reclassifyApplied.collectAsStateWithLifecycle()
+    val autoSeriesClassification by viewModel.autoSeriesClassification.collectAsStateWithLifecycle()
+    val isPreviewingClassification by viewModel.isPreviewingClassification.collectAsStateWithLifecycle()
+    val classificationPreview by viewModel.classificationPreview.collectAsStateWithLifecycle()
     var showDailyTimePicker by remember { mutableStateOf(false) }
     var showNoRootsDialog by remember { mutableStateOf(false) }
     var showRemoveDemoDialog by remember { mutableStateOf(false) }
@@ -151,6 +158,8 @@ fun SettingsScreen(
     val scanDoneTemplate = stringResource(R.string.settings_scan_result)
     val scanFailedMessage = stringResource(R.string.settings_scan_failed)
     val reclassifyDoneTemplate = stringResource(R.string.settings_reclassify_result)
+    val demoRemovedTemplate = stringResource(R.string.settings_demo_removed)
+    val demoNotFoundMessage = stringResource(R.string.settings_demo_not_found)
     LaunchedEffect(scanResult) {
         scanResult?.let { result ->
             snackbarHostState.showSnackbar(
@@ -163,6 +172,17 @@ fun SettingsScreen(
         if (scanFailed) {
             snackbarHostState.showSnackbar(scanFailedMessage)
             viewModel.consumeScanFailed()
+        }
+    }
+    LaunchedEffect(demoCleanupResult) {
+        demoCleanupResult?.let { result ->
+            val message = if (result.removedBooks > 0) {
+                String.format(Locale.US, demoRemovedTemplate, result.removedBooks)
+            } else {
+                demoNotFoundMessage
+            }
+            snackbarHostState.showSnackbar(message)
+            viewModel.consumeDemoCleanupResult()
         }
     }
     LaunchedEffect(reclassifyApplied) {
@@ -290,6 +310,13 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_auto_series),
+                        subtitle = stringResource(R.string.settings_auto_series_desc),
+                        checked = autoSeriesClassification,
+                        onCheckedChange = { viewModel.setAutoSeriesClassification(it) }
+                    )
+                    SettingsDivider()
                     SettingsActionRow(
                         title = stringResource(R.string.settings_scan_now),
                         subtitle = if (isScanning) {
@@ -315,6 +342,23 @@ fun SettingsScreen(
                             stringResource(R.string.settings_reclassify_desc)
                         },
                         onClick = { viewModel.requestReclassify() }
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_classification_preview),
+                        subtitle = if (isPreviewingClassification) {
+                            stringResource(R.string.settings_classification_preview_loading)
+                        } else {
+                            stringResource(R.string.settings_classification_preview_desc)
+                        },
+                        onClick = {
+                            viewModel.refreshRootsCount()
+                            if (hasLibraryRoots) {
+                                viewModel.requestClassificationPreview()
+                            } else {
+                                showNoRootsDialog = true
+                            }
+                        }
                     )
                 }
             }
@@ -574,17 +618,71 @@ fun SettingsScreen(
             },
             title = { Text(stringResource(R.string.settings_reclassify)) },
             text = {
-                Text(
-                    if (preview.foldersToFix == 0) {
-                        stringResource(R.string.settings_reclassify_nothing)
-                    } else {
-                        String.format(
-                            Locale.US,
-                            stringResource(R.string.settings_reclassify_confirm_body),
-                            preview.affectedBooks
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                    Text(
+                        if (preview.foldersToFix == 0) {
+                            stringResource(R.string.settings_reclassify_nothing)
+                        } else {
+                            String.format(
+                                Locale.US,
+                                stringResource(R.string.settings_reclassify_confirm_body),
+                                preview.affectedBooks
+                            )
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    // شجرة البنية القادمة (المؤلف ← السلسلة ← الكتاب) من معاينة
+                    // التصنيف — تُعرض قبل التأكيد ليعرف المستخدم ما سينفّذه.
+                    reclassifyTree?.takeIf { it.isNotEmpty() }?.let { trees ->
+                        HorizontalDivider()
+                        Text(
+                            stringResource(R.string.settings_reclassify_tree_title),
+                            style = MaterialTheme.typography.labelLarge
                         )
+                        val lines = trees.flatMap { perRoot ->
+                            listOf(ClassificationPreviewLine(0, perRoot.displayName)) + perRoot.lines
+                        }
+                        lines.forEach { line ->
+                            Text(
+                                text = line.text,
+                                modifier = Modifier.padding(start = (line.indent * 16).dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
-                )
+                }
+            }
+        )
+    }
+
+    classificationPreview?.let { previews ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeClassificationPreview() },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeClassificationPreview() }) {
+                    Text(stringResource(R.string.settings_classification_preview_close))
+                }
+            },
+            title = { Text(stringResource(R.string.settings_classification_preview)) },
+            text = {
+                if (previews.isEmpty()) {
+                    Text(stringResource(R.string.settings_classification_preview_empty))
+                } else {
+                    val lines = previews.flatMap { perRoot ->
+                        listOf(ClassificationPreviewLine(0, perRoot.displayName)) + perRoot.lines
+                    }
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        lines.forEach { line ->
+                            Text(
+                                text = line.text,
+                                modifier = Modifier.padding(start = (line.indent * 16).dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
             }
         )
     }

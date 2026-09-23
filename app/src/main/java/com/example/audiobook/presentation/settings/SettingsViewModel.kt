@@ -2,8 +2,13 @@ package com.example.audiobook.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audiobook.background.reclassify.ReclassifyResultNotifier
+import com.example.audiobook.background.reclassify.ReclassifyScheduler
 import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.domain.usecases.ClearDemoDataResult
+import com.example.audiobook.domain.usecases.ClassificationPreviewPerRoot
 import com.example.audiobook.domain.usecases.IntelligenceLevel
+import com.example.audiobook.domain.usecases.LibraryClassificationPreview
 import com.example.audiobook.domain.usecases.LibraryManagement
 import com.example.audiobook.domain.usecases.ReclassifyLibrary
 import com.example.audiobook.domain.usecases.ReclassifyPreview
@@ -14,6 +19,7 @@ import com.example.audiobook.domain.model.LogoColorMode
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.room.dao.LibraryRootDao
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,12 +33,15 @@ class SettingsViewModel @Inject constructor(
     private val libraryManagement: LibraryManagement,
     private val libraryRootDao: LibraryRootDao,
     private val scanLibraryNow: ScanLibraryNow,
-    private val reclassifyLibrary: ReclassifyLibrary
+    private val reclassifyLibrary: ReclassifyLibrary,
+    private val libraryClassificationPreview: LibraryClassificationPreview,
+    private val reclassifyScheduler: ReclassifyScheduler
 ) : ViewModel() {
 
     val themeMode: StateFlow<AppThemeMode> = appSettings.themeMode
     val logoColor: StateFlow<LogoColorMode> = appSettings.logoColor
     val intelligenceLevel: StateFlow<IntelligenceLevel> = appSettings.intelligenceLevel
+    val autoSeriesClassification: StateFlow<Boolean> = appSettings.autoSeriesClassification
     val defaultSpeed: StateFlow<Float> = appSettings.defaultSpeed
     val autoResume: StateFlow<Boolean> = appSettings.autoResume
     val defaultSleepMinutes: StateFlow<Int> = appSettings.defaultSleepMinutes
@@ -54,6 +63,10 @@ class SettingsViewModel @Inject constructor(
     private val _isRemovingDemoData = MutableStateFlow(false)
     val isRemovingDemoData: StateFlow<Boolean> = _isRemovingDemoData.asStateFlow()
 
+    /** حصيلة آخر تنظيف لبيانات التجربة (تُستهلك مرة واحدة لعرض Snackbar). */
+    private val _demoCleanupResult = MutableStateFlow<ClearDemoDataResult?>(null)
+    val demoCleanupResult: StateFlow<ClearDemoDataResult?> = _demoCleanupResult.asStateFlow()
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -68,6 +81,10 @@ class SettingsViewModel @Inject constructor(
     private val _reclassifyPreview = MutableStateFlow<ReclassifyPreview?>(null)
     val reclassifyPreview: StateFlow<ReclassifyPreview?> = _reclassifyPreview.asStateFlow()
 
+    /** شجرة «البنية القادمة» (مؤلف ← سلسلة ← كتاب) المعروضة داخل حوار إعادة التصنيف قبل التأكيد. */
+    private val _reclassifyTree = MutableStateFlow<List<ClassificationPreviewPerRoot>?>(null)
+    val reclassifyTree: StateFlow<List<ClassificationPreviewPerRoot>?> = _reclassifyTree.asStateFlow()
+
     /** حصيلة آخر إعادة تصنيف (تُستهلك مرة واحدة لعرض Snackbar). */
     private val _reclassifyApplied = MutableStateFlow<ReclassifyPreview?>(null)
     val reclassifyApplied: StateFlow<ReclassifyPreview?> = _reclassifyApplied.asStateFlow()
@@ -75,9 +92,26 @@ class SettingsViewModel @Inject constructor(
     private val _scanFailed = MutableStateFlow(false)
     val scanFailed: StateFlow<Boolean> = _scanFailed.asStateFlow()
 
+    private val _isPreviewingClassification = MutableStateFlow(false)
+    val isPreviewingClassification: StateFlow<Boolean> = _isPreviewingClassification.asStateFlow()
+
+    /** معاينة تصنيف المكتبة (غير null = شجرة المؤلف ← السلسلة ← الكتاب تنتظر العرض). */
+    private val _classificationPreview = MutableStateFlow<List<ClassificationPreviewPerRoot>?>(null)
+    val classificationPreview: StateFlow<List<ClassificationPreviewPerRoot>?> = _classificationPreview.asStateFlow()
+
     init {
         viewModelScope.launch {
             _hasLibraryRoots.value = libraryRootDao.countAll() > 0
+        }
+        // يلتقط نتيجة Worker إعادة التصنيف الخلفي ويعرضها (Snackbar + إنهاء الحالة).
+        viewModelScope.launch {
+            ReclassifyResultNotifier.result.collect { result ->
+                if (_isReclassifying.value && result != null) {
+                    ReclassifyResultNotifier.reset()
+                    _reclassifyApplied.value = result
+                    _isReclassifying.value = false
+                }
+            }
         }
     }
 
@@ -90,10 +124,15 @@ class SettingsViewModel @Inject constructor(
     fun removeDemoData() {
         viewModelScope.launch {
             _isRemovingDemoData.value = true
-            libraryManagement.clearDemoData()
+            val result = libraryManagement.clearDemoData()
             appSettings.setHasSeededDemoData(false)
+            _demoCleanupResult.value = result
             _isRemovingDemoData.value = false
         }
+    }
+
+    fun consumeDemoCleanupResult() {
+        _demoCleanupResult.value = null
     }
 
     /** الفحص الفوري لكل المجلدات الممكّنة (وليس جدولة خلفية). */
@@ -119,28 +158,53 @@ class SettingsViewModel @Inject constructor(
         _scanFailed.value = false
     }
 
-    /** الخطوة 1: حساب ما الذي ستغيّره إعادة التصنيف وعرضه للتأكيد (بلا كتابة). */
+    /** يبني شجرة التصنيف المعاينة للمجلدات الممكّنة (بلا كتابة أي شيء). */
+    fun requestClassificationPreview() {
+        if (_isPreviewingClassification.value) return
+        viewModelScope.launch {
+            _isPreviewingClassification.value = true
+            _classificationPreview.value = runCatching { libraryClassificationPreview.invoke() }.getOrNull()
+            _isPreviewingClassification.value = false
+        }
+    }
+
+    fun consumeClassificationPreview() {
+        _classificationPreview.value = null
+    }
+
+    /**
+     * الخطوة 1: حساب ما الذي ستغيّره إعادة التصنيف + شجرة البنية القادمة،
+     * وعرضهما للتأكيد (بلا كتابة). الشجرة تأتي من [LibraryClassificationPreview].
+     */
     fun requestReclassify() {
         if (_isReclassifying.value) return
         viewModelScope.launch {
             _isReclassifying.value = true
             _reclassifyPreview.value = runCatching { reclassifyLibrary(dryRun = true) }.getOrNull()
+            _reclassifyTree.value = runCatching { libraryClassificationPreview.invoke() }.getOrNull()
             _isReclassifying.value = false
         }
     }
 
     fun cancelReclassify() {
         _reclassifyPreview.value = null
+        _reclassifyTree.value = null
     }
 
-    /** الخطوة 2: تطبيق إعادة التصنيف بعد تأكيد المستخدم. */
+    /**
+     * الخطوة 2: تأكيد فرض إعادة التصنيف — تُنفَّذ كمهمة خلفية عبر
+     * [ReclassifyScheduler] (WorkManager) وتعود نتيجتها عبر ReclassifyResultNotifier.
+     */
     fun confirmReclassify() {
         if (_isReclassifying.value) return
+        _isReclassifying.value = true
+        _reclassifyPreview.value = null
+        _reclassifyTree.value = null
+        ReclassifyResultNotifier.reset()
+        reclassifyScheduler.enqueue()
+        // شبكة أمان: إذا فشل Worker ولم يُمرِّر نتيجة، نُنهي حالة «جارٍ» عاجلًا.
         viewModelScope.launch {
-            _isReclassifying.value = true
-            val applied = runCatching { reclassifyLibrary(dryRun = false) }.getOrNull()
-            _reclassifyPreview.value = null
-            _reclassifyApplied.value = applied
+            delay(60_000)
             _isReclassifying.value = false
         }
     }
@@ -152,6 +216,7 @@ class SettingsViewModel @Inject constructor(
     fun selectThemeMode(mode: AppThemeMode) = appSettings.setThemeMode(mode)
     fun selectLogoColor(mode: LogoColorMode) = appSettings.setLogoColor(mode)
     fun selectIntelligenceLevel(level: IntelligenceLevel) = appSettings.setIntelligenceLevel(level)
+    fun setAutoSeriesClassification(enabled: Boolean) = appSettings.setAutoSeriesClassification(enabled)
     fun setDefaultSpeed(speed: Float) = appSettings.setDefaultSpeed(speed)
     fun setAutoResume(enabled: Boolean) = appSettings.setAutoResume(enabled)
     fun setDefaultSleepMinutes(minutes: Int) = appSettings.setDefaultSleepMinutes(minutes)

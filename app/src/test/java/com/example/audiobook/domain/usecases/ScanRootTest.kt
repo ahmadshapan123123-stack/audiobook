@@ -371,6 +371,67 @@ class ScanRootTest {
         assertNotNull(database.editionDao().getByRootAndFolder(root.id, "Book v2"))
     }
 
+    // ---- VERIFY (Bug 4): البنية المرجعية الكاملة — Author → Series → Book بلا دمج خاطئ ----
+
+    @Test
+    fun verifyReferenceHierarchyScansAuthorsSeriesAndBooksWithoutCrossMerges() = runBlocking {
+        reader.overrides["default"] = AudioMetadata(1_000_000L, "audio/mp3", null, null, null, emptyList())
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/f1.mp3"), "أحمد خالد توفيق/فانتازيا/01.mp3", "أحمد خالد توفيق/فانتازيا", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f2.mp3"), "أحمد خالد توفيق/ما وراء الطبيعة/01.mp3", "أحمد خالد توفيق/ما وراء الطبيعة", "01.mp3", 200, 10),
+            ScanFile(Uri.parse("content://audio/f3.mp3"), "أحمد خالد توفيق/سافاري/01.mp3", "أحمد خالد توفيق/سافاري", "01.mp3", 300, 10),
+            ScanFile(Uri.parse("content://audio/f4.mp3"), "أحمد خالد توفيق/paranormal/book1/01.mp3", "أحمد خالد توفيق/paranormal/book1", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f5.mp3"), "أحمد خالد توفيق/paranormal/book2/02.mp3", "أحمد خالد توفيق/paranormal/book2", "02.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f6.mp3"), "أحمد خالد توفيق/standalone_book.mp3", "أحمد خالد توفيق", "standalone_book.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f7.mp3"), "نبيل فاروق/ملف المستقبل/01.mp3", "نبيل فاروق/ملف المستقبل", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f8.mp3"), "كريم قنديل/book1/01.mp3", "كريم قنديل/book1", "01.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/f9.mp3"), "كريم قنديل/book2/01.mp3", "كريم قنديل/book2", "01.mp3", 100, 10)
+        )
+
+        val report = scanRoot(root.id)
+
+        assertEquals("تسعة مجلدات تحوي ملفات → تسعة كتب (لا دمج خاطئ)", 9, report.editionsCreated)
+        assertEquals("لا دمج تلقائي عبر السلاسل ولا بين كتابي كريم", 0, report.editionsAutoMerged)
+        assertEquals(9, allEditions().size)
+        assertEquals(9, database.bookDao().getAll().size)
+
+        val ahmed = database.authorDao().getByName("أحمد خالد توفيق")!!
+        val nabeel = database.authorDao().getByName("نبيل فاروق")!!
+        val kareem = database.authorDao().getByName("كريم قنديل")!!
+
+        val ahmedSeries = database.seriesDao().getByParent(ahmed.id)
+        assertEquals("أربع سلاسل تحت أحمد (اسم غير عام لابن المؤلف)", setOf("فانتازيا", "ما وراء الطبيعة", "سافاري", "paranormal"), ahmedSeries.map { it.name }.toSet())
+        assertEquals("سلسلة واحدة «ملف المستقبل» تحت نبيل", "ملف المستقبل", database.seriesDao().getByParent(nabeel.id).single().name)
+        assertTrue("كتابا كريم أسماء عامة → مجلدات كتاب بلا سلسلة", database.seriesDao().getByParent(kareem.id).isEmpty())
+
+        suspend fun bookAt(path: String) = database.bookDao().getById(database.editionDao().getByRootAndFolder(root.id, path)!!.bookId)!!
+
+        val fantasy = bookAt("أحمد خالد توفيق/فانتازيا")
+        assertEquals(ahmed.id, fantasy.authorId)
+        assertEquals(ahmedSeries.single { it.name == "فانتازيا" }.id, fantasy.seriesId)
+
+        val paranormalBook1 = bookAt("أحمد خالد توفيق/paranormal/book1")
+        assertEquals(ahmed.id, paranormalBook1.authorId)
+        assertEquals(ahmedSeries.single { it.name == "paranormal" }.id, paranormalBook1.seriesId)
+        assertTrue("كتابا paranormal مجلدان مستقلان (ابدأان بلا دمج)", paranormalBook1.id != bookAt("أحمد خالد توفيق/paranormal/book2").id)
+
+        val standalone = bookAt("أحمد خالد توفيق")
+        assertEquals("كتاب الكعب المباشر للمؤلف", ahmed.id, standalone.authorId)
+        assertNull("الكعب المباشر بلا سلسلة", standalone.seriesId)
+
+        val mustaqbal = bookAt("نبيل فاروق/ملف المستقبل")
+        assertEquals(nabeel.id, mustaqbal.authorId)
+        assertEquals("ملف المستقبل", database.seriesDao().getById(mustaqbal.seriesId!!)?.name)
+
+        val k1 = bookAt("كريم قنديل/book1")
+        val k2 = bookAt("كريم قنديل/book2")
+        assertEquals(kareem.id, k1.authorId)
+        assertEquals(kareem.id, k2.authorId)
+        assertNull(k1.seriesId)
+        assertNull(k2.seriesId)
+        assertTrue("كتابا كريم كيانان مختلفان (الاسم العام يمنع اعتبارهما سلسلةً)", k1.id != k2.id)
+    }
+
     private class FakeFileSource : LibraryFileSource {
         var files: List<ScanFile> = emptyList()
         override fun listAudioFiles(rootUri: Uri): List<ScanFile> = files

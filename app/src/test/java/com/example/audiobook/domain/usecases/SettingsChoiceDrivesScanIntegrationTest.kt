@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.background.reminders.ReminderScheduler
+import com.example.audiobook.background.reclassify.ReclassifyScheduler
 import com.example.audiobook.data.localfilesystem.AudioMetadata
 import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
@@ -61,7 +62,9 @@ class SettingsChoiceDrivesScanIntegrationTest {
             libraryManagementFor(database),
             database.libraryRootDao(),
             scanLibraryNowFor(database, appSettings),
-            ReclassifyLibrary(database)
+            ReclassifyLibrary(database, appSettings),
+            classificationPreviewFor(database, appSettings),
+            ReclassifyScheduler(context)
         )
         scanRoot = ScanRoot(database, source, reader, appSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)

@@ -178,7 +178,7 @@ class PlayerScreenAccessibilityTest {
                             themeMode = AppThemeMode.LIGHT,
                             marks = marks,
                             sleepTimer = sleepTimer,
-                            onBack = {},
+                            onBack = { true },
                             viewModel = viewModel
                         )
                     }

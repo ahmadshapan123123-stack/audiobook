@@ -380,6 +380,8 @@
     <string name="settings_library_roots_desc">إدارة مصادر الفحص وتحديد الأولويات.</string>
     <string name="settings_scan_now">فحص المكتبة الآن</string>
     <string name="settings_scan_now_desc">فحص فوري لكل مجلدات المكتبة الممكّنة.</string>
+    <string name="settings_auto_series">تصنيف تلقائي للسلاسل</string>
+    <string name="settings_auto_series_desc">عند إيقافه يصبح تصنيف «محافَظ»: مجلدات العمق الثاني كتب لا سلاسل، وتُكتشف السلاسل بإضافة المستخدم يدويًا من تفاصيل الكتاب.</string>
     <string name="settings_notifications">الإشعارات</string>
     <string name="settings_notifications_desc">إشعارات التشغيل في الخلفية ومؤقت النوم.</string>
     <string name="settings_storage">البيانات والتخزين</string>
@@ -690,6 +692,8 @@
     <string name="settings_remove_demo">إزالة بيانات التجربة</string>
     <string name="settings_remove_demo_desc">حذف جميع الكتب التجريبية من المكتبة</string>
     <string name="settings_remove_demo_confirm">هل تريد حذف جميع بيانات التجربة؟ لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="settings_demo_removed">تم حذف %1$d كتابًا تجريبيًا</string>
+    <string name="settings_demo_not_found">لم يُعثر على بيانات تجريبية</string>
     <string name="demo_badge">تجريبي</string>
 
     <!-- ===== ISSUE 2: Onboarding ===== -->
@@ -715,11 +719,17 @@
     <string name="settings_scan_failed">تعذّر إكمال الفحص. حاول مرة أخرى.</string>
     <string name="settings_reclassify">إعادة تصنيف المكتبة</string>
     <string name="settings_reclassify_desc">تصحيح المؤلفين والسلاسل من بنية المجلدات دون إعادة فحص الملفات.</string>
-    <string name="settings_reclassifying">جارٍ التحقق…</string>
+    <string name="settings_reclassifying">جارٍ إعادة التصنيف…</string>
     <string name="settings_reclassify_confirm">تطبيق</string>
-    <string name="settings_reclassify_confirm_body">سيتم تصحيح تصنيف %1$d كتابًا. لن تُمحى تقدّمات الاستماع أو العلامات أو الفصول. هل تريد المتابعة؟</string>
+    <string name="settings_reclassify_confirm_body">سيتم إعادة تصنيف %1$d كتابًا. لن تُمحى تقدّمات الاستماع أو العلامات أو الفصول، ولن يُمسَّ ما أكّده المستخدم يدويًا. هل تريد المتابعة؟</string>
+    <string name="settings_reclassify_tree_title">البنية التي ستُطبَّق:</string>
     <string name="settings_reclassify_nothing">كل الكتب مصنَّفة بشكل صحيح بالفعل. لا يوجد ما يستدعي التصحيح.</string>
-    <string name="settings_reclassify_result">تم تصحيح تصنيف %1$d كتابًا</string>
+    <string name="settings_reclassify_result">تم إعادة تصنيف %1$d كتابًا</string>
+    <string name="settings_classification_preview">معاينة تصنيف المكتبة</string>
+    <string name="settings_classification_preview_desc">عرض الشجرة التي سيولّدها الفحص القادم (مؤلف ← سلسلة ← كتاب) دون تطبيق أي تغيير.</string>
+    <string name="settings_classification_preview_loading">جارٍ قراءة المجلدات…</string>
+    <string name="settings_classification_preview_empty">لا توجد مجلدات ممكّنة للفحص حاليًا.</string>
+    <string name="settings_classification_preview_close">إغلاق</string>
 
     <!-- ===== قائمة خيارات الكتاب (ضغطة مطوّلة) ===== -->
     <string name="book_options_title">خيارات الكتاب</string>
