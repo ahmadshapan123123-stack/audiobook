@@ -31,6 +31,11 @@ class ScanWorker(
 
         return try {
             scanRoot(root.id)
+            // Part 4: فقط جذور الأولوية، وفقط إن بقيت اكتشافات لم يُبتَّ فيها —
+            // يُشعل البوب-أب في الواجهة عبر DiscoveryNotifier (كائن ثابت، Worker خارج ViewModel).
+            if (root.isPriority && database.pendingDiscoveryDao().countPendingByRoot(root.id) > 0) {
+                com.example.audiobook.presentation.pendingdiscoveries.DiscoveryNotifier.notify(root.id)
+            }
             Result.success()
         } catch (error: Throwable) {
             database.libraryRootDao().setScanStatus(root.id, com.example.audiobook.data.room.entity.ScanStatus.ERROR)

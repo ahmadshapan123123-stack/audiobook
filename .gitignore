@@ -24,3 +24,6 @@ docs/
 prompt-verify-and-build-apk.md
 s9.png
 scr1.png
+
+# شعار أثير الأصلي — مطلوب للبناء (يُستثنى من "*.png") لتظل النسخة قابلة للبناء من استنساخ نظيف.
+!app/src/main/res/drawable-nodpi/app_logo_source.png

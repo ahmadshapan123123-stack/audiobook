@@ -18,6 +18,8 @@ import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.domain.usecases.LibraryManagement
+import com.example.audiobook.presentation.common.OpMessage
+import com.example.audiobook.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -32,7 +34,8 @@ data class CollectionDetailsUiState(
     val collection: CollectionEntity? = null,
     val books: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
-    val allBooks: List<BookEntity> = emptyList()
+    val allBooks: List<BookEntity> = emptyList(),
+    val candidateBooks: List<EntityBookRow> = emptyList()
 )
 
 @HiltViewModel
@@ -51,6 +54,24 @@ class CollectionDetailsViewModel @Inject constructor(
     private val collectionId: UUID = UUID.fromString(
         savedStateHandle.get<String>("id") ?: throw IllegalArgumentException("collection id navigation argument missing")
     )
+
+    /** أثر قابل للتراجع ضمن نافذة السناكبار (5 ثوانٍ): حذف مجموعة أو إزالة كتاب. */
+    private sealed interface CollectionUndo {
+        data class Deleted(val snapshot: LibraryManagement.CollectionSnapshot) : CollectionUndo
+        data class Removed(val bookId: UUID) : CollectionUndo
+    }
+
+    private val pendingUndo = MutableStateFlow<CollectionUndo?>(null)
+    private val _messages = MutableStateFlow<OpMessage?>(null)
+    val messages: StateFlow<OpMessage?> = _messages
+
+    /** عند نهاية نافذة السناكبار: الرجوع للقائمة فقط إذا حُذفت المجموعة نفسها. */
+    val shouldPopOnTimeout: Boolean
+        get() = pendingUndo.value is CollectionUndo.Deleted
+
+    fun consumeMessage() {
+        _messages.value = null
+    }
 
     val uiState: StateFlow<CollectionDetailsUiState> = combine(
         collectionDao.observeAll(),
@@ -81,12 +102,20 @@ class CollectionDetailsViewModel @Inject constructor(
             progressList = progressList,
             series = allSeries
         ).sortedBy { it.title }
+        val candidates = buildEntityBookRows(
+            books = books.filter { it.id !in memberIds },
+            authors = authors,
+            editions = editions,
+            progressList = progressList,
+            series = allSeries
+        ).sortedBy { it.title }
 
         CollectionDetailsUiState(
             collection = collection,
             books = rows,
             coverColor = parseColor(null, 0xFF356B68),
-            allBooks = books
+            allBooks = books,
+            candidateBooks = candidates
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CollectionDetailsUiState())
 
@@ -96,10 +125,24 @@ class CollectionDetailsViewModel @Inject constructor(
         }
     }
 
-    fun deleteCollection(onDone: () -> Unit) {
+    fun deleteCollection() {
         viewModelScope.launch {
+            val snapshot = management.snapshotCollection(collectionId)
             management.deleteCollection(collectionId)
-            onDone()
+            pendingUndo.value = CollectionUndo.Deleted(snapshot)
+            _messages.value = OpMessage(R.string.collection_deleted_undo)
+        }
+    }
+
+    fun undo() {
+        val action = pendingUndo.value ?: return
+        viewModelScope.launch {
+            when (action) {
+                is CollectionUndo.Deleted -> management.restoreCollection(action.snapshot)
+                is CollectionUndo.Removed -> management.addBookToCollection(collectionId, action.bookId)
+            }
+            pendingUndo.value = null
+            _messages.value = null
         }
     }
 
@@ -112,6 +155,8 @@ class CollectionDetailsViewModel @Inject constructor(
     fun removeBookFromCollection(bookId: UUID) {
         viewModelScope.launch {
             management.removeBookFromCollection(collectionId, bookId)
+            pendingUndo.value = CollectionUndo.Removed(bookId)
+            _messages.value = OpMessage(R.string.collection_removed_done)
         }
     }
 }

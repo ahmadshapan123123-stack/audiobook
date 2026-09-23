@@ -116,13 +116,15 @@ BUILD SUCCESSFUL in 1m 11s
 38 actionable tasks: 3 executed, 35 up-to-date
 ```
 
-| Metric | Literal value (R8) |
-|---|---|
-| Test classes (`TEST-*.xml`) | **36** |
-| Tests | **130** |
-| Failures | **0** |
-| Errors | **0** |
-| Skipped | **0** |
+| Metric | Literal value (R8) | Refreshed 2026-09-20 |
+|---|---|---|
+| Test classes (`TEST-*.xml`) | **36** | **43** |
+| Tests | **130** | **194** |
+| Failures | **0** | **0** |
+| Errors | **0** | **0** |
+| Skipped | **0** | **0** |
+
+> ملاحظة تحديث: بعد جولة التدقيق (سبتمبر 2026) أُعيد تشغيل `:app:testDebugUnitTest` وأُضيفت اختبارات التراجع (4) وتذكيرات الإشعارات (3) فبلغت الشبكة **43 suites / 194 tests**، واللينت لا جديد فيه مع باسلاين **11 errors / 168 warnings / 2 hints**.
 
 اختبارات R8 الجديدة (6): `SettingsViewModelTest` (2) · `SettingsScreenAccessibilityTest` (3) · `SettingsChoiceDrivesScanIntegrationTest` (1).
 

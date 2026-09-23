@@ -14,6 +14,8 @@ import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.domain.usecases.LibraryManagement
+import com.example.audiobook.presentation.common.OpMessage
+import com.example.audiobook.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -48,6 +50,20 @@ class SeriesDetailsViewModel @Inject constructor(
     private val seriesId: UUID = UUID.fromString(
         savedStateHandle.get<String>("id") ?: throw IllegalArgumentException("series id navigation argument missing")
     )
+
+    /** أثر قابل للتراجع ضمن نافذة السناكبار (5 ثوانٍ): حذف أو دمج. */
+    private sealed interface SeriesUndo {
+        data class Deleted(val snapshot: LibraryManagement.SeriesSnapshot) : SeriesUndo
+        data class Merged(val snapshot: LibraryManagement.SeriesMergeSnapshot) : SeriesUndo
+    }
+
+    private val pendingUndo = MutableStateFlow<SeriesUndo?>(null)
+    private val _messages = MutableStateFlow<OpMessage?>(null)
+    val messages: StateFlow<OpMessage?> = _messages
+
+    fun consumeMessage() {
+        _messages.value = null
+    }
 
     val uiState: StateFlow<SeriesDetailsUiState> = combine(
         seriesDao.observeAll(),
@@ -122,17 +138,33 @@ class SeriesDetailsViewModel @Inject constructor(
         }
     }
 
-    fun deleteSeries(onDone: () -> Unit) {
+    fun deleteSeries() {
         viewModelScope.launch {
+            val snapshot = management.snapshotSeries(seriesId)
             management.deleteSeries(seriesId)
-            onDone()
+            pendingUndo.value = SeriesUndo.Deleted(snapshot)
+            _messages.value = OpMessage(R.string.series_deleted_undo)
         }
     }
 
-    fun mergeSeries(targetId: UUID, onDone: () -> Unit) {
+    fun mergeSeries(targetId: UUID) {
         viewModelScope.launch {
-            management.mergeSeries(seriesId, targetId)
-            onDone()
+            if (targetId == seriesId) return@launch
+            val snapshot = management.mergeSeries(seriesId, targetId)
+            pendingUndo.value = SeriesUndo.Merged(snapshot)
+            _messages.value = OpMessage(R.string.series_merged_undo)
+        }
+    }
+
+    fun undo() {
+        val action = pendingUndo.value ?: return
+        viewModelScope.launch {
+            when (action) {
+                is SeriesUndo.Deleted -> management.restoreSeries(action.snapshot)
+                is SeriesUndo.Merged -> management.undoMergeSeries(action.snapshot)
+            }
+            pendingUndo.value = null
+            _messages.value = null
         }
     }
 }

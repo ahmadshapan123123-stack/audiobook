@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.audiobook.data.localfilesystem.AudioMetadata
+import com.example.audiobook.data.localfilesystem.AudioMetadataReader
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.BookEntity
@@ -39,6 +41,8 @@ import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.LibraryRootEntity
 import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.data.room.entity.SyncStatus
+import com.example.audiobook.domain.usecases.libraryManagementFor
+import com.example.audiobook.presentation.common.BookManagerViewModel
 import com.example.audiobook.presentation.library.LibraryScreen
 import com.example.audiobook.presentation.library.LibraryViewModel
 import com.example.audiobook.domain.model.AppThemeMode
@@ -145,6 +149,7 @@ class LibraryScreenAccessibilityTest {
             AudiobookTheme(mode = AppThemeMode.LIGHT) {
                 LibraryScreen(
                     onBookSelected = {},
+                    bookManager = makeBookManager(),
                     viewModel = viewModel
                 )
             }
@@ -153,6 +158,30 @@ class LibraryScreenAccessibilityTest {
             composeRule.onAllNodesWithContentDescription("عرض شبكي").fetchSemanticsNodes().isNotEmpty()
         }
     }
+
+    private fun makeBookManager() = BookManagerViewModel(
+        appContext = ApplicationProvider.getApplicationContext(),
+        management = libraryManagementFor(database),
+        bookDao = database.bookDao(),
+        authorDao = database.authorDao(),
+        seriesDao = database.seriesDao(),
+        editionDao = database.editionDao(),
+        collectionDao = database.collectionDao(),
+        crossRefDao = database.collectionBookCrossRefDao(),
+        audioFileDao = database.audioFileDao(),
+        chapterDao = database.chapterDao(),
+        audioMetadataReader = object : AudioMetadataReader {
+            override fun read(uri: android.net.Uri, fileName: String) =
+                AudioMetadata(
+                    durationMs = 0,
+                    mimeType = "audio/mp3",
+                    title = null,
+                    narratorName = null,
+                    genre = null,
+                    embeddedChapters = emptyList()
+                )
+        }
+    )
 
     @Test
     fun iconButtonsExposeDescriptiveContentDescriptionsInSemanticsTree() {
@@ -243,7 +272,11 @@ class LibraryScreenAccessibilityTest {
                 LocalDensity provides Density(LocalDensity.current.density, fontScale = fontScale)
             ) {
                 AudiobookTheme(mode = AppThemeMode.LIGHT) {
-                    LibraryScreen(onBookSelected = {}, viewModel = viewModel)
+                    LibraryScreen(
+                        onBookSelected = {},
+                        bookManager = makeBookManager(),
+                        viewModel = viewModel
+                    )
                 }
             }
         }

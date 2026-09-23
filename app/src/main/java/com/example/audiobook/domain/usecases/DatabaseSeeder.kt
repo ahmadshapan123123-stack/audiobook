@@ -42,24 +42,24 @@ class DatabaseSeeder @Inject constructor(
         val rootDemo = LibraryRootEntity(
             id = uid("root.demo"), uri = "content://com.example.audiobook.demo/demo",
             displayName = "مكتبة التجربة", isPriority = true, isEnabled = true,
-            lastScanAt = now - day, scanStatus = ScanStatus.IDLE
+            lastScanAt = now - day, scanStatus = ScanStatus.IDLE, isDemo = true
         )
         val rootMobile = LibraryRootEntity(
             id = uid("root.mobile"), uri = "content://com.example.audiobook.demo/mobile",
             displayName = "الكتب المحمولة", isPriority = false, isEnabled = true,
-            lastScanAt = now - day, scanStatus = ScanStatus.IDLE
+            lastScanAt = now - day, scanStatus = ScanStatus.IDLE, isDemo = true
         )
         database.libraryRootDao().insert(rootDemo)
         database.libraryRootDao().insert(rootMobile)
 
-        val tawfiq = AuthorEntity(uid("author.tawfiq"), "أحمد خالد توفيق", "#4338CA")
-        val mahfouz = AuthorEntity(uid("author.mahfouz"), "نجيب محفوظ", "#92400E")
-        val zaidan = AuthorEntity(uid("author.zaidan"), "يوسف زيدان", "#0F766E")
-        val samman = AuthorEntity(uid("author.samman"), "غادة السمان", "#BE185D")
+        val tawfiq = AuthorEntity(uid("author.tawfiq"), "أحمد خالد توفيق", "#4338CA", isDemo = true)
+        val mahfouz = AuthorEntity(uid("author.mahfouz"), "نجيب محفوظ", "#92400E", isDemo = true)
+        val zaidan = AuthorEntity(uid("author.zaidan"), "يوسف زيدان", "#0F766E", isDemo = true)
+        val samman = AuthorEntity(uid("author.samman"), "غادة السمان", "#BE185D", isDemo = true)
         listOf(tawfiq, mahfouz, zaidan, samman).forEach { database.authorDao().insert(it) }
 
-        val seriesAssateer = SeriesEntity(uid("series.assateer"), tawfiq.id, "ما وراء الطبيعة", "#312E81")
-        val seriesThalathia = SeriesEntity(uid("series.thalathia"), mahfouz.id, "الثلاثية", "#78350F")
+        val seriesAssateer = SeriesEntity(uid("series.assateer"), tawfiq.id, "ما وراء الطبيعة", "#312E81", isDemo = true)
+        val seriesThalathia = SeriesEntity(uid("series.thalathia"), mahfouz.id, "الثلاثية", "#78350F", isDemo = true)
         database.seriesDao().insert(seriesAssateer)
         database.seriesDao().insert(seriesThalathia)
 
@@ -148,8 +148,8 @@ class DatabaseSeeder @Inject constructor(
         progress(eLeilAma, 0, 0, ProgressStatus.NOT_STARTED, 1.0f)
 
         // --- مجموعات ومفضلة ---
-        val collectionNight = CollectionEntity(uid("coll.night"), "للاستماع الليلي", "🌙", null, SyncStatus.LOCAL_ONLY)
-        val collectionQueue = CollectionEntity(uid("coll.queue"), "قائمة الانتظار", "📚", null, SyncStatus.LOCAL_ONLY)
+        val collectionNight = CollectionEntity(uid("coll.night"), "للاستماع الليلي", "🌙", null, SyncStatus.LOCAL_ONLY, isDemo = true)
+        val collectionQueue = CollectionEntity(uid("coll.queue"), "قائمة الانتظار", "📚", null, SyncStatus.LOCAL_ONLY, isDemo = true)
         database.collectionDao().insert(collectionNight)
         database.collectionDao().insert(collectionQueue)
         addToCollection(collectionNight.id, bMaWara.id)

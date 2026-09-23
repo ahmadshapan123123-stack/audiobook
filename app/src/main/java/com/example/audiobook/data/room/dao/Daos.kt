@@ -27,6 +27,7 @@ interface LibraryRootDao : CrudDao<LibraryRootEntity> {
         @Query("SELECT * FROM library_roots WHERE isEnabled = 1 AND isPriority = 1 ORDER BY displayName") suspend fun getEnabledPriorityRoots(): List<LibraryRootEntity>
     @Query("SELECT COUNT(*) FROM library_roots") suspend fun countAll(): Int
     @Query("SELECT * FROM library_roots ORDER BY displayName") suspend fun getAll(): List<LibraryRootEntity>
+    @Query("SELECT * FROM library_roots WHERE isDemo = 1") suspend fun getDemoRoots(): List<LibraryRootEntity>
 }
 
 @Dao
@@ -37,6 +38,8 @@ interface AuthorDao : CrudDao<AuthorEntity> {
     @Query("SELECT * FROM authors WHERE id = :id") suspend fun getById(id: UUID): AuthorEntity?
     @Query("SELECT * FROM authors WHERE name = :name LIMIT 1") suspend fun getByName(name: String): AuthorEntity?
     @Query("SELECT * FROM authors") fun observeAll(): Flow<List<AuthorEntity>>
+    @Query("SELECT * FROM authors WHERE isDemo = 1 AND id NOT IN (SELECT authorId FROM books)") suspend fun getDemoOrphans(): List<AuthorEntity>
+    @Query("UPDATE authors SET isDemo = 0 WHERE isDemo = 1 AND id IN (SELECT authorId FROM books)") suspend fun clearDemoFlagForAuthorsWithBooks()
 }
 
 @Dao
@@ -47,6 +50,8 @@ interface SeriesDao : CrudDao<SeriesEntity> {
     @Query("SELECT * FROM series WHERE id = :id") suspend fun getById(id: UUID): SeriesEntity?
     @Query("SELECT * FROM series WHERE authorId = :authorId ORDER BY name") suspend fun getByParent(authorId: UUID): List<SeriesEntity>
     @Query("SELECT * FROM series") fun observeAll(): Flow<List<SeriesEntity>>
+    @Query("SELECT * FROM series WHERE isDemo = 1 AND id NOT IN (SELECT seriesId FROM books WHERE seriesId IS NOT NULL)") suspend fun getDemoOrphans(): List<SeriesEntity>
+    @Query("UPDATE series SET isDemo = 0 WHERE isDemo = 1 AND id IN (SELECT seriesId FROM books WHERE seriesId IS NOT NULL)") suspend fun clearDemoFlagForSeriesWithBooks()
 }
 
 @Dao
@@ -148,6 +153,8 @@ interface CollectionDao : CrudDao<CollectionEntity> {
     @Query("SELECT * FROM collections WHERE id = :id") suspend fun getById(id: UUID): CollectionEntity?
     @Query("SELECT * FROM collections WHERE name = :name LIMIT 1") suspend fun getByName(name: String): CollectionEntity?
     @Query("SELECT * FROM collections") fun observeAll(): Flow<List<CollectionEntity>>
+    @Query("SELECT * FROM collections WHERE isDemo = 1 AND id NOT IN (SELECT collectionId FROM collection_book_cross_ref)") suspend fun getDemoOrphans(): List<CollectionEntity>
+    @Query("UPDATE collections SET isDemo = 0 WHERE isDemo = 1 AND id IN (SELECT collectionId FROM collection_book_cross_ref)") suspend fun clearDemoFlagForCollectionsWithMembers()
 }
 
 @Dao
@@ -177,6 +184,7 @@ interface ListeningSessionDao : CrudDao<ListeningSessionEntity> {
     @Delete override suspend fun delete(entity: ListeningSessionEntity)
     @Query("SELECT * FROM listening_sessions WHERE id = :id") suspend fun getById(id: UUID): ListeningSessionEntity?
     @Query("SELECT * FROM listening_sessions WHERE editionId = :editionId ORDER BY startedAt DESC") suspend fun getByParent(editionId: UUID): List<ListeningSessionEntity>
+    @Query("SELECT * FROM listening_sessions WHERE editionId = :editionId ORDER BY startedAt DESC") fun observeByParent(editionId: UUID): Flow<List<ListeningSessionEntity>>
     @Query("SELECT * FROM listening_sessions WHERE sessionState = 'ACTIVE'") suspend fun getActiveSessions(): List<ListeningSessionEntity>
 }
 
@@ -327,4 +335,21 @@ interface ChapterCompletionDao {
     /** IGNORE يحافظ على أول وقت اكتمال: التسجيل "مرة واحدة فقط لكل فصل". */
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(entity: ChapterCompletionEntity)
     @Query("DELETE FROM chapter_completions WHERE editionId = :editionId") suspend fun deleteForEdition(editionId: UUID)
+    @Query("SELECT * FROM chapter_completions WHERE editionId = :editionId") suspend fun getByEdition(editionId: UUID): List<ChapterCompletionEntity>
+}
+
+@Dao
+interface PendingDiscoveryDao {
+    /** IGNORE + المفتاح الفريد (rootId, folderPath) = تسجيل واحد لكل مجلد مهما تكرر الفحص. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(entity: PendingDiscoveryEntity)
+    @Query("SELECT * FROM pending_discoveries WHERE status = 'PENDING' ORDER BY discoveredAt DESC") fun observePending(): Flow<List<PendingDiscoveryEntity>>
+    @Query("SELECT * FROM pending_discoveries WHERE id = :id") suspend fun getById(id: UUID): PendingDiscoveryEntity?
+    @Query("SELECT * FROM pending_discoveries WHERE status = 'PENDING' AND rootId = :rootId ORDER BY discoveredAt DESC") suspend fun getPendingByRoot(rootId: UUID): List<PendingDiscoveryEntity>
+    @Query("SELECT COUNT(*) FROM pending_discoveries WHERE status = 'PENDING' AND rootId = :rootId") suspend fun countPendingByRoot(rootId: UUID): Int
+    @Query("SELECT COUNT(*) FROM pending_discoveries WHERE status = 'PENDING'") suspend fun countAllPending(): Int
+    @Query("SELECT EXISTS(SELECT 1 FROM pending_discoveries WHERE status = 'IGNORED' AND rootId = :rootId AND folderPath = :folderPath)") suspend fun isIgnored(rootId: UUID, folderPath: String): Boolean
+    @Query("UPDATE pending_discoveries SET status = 'RESOLVED' WHERE id = :id") suspend fun markResolved(id: UUID)
+    @Query("UPDATE pending_discoveries SET status = 'IGNORED' WHERE id = :id") suspend fun markIgnored(id: UUID)
+    @Query("UPDATE pending_discoveries SET status = 'RESOLVED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun resolveAllForRoot(rootId: UUID)
+    @Query("UPDATE pending_discoveries SET status = 'IGNORED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun ignoreAllForRoot(rootId: UUID)
 }

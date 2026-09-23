@@ -3,6 +3,7 @@ package com.example.audiobook.presentation.entitydetails
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audiobook.R
 import com.example.audiobook.data.room.dao.AuthorDao
 import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.EditionDao
@@ -14,6 +15,7 @@ import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.domain.usecases.LibraryManagement
+import com.example.audiobook.presentation.common.OpMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -55,8 +57,19 @@ class AuthorDetailsViewModel @Inject constructor(
         savedStateHandle.get<String>("id") ?: throw IllegalArgumentException("author id navigation argument missing")
     )
 
-    private val _undoEvent = MutableStateFlow<String?>(null)
-    val undoEvent: StateFlow<String?> = _undoEvent
+    /** أثر قابل للتراجع ضمن نافذة السناكبار (5 ثوانٍ): حذف أو دمج. */
+    private sealed interface AuthorUndo {
+        data class Deleted(val snapshot: LibraryManagement.AuthorSnapshot) : AuthorUndo
+        data class Merged(val snapshot: LibraryManagement.AuthorMergeSnapshot) : AuthorUndo
+    }
+
+    private val pendingUndo = MutableStateFlow<AuthorUndo?>(null)
+    private val _messages = MutableStateFlow<OpMessage?>(null)
+    val messages: StateFlow<OpMessage?> = _messages
+
+    fun consumeMessage() {
+        _messages.value = null
+    }
 
     val uiState: StateFlow<AuthorDetailsUiState> = combine(
         authorDao.observeAll(),
@@ -123,6 +136,22 @@ class AuthorDetailsViewModel @Inject constructor(
         }
     }
 
+    /** إنشاء سلسلة جديدة ضمن المؤلف الحالي (تظهر فورًا كمجموعة في الصفحة). */
+    fun createSeries(name: String) {
+        viewModelScope.launch {
+            val trimmed = name.trim()
+            if (trimmed.isBlank()) return@launch
+            seriesDao.insert(
+                SeriesEntity(
+                    id = UUID.randomUUID(),
+                    authorId = authorId,
+                    name = trimmed,
+                    colorTheme = null
+                )
+            )
+        }
+    }
+
     fun addBookToAuthor(bookId: UUID) {
         viewModelScope.launch {
             val book = bookDao.getById(bookId) ?: return@launch
@@ -139,18 +168,33 @@ class AuthorDetailsViewModel @Inject constructor(
         }
     }
 
-    fun deleteAuthor(onDone: () -> Unit) {
+    fun deleteAuthor() {
         viewModelScope.launch {
+            val snapshot = management.snapshotAuthor(authorId)
             management.deleteAuthor(authorId)
-            onDone()
+            pendingUndo.value = AuthorUndo.Deleted(snapshot)
+            _messages.value = OpMessage(R.string.author_deleted_undo)
         }
     }
 
-    fun mergeAuthors(targetId: UUID, onDone: () -> Unit) {
+    fun mergeAuthors(targetId: UUID) {
         viewModelScope.launch {
-            management.mergeAuthors(authorId, targetId)
-            _undoEvent.value = "merged"
-            onDone()
+            if (targetId == authorId) return@launch
+            val snapshot = management.mergeAuthors(authorId, targetId)
+            pendingUndo.value = AuthorUndo.Merged(snapshot)
+            _messages.value = OpMessage(R.string.author_merged_undo)
+        }
+    }
+
+    fun undo() {
+        val action = pendingUndo.value ?: return
+        viewModelScope.launch {
+            when (action) {
+                is AuthorUndo.Deleted -> management.restoreAuthor(action.snapshot)
+                is AuthorUndo.Merged -> management.undoMergeAuthors(action.snapshot)
+            }
+            pendingUndo.value = null
+            _messages.value = null
         }
     }
 }

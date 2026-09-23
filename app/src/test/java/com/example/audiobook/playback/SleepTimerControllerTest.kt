@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -382,14 +383,14 @@ class SleepTimerControllerTest {
 
     // ---- دوال مساعدة ----
 
-    /** الإدراج غير متزامن (executor وحيد الخيط) — ننتظر حتى يظهر السجل. */
+    /**
+     * انتظار حتمي عبر Flow: DAO يبثّ تلقائيًا عند كل إدراج، بدون أي
+     * Thread.sleep أو انتظار بوقت حقيقي. first{} يعلق حتى يتحقق الشرط،
+     * و withTimeout(5s) طوق أمان فقط ضد انحشار حقيقي.
+     */
     private suspend fun awaitSessionCount(editionId: UUID, expected: Int) {
-        val deadline = System.currentTimeMillis() + 5_000L
-        while (true) {
-            val n = database.listeningSessionDao().getByParent(editionId).size
-            if (n == expected) return
-            if (System.currentTimeMillis() > deadline) assertEquals("الجلسات المسجلة", expected, n)
-            Thread.sleep(5)
+        withTimeout(5_000L) {
+            database.listeningSessionDao().observeByParent(editionId).first { it.size == expected }
         }
     }
 

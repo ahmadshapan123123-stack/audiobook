@@ -11,7 +11,7 @@ import com.example.audiobook.data.room.AppDatabase
 
 /**
  * Factory helpers for tests: builds a real [LibraryManagement] from an in-memory
- * [AppDatabase] (avoids repeating its 13-DAO constructor at every call site),
+ * [AppDatabase] (avoids repeating its multi-DAO constructor at every call site),
  * plus no-op scan/reclassify dependencies so tests can construct [ScanRoot],
  * [ScanLibraryNow] and [ReclassifyLibrary] with an empty library.
  */
@@ -27,8 +27,8 @@ fun libraryManagementFor(database: AppDatabase): LibraryManagement = LibraryMana
     collectionDao = database.collectionDao(),
     crossRefDao = database.collectionBookCrossRefDao(),
     favoriteBookDao = database.favoriteBookDao(),
-    libraryRootDao = database.libraryRootDao(),
-    chapterCompletionDao = database.chapterCompletionDao()
+    chapterCompletionDao = database.chapterCompletionDao(),
+    libraryRootDao = database.libraryRootDao()
 )
 
 /** File source that reports an empty library (used when a test never scans). */

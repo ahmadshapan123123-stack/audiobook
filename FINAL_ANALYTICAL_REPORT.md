@@ -2,12 +2,14 @@
 
 Report basis: static code inspection of the workspace at `D:\New folder (2)\audiobook-main\audiobook-main`, plus verified build artifacts already on disk (`app/build/**`), git history, and lint/test-results XMLs. **No source file was modified and no rebuild was triggered** for this report.
 
+> **Staleness note (updated 2026-09-20):** the test/lint numbers below were refreshed after the September-2026 audit pass (`:app:testDebugUnitTest` = **43 suites / 194 tests, 0 failures/errors/skipped**; `:app:lint` = "Lint found no new issues", baseline filters **11 errors / 168 warnings / 2 hints** via `app/lint-baseline.xml`).
+
 Build evidence referenced below (on-disk artifacts):
 - `app/build/outputs/apk/debug/app-debug.apk` — 27,386,786 bytes.
 - `app/build/outputs/apk/release/app-release.apk` — 4,937,726 bytes (~4.9 MB, R8-shrunk).
-- `app/build/reports/lint-results-debug.txt` — "No errors or warnings" (185 issues filtered by baseline).
-- `app/build/test-results/testDebugUnitTest/*.xml` — 38 suites, **155 tests, 0 failures, 0 errors, 0 skipped** (verified by parsing each XML).
-- `app/lint-baseline.xml` — 186 `<issue>` elements, 185 with `id=` (format 6, one readme-style element); lint 9.4.0.
+- `app/build/reports/lint-results-debug.txt` — "No errors or warnings" (182 issues filtered by baseline, of which 11 errors / 168 warnings / 2 hints).
+- `app/build/test-results/testDebugUnitTest/*.xml` — 43 suites, **194 tests, 0 failures, 0 errors, 0 skipped** (verified by parsing each XML).
+- `app/lint-baseline.xml` — 182 `<issue>` elements all with `id=` (format 6); lint 9.4.0.
 
 ---
 
@@ -31,7 +33,7 @@ f4b229d Player: compact text-only pills; deck presets + sleep presets
 
 **Working tree:** uncommitted modifications across 35+ files (manifest, MainActivity, demonstration seeders, player, settings, splash, logo resources, strings). These correspond to the last pass "Fix demo data on devices, add onboarding, fix scan button, add app logo" (HEAD `a3a6796`).
 
-**Overall state: PARTIAL** — a release-quality audiobook player with demonstrable, working features across every pass, with a bounded set of honest gaps (a handful of `NOT TESTED`/`NOT REACHABLE`/lint-warning areas) documented per section below. The app builds, lints clean (baseline-suppressed), and all 155 unit/integration tests pass.
+**Overall state: PARTIAL** — a release-quality audiobook player with demonstrable, working features across every pass, with a bounded set of honest gaps (a handful of `NOT TESTED`/`NOT REACHABLE`/lint-warning areas) documented per section below. The app builds, lints clean (baseline-suppressed), and all 194 unit/integration tests pass.
 
 ---
 
@@ -39,10 +41,10 @@ f4b229d Player: compact text-only pills; deck presets + sleep presets
 
 | Item | Status | Evidence |
 |---|---|---|
-| `:app:testDebugUnitTest` | DONE — PASS | 38 suites / 155 tests, 0 failures/errors/skipped (summed from test-results XMLs). Suite list in Section G. |
+| `:app:testDebugUnitTest` | DONE — PASS | 43 suites / 194 tests, 0 failures/errors/skipped (summed from test-results XMLs). Suite list in Section G. |
 | `:app:assembleDebug` | DONE — PASS | `app-debug.apk` = 27,386,786 B on disk. |
 | `:app:assembleRelease` | DONE — PASS | `app-release.apk` = 4,937,726 B on disk. |
-| `:app:lintDebug` | DONE — PASS | `lint-results-debug.txt`: "No errors or warnings". Baseline filters 15 errors / 168 warnings / 2 hints. |
+| `:app:lintDebug` | DONE — PASS | `lint-results-debug.txt`: "No errors or warnings". Baseline filters 11 errors / 168 warnings / 2 hints. |
 | R8 strippings of demo injected | DONE — verified | dexdump of release APK previously confirmed no `DatabaseSeeder`/`DemoAudioProvider`/`SeederEntryPoint`. Reinforced statically: gate is `BuildConfig.DEBUG` (constant in R8) with a dead-code branch (`MainActivity.kt:187-193`) and debug-only manifest provider. |
 | Physical-device runtime verification | NOT TESTED | No device was attached/used during the report; UI-behavior claims below are static-analysis based unless backed by a test in Section G. |
 | Android lint + unit tests in a single clean invocation | NOT TESTED | No clean rebuild was permitted; on-disk artifacts were the evidence. |
@@ -150,7 +152,7 @@ f4b229d Player: compact text-only pills; deck presets + sleep presets
 - `app/build.gradle.kts`: `compileSdk 36 / minSdk 23 / targetSdk 36`; release `minifyEnabled true` + `shrinkResources true`; signing uses `keystore.properties` when present else debug keystore fallback; `proguardFiles` incl. `app/proguard-rules.pro`.
 - `app/proguard-rules.pro` (28 lines): keeps enums, Room entities/DAOs, data attributes, app entry points (`BuildConfig`), `dontwarn` for internal refs.
 - `app/lint-baseline.xml` — `lint { baseline = file("lint-baseline.xml") }`; baseline counts in Section B.
-- Current lint run: "No errors or warnings". The 185 filtered (15 errors / 168 warnings / 2 hints) are mostly `UnusedResources` (83), `UseKtx` (30), `GradleDependency` (16), `UseTomlInstead` (13), `NewApi` (8), `NewerVersionAvailable` (5), `MissingPermission` (5), `IconLauncherShape` (5), plus 20 others (see counts table in Section M).
+- Current lint run: "No errors or warnings". The 182 filtered (11 errors / 168 warnings / 2 hints) are mostly `UnusedResources` (83), `UseKtx` (30), `GradleDependency` (16), `UseTomlInstead` (13), `NewerVersionAvailable` (5), `MissingPermission` (5), `IconLauncherShape` (5), `NewApi` (4), plus 20 others (see counts table in Section M).
 
 ### G2. Demo data
 - Demo content classes live in MAIN source (Hilt can't re-open final classes), but:
@@ -160,7 +162,7 @@ f4b229d Player: compact text-only pills; deck presets + sleep presets
   - `DatabaseSeeder.kt:13-14` documents the gate and no-ops if any book exists.
 - R8 proof: `BuildConfig.DEBUG` is a compile-time constant → both the `SeederEntryPoint` branch and `DatabaseSeeder.invoke` graph are stripped in release; dexdump confirmed absence.
 
-### G3. Test inventory (verified from on-disk XMLs) — 38 suites, 155 tests, ALL GREEN
+### G3. Test inventory (verified from on-disk XMLs) — 43 suites, 194 tests, ALL GREEN
 ```
 com.example.audiobook.data.repository.StatisticsRepositoryIntegrationTest       8
 com.example.audiobook.data.room.RoomDataTest                                    6
@@ -227,7 +229,7 @@ com.example.audiobook.presentation.theme.LibraryThemeTest                       
 | F17 | Logo launcher/notification icons | DONE | `ic_launcher*.xml`, `ic_stat_ather.xml`, `colors.xml` | NOT TESTED (lint-guarded) |
 | F18 | R8/shrink/release signing | DONE | `app/build.gradle.kts`; proguard file; APK on disk | YES (release APK verified) |
 | F19 | Lint baseline | DONE | `app/lint-baseline.xml`; lint-results txt | YES (0 active) |
-| F20 | 155 unit/integration tests | DONE | test-results XMLs | YES (155/155) |
+| F20 | 194 unit/integration tests | DONE | test-results XMLs | YES (194/194) |
 | F21 | Demo in debug-only + release cleanup | DONE | `MainActivity.kt:151,187-193`; `DatabaseSeeder.kt:13-14`; debug manifest | YES (dexdump) |
 | F22 | Stats & history real VMs | DONE | `Statistics*`, `History*` | YES (8+9+3+3) |
 | F23 | Onboarding gate | DONE | `AppSettings.kt:237`; `OnboardingScreen.kt` | PARTIAL (prefs tested, screen manual) |

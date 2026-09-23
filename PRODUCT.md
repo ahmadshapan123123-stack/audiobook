@@ -41,7 +41,7 @@ android
   9. Settings — تبديل الثيم فوري (Light/Dark/AMOLED)، مستوى الذكاء، افتراضيات Sleep Timer.
   10. LibraryRoots — المجلدات المضافة، تفعيل/تعطيل، Priority، حالة الفحص (IDLE/SCANNING/ERROR).
   11. DesignSystemShowcase — معرض عناصر نظام التصميم.
-- التطبيق يُختبر آليًا فعليًا: بنية `androidTest` موجودة (SmokeTest)، ومعها طقم اختبارات JVM واسع (13+ ملفًا، تشغيل R8 = 130/130 أخضر في `R6_FINAL_REPORT.md`).
+- التطبيق يُختبر آليًا فعليًا: بنية `androidTest` موجودة (SmokeTest)، ومعها طقم اختبارات JVM واسع (13+ ملفًا، تشغيل ما بعد Sep-2026 = 194/194 أخضر في `FINAL_ANALYTICAL_REPORT.md`).
 
 ## Capabilities and Constraints
 
@@ -61,7 +61,7 @@ android
 ## Evidence on Hand
 
 - لقطات الحالة الحالية على المحاكي: `docs/screenshots/` (00_baseline … 16_section_recent + لقطات Library بالأوضاع الثلاثة وغيرها).
-- تقرير تشغيل الاختبارات الكلية: `R6_FINAL_REPORT.md` (R7=124/124، R8=130/130 أخضر) — ومنه Addenda R7/R8 لحالة الثلاث نقاط الذكية.
+- تقرير تشغيل الاختبارات الكلية: `R6_FINAL_REPORT.md` (R7=124/124، R8=130/130 أخضر، ومحدَّث Sep-2026 إلى 194/194) — ومنه Addenda R7/R8 لحالة الثلاث نقاط الذكية.
 - كود الواجهة كاملاً بمكانه الحالي: `app/src/main/java/com/example/audiobook/presentation/**` (ملفات الـ11 شاشة + ViewModels الخاصة بها).
 - فجوة مكشوفة: `AUDIOBOOK_APP_SPEC.md v2` غير موجود في المستودع؛ يُراجع مرجعًا عند توفره — لا تُختلق تفاصيل MUST غائبة عنه.
 

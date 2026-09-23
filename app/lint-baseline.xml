@@ -1478,13 +1478,6 @@
     </issue>
 
     <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/app_logo.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/app_logo.png"/>
-    </issue>
-
-    <issue
         id="UseKtx"
         message="Use the KTX extension function `SharedPreferences.edit` instead?"
         errorLine1="        prefs.edit().putFloat(KEY_DEFAULT_SPEED, value).apply()"

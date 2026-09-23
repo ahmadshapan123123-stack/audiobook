@@ -1,0 +1,3 @@
+﻿09-21 13:11:27.057  3027  3027 D WM-WorkerWrapper: Starting work for com.example.audiobook.background.scanworker.ScanWorker
+09-21 13:11:28.722  3027  3101 I ScanRoot: scan-complete root=771044bc-e34c-4e0d-ac79-098602c2452a files=6 metadataReads=6 cacheHits=0 missing=0 restored=0 created=4 refined=0 autoMerged=0 deduped=0
+09-21 13:11:28.730  3027  3045 I WM-WorkerWrapper: Worker result SUCCESS for Work [ id=b48551b9-3d13-45fd-9f03-c710618c9d91, tags={ com.example.audiobook.background.scanworker.ScanWorker,scan-background,root-771044bc-e34c-4e0d-ac79-098602c2452a } ]

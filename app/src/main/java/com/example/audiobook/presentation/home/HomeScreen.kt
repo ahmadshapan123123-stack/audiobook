@@ -77,6 +77,9 @@ fun HomeScreen(
     onOpenCollection: (UUID) -> Unit = {},
     onOpenListenNow: () -> Unit = {},
     onBookOptions: (UUID) -> Unit = {},
+    onAuthorOptions: (UUID) -> Unit = {},
+    onSeriesOptions: (UUID) -> Unit = {},
+    onCollectionOptions: (UUID) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -168,7 +171,7 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                         ) {
                             items(state.series, key = { it.seriesId }) { s ->
-                                HomeSeriesCard(s, onClick = { onOpenSeries(s.seriesId) })
+                                HomeSeriesCard(s, onClick = { onOpenSeries(s.seriesId) }, onOptions = { onSeriesOptions(s.seriesId) })
                             }
                         }
                     }
@@ -185,7 +188,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(state.authors, key = { it.authorId }) { a ->
-                            HomeAuthorCard(a, onClick = { onOpenAuthor(a.authorId) })
+                            HomeAuthorCard(a, onClick = { onOpenAuthor(a.authorId) }, onOptions = { onAuthorOptions(a.authorId) })
                         }
                     }
                 }
@@ -197,7 +200,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                     ) {
                         items(state.collections, key = { it.collectionId }) { c ->
-                            HomeCollectionCard(c, onClick = { onOpenCollection(c.collectionId) })
+                            HomeCollectionCard(c, onClick = { onOpenCollection(c.collectionId) }, onOptions = { onCollectionOptions(c.collectionId) })
                         }
                     }
                 }
@@ -501,13 +504,18 @@ internal fun HomeListenNowCard(onClick: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-internal fun HomeSeriesCard(series: HomeSeries, onClick: () -> Unit) {
+internal fun HomeSeriesCard(series: HomeSeries, onClick: () -> Unit, onOptions: () -> Unit = {}) {
     val covers = series.books.take(4)
     Column(
         modifier = Modifier.width(160.dp)
             .minTouchTarget()
             .clip(RoundedCornerShape(AppSpacing.xs))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onOptions
+            )
             .padding(AppSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
@@ -558,13 +566,18 @@ internal fun HomeSeriesCard(series: HomeSeries, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HomeAuthorCard(author: HomeAuthor, onClick: () -> Unit) {
+private fun HomeAuthorCard(author: HomeAuthor, onClick: () -> Unit, onOptions: () -> Unit = {}) {
     val sample = author.books.take(2)
     Column(
         modifier = Modifier.width(160.dp)
             .minTouchTarget()
             .clip(RoundedCornerShape(AppSpacing.xs))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onOptions
+            )
             .padding(AppSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {
@@ -596,13 +609,18 @@ private fun HomeAuthorCard(author: HomeAuthor, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HomeCollectionCard(collection: HomeCollection, onClick: () -> Unit) {
+private fun HomeCollectionCard(collection: HomeCollection, onClick: () -> Unit, onOptions: () -> Unit = {}) {
     val covers = collection.books.take(4)
     Column(
         modifier = Modifier.width(160.dp)
             .minTouchTarget()
             .clip(RoundedCornerShape(AppSpacing.xs))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onOptions
+            )
             .padding(AppSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
     ) {

@@ -39,6 +39,8 @@ object DatabaseModule {
     @Provides fun provideAudioFileAggregateDao(db: AppDatabase) = db.audioFileAggregateDao()
     @Provides fun provideFavoriteBookDao(db: AppDatabase) = db.favoriteBookDao()
 
+    @Provides fun providePendingDiscoveryDao(db: AppDatabase) = db.pendingDiscoveryDao()
+
     @Provides fun provideBookRepository(dao: com.example.audiobook.data.room.dao.BookDao): BookRepository = LocalOnlyBookRepository(dao)
     @Provides fun provideEditionRepository(dao: com.example.audiobook.data.room.dao.EditionDao): EditionRepository = LocalOnlyEditionRepository(dao)
     @Provides fun provideChapterRepository(dao: com.example.audiobook.data.room.dao.ChapterDao): ChapterRepository = LocalOnlyChapterRepository(dao)

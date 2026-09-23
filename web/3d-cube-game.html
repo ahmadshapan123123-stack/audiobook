@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>عالم المكعبات — لعبة ثلاثية الأبعاد</title>
+<style>
+  :root {
+    --bg:#0b0f24; --panel:rgba(13,18,44,.82); --border:rgba(122,190,255,.22);
+    --text:#edf2ff; --muted:#9fb0d8; --accent:#2dd4bf; --bright:#45e0cc; --danger:#ff6b6b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;font-family:"Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--text)}
+  #game{position:fixed;inset:0}
+  canvas{display:block}
+  #toolbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;padding:8px;
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;backdrop-filter:blur(10px);
+    z-index:10;flex-wrap:wrap;justify-content:center;max-width:min(96vw,560px)}
+  .block-btn{width:44px;height:44px;border-radius:10px;border:2px solid transparent;cursor:pointer;
+    display:grid;place-items:center;background:#222a4a;transition:transform .08s,border-color .15s}
+  .block-btn:hover{transform:scale(1.1)}
+  .block-btn.active{border-color:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .block-btn .swatch{width:26px;height:26px;border-radius:6px;pointer-events:none}
+  .block-btn .tip{position:absolute;bottom:-26px;right:0;font-size:10px;color:var(--muted);white-space:nowrap;display:none}
+  #hud{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:14px;padding:8px 16px;
+    background:var(--panel);border:1px solid var(--border);border-radius:14px;font-size:13px;color:var(--muted);
+    backdrop-filter:blur(8px);z-index:10;white-space:nowrap}
+  #hud b{color:var(--text);font-weight:600}
+  #msg{position:fixed;top:84px;left:50%;transform:translateX(-50%);background:var(--panel);
+    border:1px solid var(--border);border-radius:12px;padding:8px 16px;font-size:14px;color:var(--bright);
+    opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
+  #msg.show{opacity:1}
+  #overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;background:radial-gradient(circle at 50% 30%,#141b3d,#05060f 70%);z-index:20;text-align:center;padding:20px}
+  #overlay.hidden{display:none}
+  #overlay h1{font-size:clamp(26px,6vw,44px);background:linear-gradient(90deg,var(--accent),var(--bright));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #overlay p{color:var(--muted);font-size:15px;max-width:430px;line-height:1.9}
+  .keys{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;max-width:430px}
+  kbd{background:#1c2447;border:1px solid #33406f;border-radius:7px;padding:4px 10px;font-size:12px;color:var(--text);font-family:inherit}
+  .btn{background:linear-gradient(135deg,var(--accent),#1fa896);color:#03110f;border:none;border-radius:14px;
+    font-size:17px;font-weight:700;font-family:inherit;padding:12px 44px;cursor:pointer;
+    box-shadow:0 8px 28px rgba(45,212,191,.4);transition:transform .1s}
+  .btn:hover{transform:scale(1.05)}
+  .btn.secondary{background:#1f2749;color:var(--text);box-shadow:none;font-size:13px;padding:8px 18px}
+  .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .foot{font-size:12px;color:var(--muted)}
+  #touch{position:fixed;inset:0;z-index:8;display:none;pointer-events:none}
+  #touch.active{display:block}
+  .stick-zone{position:absolute;bottom:96px;width:130px;height:130px;pointer-events:auto;border-radius:50%}
+  #stickMove{left:20px}
+  #stickLook{right:20px}
+  .stick{position:absolute;width:58px;height:58px;border-radius:50%;background:rgba(45,212,191,.22);
+    border:2px solid rgba(45,212,191,.5);left:36px;top:36px;box-shadow:0 0 18px rgba(45,212,191,.3)}
+  .stick-center{position:absolute;width:130px;height:130px;border-radius:50%;left:0;top:0;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);display:grid;place-items:end center;
+    padding-bottom:8px;font-size:11px;color:#fff;opacity:.85}
+  #debug{position:fixed;bottom:72px;left:8px;font-size:11px;color:#556291;z-index:5;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="toolbar"></div>
+<div id="hud">
+  <span id="hudPos">الموضع: 0 , 0 , 0</span>
+  <span id="hudCount">الشبكة: 0</span>
+  <span id="hudMode">الوضع: <b>كسر</b></span>
+</div>
+<div id="msg"></div>
+
+<div id="touch">
+  <div class="stick-zone" id="stickMove"><div class="stick-center">حركة</div><div class="stick"></div></div>
+  <div class="stick-zone" id="stickLook"><div class="stick-center">نظر</div><div class="stick"></div></div>
+</div>
+
+<div id="overlay">
+  <h1>عالم المكعبات</h1>
+  <p>عالم مكعبات تفاعلي ثلاثي الأبعاد يُولَّد تلقائيًا وبشكل ثابت. تجوّل بحرية، اكسر المكعبات أو ابنِ بها، واحفظ عالمك في متصفحك — ثم عد إليه لاحقًا.</p>
+  <div class="keys">
+    <kbd>W A S D</kbd><kbd>حركة</kbd>
+    <kbd>مسافة</kbd><kbd>قفز</kbd>
+    <kbd>زر أيسر</kbd><kbd>كسر</kbd>
+    <kbd>زر أيمن</kbd><kbd>وضع</kbd>
+    <kbd>E</kbd><kbd>وضع سريع</kbd>
+  </div>
+  <div class="row">
+    <button class="btn" id="startBtn">ابدأ اللعب</button>
+    <button class="btn secondary" id="resetBtn">عالم جديد</button>
+    <button class="btn secondary" id="saveBtn">حفظ الآن</button>
+  </div>
+  <p class="foot">💾 يُحفظ تلقائيًا بعد كل تعديل — البيانات داخل متصفحك فقط.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+'use strict';
+
+// ================= إعدادات =================
+var WORLD_RADIUS = 26;          // نصف قطر العالم عند البدء
+var GROUND_HILLS = 5;
+var MAX_BLOCKS   = 35000;
+var REBUILD_OPT  = 16000;       // حد إعادة البناء الكامل
+
+var PALETTE = [
+  { name:'عشب',   color:0x35b04f, opaque:true  },
+  { name:'تراب',  color:0x8a5a33, opaque:true  },
+  { name:'حجر',   color:0x8f93a3, opaque:true  },
+  { name:'خشب',   color:0x6b4b2a, opaque:true  },
+  { name:'ألواح', color:0xc08a3e, opaque:true  },
+  { name:'زمرد',  color:0x2ee6a8, opaque:true  },
+  { name:'ياقوت', color:0xe6367f, opaque:true  },
+  { name:'ذهب',   color:0xf5c518, opaque:true  },
+  { name:'زجاج',  color:0x9fd7ff, opaque:false }
+];
+
+// ================= مشهد وكاميرا =================
+var container = document.getElementById('game');
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f24);
+scene.fog = new THREE.FogExp2(0x0b0f24, 0.0055);
+
+var camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 400);
+camera.rotation.order = 'YXZ';
+
+var renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(innerWidth, innerHeight);
+container.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x89a5ff, 0.75));
+var sun = new THREE.DirectionalLight(0xfff2d0, 1.15);
+sun.position.set(60, 90, 40);
+scene.add(sun);
+var rim = new THREE.DirectionalLight(0x45e0cc, 0.3);
+rim.position.set(-40, 20, -30);
+scene.add(rim);
+
+(function stars() {
+  var geo = new THREE.BufferGeometry();
+  var n = 800, p = new Float32Array(n * 3);
+  for (var i = 0; i < n; i++) {
+    p[i*3]   = (Math.random() - .5) * 800;
+    p[i*3+1] = Math.random() * 320 + 40;
+    p[i*3+2] = (Math.random() - .5) * 800;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color:0xcdd8ff, size:0.6, transparent:true, opacity:0.85 })));
+})();
+
+// تحديد المكعب الحالي
+var highlight = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)),
+  new THREE.LineBasicMaterial({ color:0x45e0cc, transparent:true, opacity:0.95 })
+);
+highlight.visible = false;
+scene.add(highlight);
+
+// ================= العالم =================
+var world = new Map();            // "x,y,z" -> {x,y,z,color,opaque}
+var meshes = new Map();           // color -> InstancedMesh
+var worldRoot = new THREE.Group();
+scene.add(worldRoot);
+
+function k(x, y, z) { return x + ',' + y + ',' + z; }
+
+// ارتفاع حتمي (نفس التضاريس دائماً)
+function heightAt(x, z) {
+  var h = 1;
+  h += Math.floor(Math.sin(x * 0.27 + 1.7) * 2.2 + Math.sin(z * 0.23) * 2.1);
+  h += Math.floor(Math.sin((x + z) * 0.11) * 1.8 + Math.cos((x - z) * 0.08) * 1.6);
+  return Math.max(1, Math.min(1 + GROUND_HILLS, h));
+}
+
+function genWorld() {
+  world.clear();
+  var g = PALETTE[0].color, d = PALETTE[1].color, s = PALETTE[2].color;
+  outer:
+  for (var x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
+    for (var z = -WORLD_RADIUS; z <= WORLD_RADIUS; z++) {
+      var top = heightAt(x, z);
+      for (var y = 1; y <= top; y++) {
+        var c = (y === top) ? g : (y > top - 3 ? d : s);
+        world.set(k(x, y, z), { x:x, y:y, z:z, color:c, opaque:true });
+        if (world.size >= MAX_BLOCKS) break outer;
+      }
+    }
+  }
+}
+
+// ================= بناء الشبكات (InstancedMesh) =================
+function buildMeshes() {
+  var byColor = {};
+  world.forEach(function (b) {
+    (byColor[b.color] = byColor[b.color] || []).push(b);
+  });
+  meshes.forEach(function (m) { worldRoot.remove(m); m.geometry.dispose(); m.material.dispose(); });
+  meshes.clear();
+
+  var dummy = new THREE.Object3D();
+  Object.keys(byColor).forEach(function (hex) {
+    var list = byColor[hex];
+    var opaque = list[0].opaque;
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    var mat = new THREE.MeshLambertMaterial({
+      color: parseInt(hex, 10),
+      transparent: !opaque,
+      opacity: opaque ? 1 : 0.4
+    });
+    var im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(function (b, i) {
+      dummy.position.set(b.x, b.y, b.z);
+      dummy.updateMatrix();
+      im.setMatrixAt(i, dummy.matrix);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.frustumCulled = false;
+    worldRoot.add(im);
+    meshes.set(hex, im);
+  });
+}
+
+function rebuildAll() {
+  if (world.size > REBUILD_OPT) toast('العالم كبير — إعادة البناء قد تبطئ قليلاً');
+  buildMeshes();
+}
+
+// ================= الوصول للكتل =================
+function getBlock(x, y, z) {
+  if (y <= 0) return null;                       // تحت الأرض صلب دائماً
+  if (y === 0) return { color:0x3a4166, opaque:true }; // قاع افتراضي
+  return world.get(k(x, y, z)) || null;
+}
+
+function isSolid(x, y, z) {
+  var b = getBlock(x, y, z);
+  return !!(b && b.opaque !== false);
+}
+
+function setBlock(x, y, z, type) {
+  if (type) {
+    if (world.size >= MAX_BLOCKS) { toast('وصلت للحد الأقصى من المكعبات'); return; }
+    world.set(k(x, y, z), { x:x, y:y, z:z, color:type.color, opaque:type.opaque !== false });
+  } else {
+    world.delete(k(x, y, z));
+  }
+  dirty = true;
+}
+
+// ================= اللاعب والفيزياء =================
+var player = {
+  pos: new THREE.Vector3(0.5, 8, 0.5),
+  vel: new THREE.Vector3(),
+  onGround: false,
+  yaw: 0.6, pitch: -0.15,
+  speed: 9.5, jump: 8.4,
+  radius: 0.28, height: 1.8, eye: 1.6
+};
+
+var keys = {};
+var selected = 0;               // نوع المكعب المختار
+var dirty = false;
+var locked = false;
+var touchMode = false;
+var clock = new THREE.Clock();
+var raycaster = new THREE.Raycaster();
+// ================= أدوات مساعدة =================
+function toast(msg) {
+  var el = document.getElementById('msg');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove('show'); }, 2200);
+}
+
+function updateHUD() {
+  document.getElementById('hudPos').textContent =
+    'الموضع: ' + Math.round(player.pos.x) + ' , ' + Math.round(player.pos.y) + ' , ' + Math.round(player.pos.z);
+  document.getElementById('hudCount').textContent = 'الشبكة: ' + world.size;
+  document.getElementById('hudMode').innerHTML = 'الوضع: <b>' + (selected === -1 ? 'كسر' : 'وضع: ' + PALETTE[selected].name) + '</b>';
+}
+
+function updateToolbarSelection() {
+  var btns = document.querySelectorAll('.block-btn');
+  btns.forEach(function (b, i) {
+    b.classList.toggle('active', i === selected);
+  });
+}
+
+// ================= التضاريس للوحة =================
+var toolbar = document.getElementById('toolbar');
+PALETTE.forEach(function (t, i) {
+  var b = document.createElement('button');
+  b.className = 'block-btn';
+  b.title = t.name;
+  b.innerHTML = '<span class="swatch" style="background:' + '#' + t.color.toString(16).padStart(6, '0') + '"></span>';
+  b.addEventListener('click', function (e) {
+    e.stopPropagation();
+    selected = i;
+    updateToolbarSelection();
+    toast('مكعب مختار: ' + t.name);
+  });
+  toolbar.appendChild(b);
+});
+var brk = document.createElement('button');
+brk.className = 'block-btn';
+brk.title = 'كسر';
+brk.innerHTML = '<span style="color:#ff6b6b;font-size:20px;font-weight:700">✕</span>';
+brk.addEventListener('click', function (e) {
+  e.stopPropagation();
+  selected = -1;
+  updateToolbarSelection();
+  toast('وضع الكسر');
+});
+toolbar.appendChild(brk);
+selected = -1;
+updateToolbarSelection();
+updateHUD();
+
+// ================= التأثير على العالَة =================
+function apply(block, face) {
+  if (face && block && selected >= 0) {
+    var nx = block.x + face.x, ny = block.y + face.y, nz = block.z + face.z;
+    if (!playerAABB(nx, ny, nz)) setBlock(nx, ny, nz, PALETTE[selected]);
+    else toast('ممنوع — يوجد لاعب');
+  } else if (!face && block) {
+    setBlock(block.x, block.y, block.z, null);
+  }
+}
+
+function playerAABB(x, y, z) {
+  var r = player.radius, h = player.height;
+  var px = player.pos.x, py = player.pos.y - player.eye, pz = player.pos.z;
+  return (x + 1 > px - r && x < px + r) &&
+         (y + 1 > py && y < py + h) &&
+         (z + 1 > pz - r && z < pz + r);
+}
+
+// ================= تبسيط الكوليزين =================
+function collideMove(dt) {
+  var pos = player.pos, vel = player.vel;
+  var r = player.radius, h = player.height;
+
+  // X
+  pos.x += vel.x * dt;
+  if (collidesAABB()) {
+    pos.x -= vel.x * dt;
+    vel.x = 0;
+  }
+  // Z
+  pos.z += vel.z * dt;
+  if (collidesAABB()) {
+    pos.z -= vel.z * dt;
+    vel.z = 0;
+  }
+  // Y (هبوط/قفز)
+  pos.y += vel.y * dt;
+  var feet = pos.y - player.eye;
+  if (feet < 1) { pos.y = 1 + player.eye; vel.y = 0; player.onGround = true; }
+  else {
+    player.onGround = false;
+    if (collidesAABB()) {
+      if (vel.y < 0) player.onGround = true;
+      pos.y -= vel.y * dt;
+      vel.y = 0;
+    }
+  }
+  // سقوط خارج العالم → إعادة إنشاء شبكة تحته
+  if (pos.y < -20) {
+    pos.set(0.5, 20, 0.5);
+    vel.set(0, 0, 0);
+    toast('سقطت بين الصخور… أعدناك للنقطة الآمنة');
+  }
+}
+
+function collidesAABB() {
+  var pos = player.pos, r = player.radius;
+  var feet = pos.y - player.eye;
+  var x0 = Math.floor(pos.x - r), x1 = Math.floor(pos.x + r);
+  var y0 = Math.floor(feet),       y1 = Math.floor(feet + player.height - 0.001);
+  var z0 = Math.floor(pos.z - r), z1 = Math.floor(pos.z + r);
+  for (var x = x0; x <= x1; x++)
+    for (var y = y0; y <= y1; y++)
+      for (var z = z0; z <= z1; z++)
+        if (isSolid(x, y, z)) return true;
+  return false;
+}
+
+function step(dt) {
+  if (dt > 0.05) dt = 0.05;   // تجنّب القفزات بين الإطارات
+  var forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  forward.normalize();
+  var right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+
+  var move = new THREE.Vector3();
+  if (keys.KeyW || keys.ArrowUp)    move.add(forward);
+  if (keys.KeyS || keys.ArrowDown)  move.sub(forward);
+  if (keys.KeyD || keys.ArrowRight) move.add(right);
+  if (keys.KeyA || keys.ArrowLeft)  move.sub(right);
+  if (touchMoveVec) move.addScaledVector(forward, touchMoveVec.f).addScaledVector(right, touchMoveVec.r);
+
+  if (move.lengthSq() > 0) move.normalize().multiplyScalar(player.speed);
+
+  var accel = 12;
+  player.vel.x += (move.x - player.vel.x) * Math.min(1, accel * dt);
+  player.vel.z += (move.z - player.vel.z) * Math.min(1, accel * dt);
+
+  var jump = (keys.Space && player.onGround) || touchJump;
+  if (jump) { player.vel.y = player.jump; player.onGround = false; touchJump = false; }
+
+  player.vel.y -= 24 * dt;   // جاذبية
+  collideMove(dt);
+}
+
+// ================= التحكم =================
+document.addEventListener('keydown', function (e) {
+  keys[e.code] = true;
+  if (e.code === 'KeyF' && locked) { selected = selected === -1 ? 0 : -1; updateToolbarSelection(); updateHUD(); toast(selected === -1 ? 'وضع الكسر' : 'وضع البناء'); }
+  if (e.code === 'KeyE') { placeFacing(); }
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', function (e) { keys[e.code] = false; });
+
+document.addEventListener('mousemove', function (e) {
+  if (!locked) return;
+  player.yaw   -= e.movementX * 0.0023;
+  player.pitch -= e.movementY * 0.0023;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch));
+});
+
+document.addEventListener('mousedown', function (e) {
+  if (!locked || e.button !== 0) return;
+  e.preventDefault();
+  var hit = pick();
+  if (hit) apply(hit.block, null);
+});
+
+document.addEventListener('contextmenu', function (e) {
+  if (!locked) return;
+  e.preventDefault();
+  placeFacing();
+});
+
+function placeFacing() {
+  if (selected < 0) { updateToolbarSelection(); toast('اختر مكعبًا أولاً من الشريط العلوي'); return; }
+  var hit = pick();
+  if (hit) apply(hit.block, hit.face);
+}
+
+function pick() {
+  raycaster.setFromCamera({ x:0, y:0 }, camera);
+  raycaster.far = 130;
+  var hits = raycaster.intersectObjects(worldRoot.children, false);
+  if (!hits.length) return null;
+  var hit = hits[0];
+  if (!hit.face || !hit.face.normal) return null;
+  var n = hit.face.normal;
+  return {
+    block: {
+      x: Math.round(hit.point.x - n.x * 0.5),
+      y: Math.round(hit.point.y - n.y * 0.5),
+      z: Math.round(hit.point.z - n.z * 0.5)
+    },
+    face: { x:n.x, y:n.y, z:n.z }
+  };
+}
+
+// ================= الحفظ والاستعادة =================
+var SAVE_KEY = 'cubeWorld3D_v1';
+
+function saveWorld() {
+  try {
+    var arr = [];
+    world.forEach(function (b) { arr.push(b.x, b.y, b.z, b.color, b.opaque ? 1 : 0); });
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      blocks: arr, position: [player.pos.x, player.pos.y, player.pos.z],
+      selected: selected, date: Date.now()
+    }));
+  } catch (err) {
+    toast('تعذّر الحفظ: ' + err.message);
+  }
+}
+
+function loadWorld() {
+  try {
+    var raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    var data = JSON.parse(raw);
+    var arr = data.blocks;
+    world.clear();
+    for (var i = 0; i + 4 < arr.length; i += 5) {
+      world.set(k(arr[i], arr[i+1], arr[i+2]), {
+        x:arr[i], y:arr[i+1], z:arr[i+2],
+        color:arr[i+3], opaque: arr[i+4] === 1
+      });
+      if (world.size >= MAX_BLOCKS) break;
+    }
+    if (data.position) player.pos.set(data.position[0], data.position[1], data.position[2]);
+    if (typeof data.selected === 'number') { selected = data.selected; }
+    rebuildAll();
+    updateToolbarSelection();
+    updateHUD();
+    return true;
+  } catch (err) {
+    console.warn('تعذّر قراءة العالم المحفوظ', err);
+    return false;
+  }
+}
+
+function newWorld() {
+  genWorld();
+  player.pos.set(0.5, 20, 0.5);
+  player.vel.set(0, 0, 0);
+  dirty = true;
+  rebuildAll();
+  updateHUD();
+  saveWorld();
+  toast('عالم جديد 🎲');
+}
+
+// ================= أدوات اللمس =================
+var touchMoveVec = null;
+var touchJump = false;
+
+function isTouchDevice() {
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+}
+if (isTouchDevice()) {
+  touchMode = true;
+  document.getElementById('touch').classList.add('active');
+  initStick('stickMove', onMove);
+  initStick('stickLook', onLook);
+  var btn = document.getElementById('touch');
+  btn.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1 && !e.target.closest('.stick-zone')) tapBlock(e);
+  }, { passive:true });
+}
+
+function initStick(id, cb) {
+  var zone = document.getElementById(id);
+  var stick = zone.querySelector('.stick');
+  var base = { left:36, top:36 };
+  var sx = null, sy = null;
+  zone.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0];
+    sx = t.clientX; sy = t.clientY;
+    e.preventDefault();
+  }, { passive:false });
+  zone.addEventListener('touchmove', function (e) {
+    var t = e.changedTouches[0];
+    if (sx === null) return;
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    var max = 34;
+    if (dx >  max) dx =  max; if (dx < -max) dx = -max;
+    if (dy >  max) dy =  max; if (dy < -max) dy = -max;
+    stick.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    cb(dx / max, dy / max);
+    e.preventDefault();
+  }, { passive:false });
+  var end = function (e) {
+    sx = null; sy = null;
+    stick.style.transform = 'translate(0,0)';
+    cb(0, 0);
+  };
+  zone.addEventListener('touchend', end);
+  zone.addEventListener('touchcancel', end);
+}
+
+function onMove(dxf, dyr) {
+  touchMoveVec = { f: -dyr, r: dxf };
+}
+
+function onLook(dx, dy) {
+  player.yaw   -= dx * 0.55;
+  player.pitch -= dy * 0.55;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch));
+}
+
+var lastTap = 0;
+function tapBlock(e) {
+  var now = Date.now();
+  if (lastTap && now - lastTap < 300) { touchJump = true; lastTap = 0; toast('قفز!'); return; }
+  lastTap = now;
+  var hit = pick();
+  if (!hit) return;
+  if (selected >= 0) apply(hit.block, hit.face);   // وضع عند اختيار مكعب
+  else apply(hit.block, null);                     // كسر عند وضع الكسر
+}
+// ================= الطبقات والأزرار =================
+var overlay = document.getElementById('overlay');
+var canvas = renderer.domElement;
+
+function requestLock() {
+  try {
+    var p = canvas.requestPointerLock();
+    if (p && p.catch) p.catch(function () { enableDragFallback(); });
+  } catch (e) {
+    enableDragFallback();
+  }
+}
+
+function enableDragFallback() {
+  dragFallback = true;
+  overlay.classList.add('hidden');
+  toast('متصفحك لا يدعم قفل المؤشر — اسحب بالفأرة للتحكم بالكاميرا');
+}
+
+document.addEventListener('pointerlockchange', function () {
+  locked = document.pointerLockElement === canvas;
+  if (locked) {
+    overlay.classList.add('hidden');
+    updateHUD();
+  } else if (!touchMode && dragFallback !== true) {
+    overlay.classList.remove('hidden');
+    document.getElementById('startBtn').textContent = 'متابعة اللعب';
+  }
+});
+
+document.getElementById('startBtn').addEventListener('click', function () {
+  if (touchMode) { overlay.classList.add('hidden'); return; }
+  requestLock();
+  if (dragFallback) overlay.classList.add('hidden');
+});
+
+document.getElementById('resetBtn').addEventListener('click', function () {
+  if (touchMode || !locked) newWorld();
+  else if (confirm('إنشاء عالم جديد؟ سيُحفظ الجديد مكان القديم.')) newWorld();
+});
+
+document.getElementById('saveBtn').addEventListener('click', function () {
+  saveWorld();
+  toast('تم الحفظ ✓');
+});
+
+// بديل سحب الفأرة (عند غياب قفل المؤشر)
+var dragFallback = false;
+var dragging = false, lastX = 0, lastY = 0;
+document.addEventListener('mousedown', function (e) {
+  if (locked || touchMode) return;
+  if (e.target === canvas) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
+});
+document.addEventListener('mousemove', function (e) {
+  if (locked || !dragging) return;
+  player.yaw   -= (e.clientX - lastX) * 0.004;
+  player.pitch -= (e.clientY - lastY) * 0.004;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch));
+  lastX = e.clientX; lastY = e.clientY;
+});
+document.addEventListener('mouseup', function () { dragging = false; });
+
+// ================= الحلقة الرئيسية =================
+var hudTimer = 0, frame = 0;
+
+function loop() {
+  requestAnimationFrame(loop);
+  frame++;
+  var dt = clock.getDelta();
+
+  // اتجاه إضافي للكاميرا أثناء عدم التربيط (نظرة رحّالة)
+  if (!locked && !touchMode && !dragging && overlay.classList.contains('hidden')) {
+    player.yaw += dt * 0.08;
+  }
+
+  camera.rotation.set(player.pitch, player.yaw, 0), camera.rotation.order = 'YXZ';
+
+  step(dt);
+
+  camera.position.copy(player.pos);
+
+  // تحديد المكعب المستهدف
+  if (locked && selected !== -1) {
+    var hit = pick();
+    if (hit) {
+      var b = hit.block;
+      highlight.position.set(b.x, b.y, b.z);
+      highlight.visible = true;
+    } else highlight.visible = false;
+  } else if (touchMode) {
+    // في وضع اللمس: PRة تحديد عند النقر + زر؟ نكتفي بإخفاء التحديد
+    highlight.visible = false;
+  } else highlight.visible = false;
+
+  // إعادة البناء عند الحاجة ثم الحفظ
+  if (dirty) {
+    dirty = false;
+    if (world.size <= REBUILD_OPT) rebuildAll();
+    saveWorld();
+  }
+
+  renderer.render(scene, camera);
+
+  hudTimer += dt;
+  if (hudTimer > 0.2) { hudTimer = 0; updateHUD(); }
+}
+
+// ================= إعادة الرسم عند تغيير الحجم =================
+function onResize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+window.addEventListener('resize', onResize);
+
+// ================= التشغيل =================
+if (!loadWorld()) genWorld();
+rebuildAll();
+updateToolbarSelection();
+updateHUD();
+loop();
+
+})();
+</script>
+</body>
+</html>

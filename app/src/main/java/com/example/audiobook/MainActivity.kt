@@ -9,6 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +66,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -76,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -102,6 +108,12 @@ import com.example.audiobook.presentation.entitydetails.AuthorDetailsScreen
 import com.example.audiobook.presentation.entitydetails.CollectionDetailsScreen
 import com.example.audiobook.presentation.entitydetails.AuthorsListScreen
 import com.example.audiobook.presentation.entitydetails.SeriesListScreen
+import com.example.audiobook.presentation.entitydetails.AuthorOptionsSheet
+import com.example.audiobook.presentation.entitydetails.AuthorOptionsViewModel
+import com.example.audiobook.presentation.entitydetails.SeriesOptionsSheet
+import com.example.audiobook.presentation.entitydetails.SeriesOptionsViewModel
+import com.example.audiobook.presentation.entitydetails.CollectionOptionsSheet
+import com.example.audiobook.presentation.entitydetails.CollectionOptionsViewModel
 import com.example.audiobook.presentation.player.PlayerScreen
 import com.example.audiobook.presentation.player.MiniPlayer
 import com.example.audiobook.presentation.bookmarks.BookmarksScreen
@@ -112,15 +124,20 @@ import com.example.audiobook.presentation.theme.AudiobookTheme
 import com.example.audiobook.presentation.theme.CosmicBackground
 import com.example.audiobook.presentation.theme.CosmicHeaderState
 import com.example.audiobook.presentation.theme.CosmicTopBar
+import com.example.audiobook.presentation.theme.CosmicTopBarContentHeight
 import com.example.audiobook.presentation.theme.LocalAppAccent
 import com.example.audiobook.presentation.theme.LocalBottomBarInset
 import com.example.audiobook.presentation.theme.LocalCosmicHeader
+import com.example.audiobook.presentation.theme.LocalCosmicHeaderInset
 import com.example.audiobook.presentation.theme.cosmicGlassStyle
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.navBarGlassStyle
 import com.example.audiobook.presentation.theme.navLogoGlassStyle
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesScreen
 import com.example.audiobook.presentation.reviewmatches.ReviewMatchesViewModel
+import com.example.audiobook.presentation.pendingdiscoveries.DiscoveryNotifier
+import com.example.audiobook.presentation.pendingdiscoveries.PendingDiscoveriesPopup
+import com.example.audiobook.presentation.pendingdiscoveries.PendingDiscoveriesScreen
 import com.example.audiobook.presentation.splash.AtherSplash
 import com.example.audiobook.presentation.onboarding.OnboardingScreen
 import com.example.audiobook.presentation.settings.SettingsScreen
@@ -142,6 +159,9 @@ import dev.chrisbanes.haze.hazeChild
 import dev.chrisbanes.haze.rememberHazeState
 import javax.inject.Inject
 import java.util.UUID
+import com.example.audiobook.presentation.entitydetails.ENTITY_UNDO_WINDOW_MS
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** يُستخدم فقط في إصدارات التصحيح لحقن بيانات التجربة؛ يبقى بلا مراجع في الإنتاج
@@ -232,6 +252,10 @@ class MainActivity : ComponentActivity() {
 
         // خيارات الكتاب (القائمة المنسدلة) + السناكبار مع زر التراجع.
         val bookManager: BookManagerViewModel = hiltViewModel()
+        // ورقات خيارات المؤلف/السلسلة/المجموعة (تُفتح بالضغطة المطوّلة).
+        val authorOptionsViewModel: AuthorOptionsViewModel = hiltViewModel()
+        val seriesOptionsViewModel: SeriesOptionsViewModel = hiltViewModel()
+        val collectionOptionsViewModel: CollectionOptionsViewModel = hiltViewModel()
         val snackbarHostState = remember { SnackbarHostState() }
 
         val playbackState by playbackController.state.collectAsStateWithLifecycle()
@@ -289,19 +313,46 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(message) {
             val msg = message ?: return@LaunchedEffect
             val text = snackbarText ?: return@LaunchedEffect
-            val result = snackbarHostState.showSnackbar(
-                message = text,
-                actionLabel = if (msg.undolable) undoLabel else null,
-                duration = SnackbarDuration.Short
-            )
+            // نافذة التراجع الموحّدة (5 ثوانٍ) لعمليات المكتبة: زر "تراجع" يبقى متاحًا
+            // طوال النافذة ثم تُعتمد العملية نهائيًا — نفس سلوك شاشات الكيانات.
+            val done = CompletableDeferred<SnackbarResult>()
+            val showJob = launch {
+                done.complete(
+                    snackbarHostState.showSnackbar(
+                        message = text,
+                        actionLabel = if (msg.undolable) undoLabel else null,
+                        duration = SnackbarDuration.Indefinite
+                    )
+                )
+            }
+            val timeoutJob = launch {
+                delay(ENTITY_UNDO_WINDOW_MS)
+                if (!done.isCompleted) snackbarHostState.currentSnackbarData?.dismiss()
+            }
+            val result = done.await()
+            timeoutJob.cancel()
+            showJob.cancel()
             bookManager.consumeMessage()
             if (result == SnackbarResult.ActionPerformed) {
                 bookManager.undo()
             }
         }
 
+        // الشريط العلوي المثبّت + الإزاحة التي يحجزها: نفس الشرط بالضبط (العنوان
+        // المنهار في مسار غير الرئيسية/الإعدادات). نُصدر إزاحة متحرّكة بسلاسة عبر
+        // LocalCosmicHeaderInset لتحتفظ كل الشاشات بمحتواها أسفل الشريط دون تداخل.
+        val showCosmicTopBar =
+            header.title.isNotBlank() && header.collapsed && currentRouteBase != "home" && currentRouteBase != "settings"
+        val topChromeInset = if (showCosmicTopBar) CosmicTopBarContentHeight else 0.dp
+        val animatedTopChromeInset by animateDpAsState(
+            targetValue = topChromeInset,
+            animationSpec = tween(durationMillis = 220),
+            label = "cosmicTopBarInset"
+        )
+
         CompositionLocalProvider(
             LocalCosmicHeader provides header,
+            LocalCosmicHeaderInset provides animatedTopChromeInset,
             LocalBottomBarInset provides bottomBarInset
         ) {
             Box(modifier = Modifier.fillMaxSize().haze(hazeState)) {
@@ -310,13 +361,17 @@ class MainActivity : ComponentActivity() {
                 Box(
                     modifier = Modifier.fillMaxSize()
                         .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                        .padding(top = animatedTopChromeInset)
                 ) {
-                    appNavHost(navController, mode) { bookId -> bookManager.openOptions(bookId) }
+                    appNavHost(
+                        navController, mode, bookManager,
+                        authorOptionsViewModel, seriesOptionsViewModel, collectionOptionsViewModel
+                    ) { bookId -> bookManager.openOptions(bookId) }
                 }
 
-                // لا شريط علوي مثبّت في "الرئيسية" ولا في "الإعدادات": عنوان الإعدادات
-                // يتحرّك مع المحتوى ويختفي بالتمرير (العنصر المثبّت الوحيد هو شريط التنقل السفلي).
-                if (header.title.isNotBlank() && header.collapsed && currentRouteBase != "home" && currentRouteBase != "settings") {
+// لا شريط علوي مثبّت في "الرئيسية" ولا في "الإعدادات": عنوان الإعدادات
+        // يتحرّك مع المحتوى ويختفي بالتمرير (العنصر المثبّت الوحيد هو شريط التنقل السفلي).
+        if (showCosmicTopBar) {
                     CosmicTopBar(
                         title = header.title,
                         subtitle = header.subtitle,
@@ -394,6 +449,30 @@ class MainActivity : ComponentActivity() {
                     onOpenBookDetails = { bookId -> navController.navigate("book_details/$bookId") }
                 )
 
+                // ورقات خيارات المؤلف/السلسلة/المجموعة (الضغطة المطوّلة).
+                AuthorOptionsSheet(
+                    viewModel = authorOptionsViewModel,
+                    haze = hazeState,
+                    onOpenAuthor = { authorId -> navController.navigate("author_details/$authorId") }
+                )
+                SeriesOptionsSheet(
+                    viewModel = seriesOptionsViewModel,
+                    haze = hazeState,
+                    onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") }
+                )
+                CollectionOptionsSheet(
+                    viewModel = collectionOptionsViewModel,
+                    haze = hazeState,
+                    onOpenCollection = { collectionId -> navController.navigate("collection_details/$collectionId") }
+                )
+
+                // Part 4: بوب-أب الاكتشافات المعلّقة — يظهر بعد فحص جذر ذي أولوية
+                // يوجد فيه مجلدات جديدة لم يُبتَّ في مصيرها بعد.
+                val pendingRoot by DiscoveryNotifier.pendingRoot.collectAsStateWithLifecycle()
+                pendingRoot?.let { rootId ->
+                    PendingDiscoveriesPopup(rootId = rootId, snackbarHostState = snackbarHostState)
+                }
+
                 SnackbarHost(
                     hostState = snackbarHostState,
                     modifier = Modifier
@@ -406,7 +485,15 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun appNavHost(navController: NavHostController, mode: AppThemeMode, onBookOptions: (UUID) -> Unit) {
+    private fun appNavHost(
+        navController: NavHostController,
+        mode: AppThemeMode,
+        bookManager: BookManagerViewModel,
+        authorOptionsViewModel: AuthorOptionsViewModel,
+        seriesOptionsViewModel: SeriesOptionsViewModel,
+        collectionOptionsViewModel: CollectionOptionsViewModel,
+        onBookOptions: (UUID) -> Unit
+    ) {
         NavHost(
             navController = navController,
             startDestination = "home"
@@ -423,7 +510,10 @@ class MainActivity : ComponentActivity() {
                     onOpenAuthorsList = { navController.navigate("authors_list") },
                     onOpenCollection = { collectionId -> navController.navigate("collection_details/$collectionId") },
                     onOpenListenNow = { navController.navigate("listen_now") },
-                    onBookOptions = onBookOptions
+                    onBookOptions = onBookOptions,
+                    onAuthorOptions = { authorOptionsViewModel.openOptions(it) },
+                    onSeriesOptions = { seriesOptionsViewModel.openOptions(it) },
+                    onCollectionOptions = { collectionOptionsViewModel.openOptions(it) }
                 )
             }
             composable("listen_now") {
@@ -447,6 +537,12 @@ class MainActivity : ComponentActivity() {
                 val section = entry.arguments?.getString("section") ?: "ALL_BOOKS"
                 val reviewViewModel: ReviewMatchesViewModel = hiltViewModel()
                 val reviewState by reviewViewModel.uiState.collectAsStateWithLifecycle()
+                // تحديث الشارة لحظيًا عند العودة إلى المكتبة (بعد قرارات مراجعة الأزواج
+                // أو بعد فحص جديد): يعاد احتساب الملخص من قاعدة البيانات في كل استئناف.
+                LifecycleResumeEffect(Unit) {
+                    reviewViewModel.refresh()
+                    onPauseOrDispose { }
+                }
                 LibraryScreen(
                     initialSection = section,
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
@@ -457,7 +553,10 @@ class MainActivity : ComponentActivity() {
                     onReviewMatches = { navController.navigate("review_matches") },
                     reviewBadgeCount = reviewState.summary.suspectCases,
                     onSettings = { navController.navigate("settings") },
-                    onBookOptions = onBookOptions
+                    onOpenAuthors = { navController.navigate("authors_list") },
+                    onOpenSeries = { navController.navigate("series_list") },
+                    onBookOptions = onBookOptions,
+                    bookManager = bookManager
                 )
             }
             composable(
@@ -502,13 +601,15 @@ class MainActivity : ComponentActivity() {
             composable("authors_list") {
                 AuthorsListScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenAuthor = { authorId -> navController.navigate("author_details/$authorId") }
+                    onOpenAuthor = { authorId -> navController.navigate("author_details/$authorId") },
+                    onAuthorOptions = { authorOptionsViewModel.openOptions(it) }
                 )
             }
             composable("series_list") {
                 SeriesListScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") }
+                    onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") },
+                    onSeriesOptions = { seriesOptionsViewModel.openOptions(it) }
                 )
             }
             composable(
@@ -577,8 +678,12 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     showBack = false,
-                    onOpenLibraryRoots = { navController.navigate("library_roots") }
+                    onOpenLibraryRoots = { navController.navigate("library_roots") },
+                    onOpenPendingDiscoveries = { navController.navigate("pending_discoveries") }
                 )
+            }
+            composable("pending_discoveries") {
+                PendingDiscoveriesScreen(onBack = { navController.popBackStack() })
             }
             composable("saved") {
                 SavedScreen(
@@ -701,15 +806,38 @@ private fun NavBarTab(destination: TopLevelDestination, selected: Boolean, onCli
 @Composable
 private fun NavHomeLogo(selected: Boolean, onClick: () -> Unit, haze: HazeState) {
     val appAccent = LocalAppAccent.current
+    // في الوضع الفاتح تُخفى الأجزاء الفاتحة من الشعار على الخلفية الفاتحة؛
+    // نضيف قرصًا داكنًا خلف الشعار لنُبقي اللوحة بالكامل (بما فيها الموجة البرتقالية) دون تلطيخها.
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    // في الوضعين الليليين لا تُملأ الدائرة باللون الفاتح الوهّاج بل بقرص كوني داكن
+    // (أسود خالص في AMOLED) كي يبقى الشعار بألوانه الطبيعية، راسخًا هادئًا، لا متوهّجًا.
+    val nightDisc = if (MaterialTheme.colorScheme.background == Color.Black) {
+        Color(0xFF000000)
+    } else {
+        Color(0xFF0B132B)
+    }
+    val logoScale by animateFloatAsState(
+        targetValue = if (selected) 1.12f else 1f,
+        label = "navLogoScale"
+    )
+    val logoAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.72f,
+        label = "navLogoAlpha"
+    )
     Box(
         modifier = Modifier
             .size(48.dp)
             .drawBehind {
+                val glowAlpha = if (isLightTheme) {
+                    if (selected) 0.45f else 0.38f
+                } else {
+                    if (selected) 0.30f else 0.16f
+                }
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            appAccent.accent.copy(alpha = 0.38f),
-                            appAccent.accent.copy(alpha = 0.14f),
+                            appAccent.accent.copy(alpha = glowAlpha),
+                            appAccent.accent.copy(alpha = 0.06f),
                             Color.Transparent
                         ),
                         center = Offset(size.width / 2f, size.height / 2f),
@@ -718,21 +846,41 @@ private fun NavHomeLogo(selected: Boolean, onClick: () -> Unit, haze: HazeState)
                 )
             }
             .clip(CircleShape)
-            .hazeChild(haze, navLogoGlassStyle())
-            .background(appAccent.accent.copy(alpha = if (selected) 0.92f else 0.62f))
+            .hazeChild(haze, navLogoGlassStyle(tintAlpha = if (isLightTheme) 0.60f else 0.16f))
+            .background(
+                when {
+                    isLightTheme -> appAccent.accent.copy(alpha = if (selected) 0.92f else 0.62f)
+                    selected -> nightDisc
+                    else -> nightDisc.copy(alpha = 0.65f)
+                }
+            )
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) appAccent.accent else appAccent.accent.copy(alpha = 0.55f),
+                color = if (selected) appAccent.accent else appAccent.accent.copy(alpha = 0.5f),
                 shape = CircleShape
             )
             .minTouchTarget()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
+        if (isLightTheme) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x8C0B132B))
+            )
+        }
         Image(
-            painter = painterResource(id = R.drawable.app_logo),
+            painter = painterResource(id = R.drawable.app_logo_source),
             contentDescription = "أثير",
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier
+                .size(32.dp)
+                .graphicsLayer {
+                    scaleX = logoScale
+                    scaleY = logoScale
+                    alpha = logoAlpha
+                }
         )
     }
 }

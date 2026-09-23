@@ -122,7 +122,7 @@ class AtherNotificationCenter @Inject constructor(
 
     // ── التذكيرات (قناة reminders) ──
     fun showDailyReminder() {
-        if (!canPost(true)) return
+        if (!canPost(appSettings.dailyReminderEnabled.value)) return
         val notification = NotificationCompat.Builder(context, NotificationChannels.REMINDERS)
             .setSmallIcon(R.drawable.ic_stat_ather)
             .setColor(brandAccent())
@@ -138,7 +138,7 @@ class AtherNotificationCenter @Inject constructor(
     }
 
     fun showResumeReminder(bookTitle: String) {
-        if (!canPost(true)) return
+        if (!canPost(appSettings.resumeReminderEnabled.value)) return
         val notification = NotificationCompat.Builder(context, NotificationChannels.REMINDERS)
             .setSmallIcon(R.drawable.ic_stat_ather)
             .setColor(brandAccent())

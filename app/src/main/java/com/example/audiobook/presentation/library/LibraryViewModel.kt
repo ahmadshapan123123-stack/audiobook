@@ -128,26 +128,43 @@ class LibraryViewModel @Inject constructor(
         val collectionMembers = collections.associate { collection ->
             collection.name to crossRefs.filter { it.collectionId == collection.id }.mapTo(HashSet()) { it.bookId }
         }
+        val audioByEdition = audioFiles.groupBy { it.editionId }
+        val editionsByBook = editions.groupBy { it.bookId }
 
-        val mapped = books.map { book ->
+        /**
+         * كتاب «مفقود بالكامل» = له ملفات (AudioFile) على الأقل، وجميعها MISSING
+         * (لا ملف واحد متاح في أي إصدار). يُخفى من بطاقات المكتبة ولا يُحذف من القاعدة —
+         * الفحص يعلِّم ولا يحذف، ويبقى الكتاب حاضرًا في الجداول/الإحصائيات إن استُمع إليه.
+         * الكتاب بلا أي ملفات (ليس له إصدار صوتي) لا يُعتبر «مفقودًا» ويبقى ظاهرًا.
+         */
+        val isFullyMissing = { book: BookEntity ->
+            val bookFiles = editionsByBook[book.id].orEmpty().flatMap { audioByEdition[it.id].orEmpty() }
+            bookFiles.isNotEmpty() && bookFiles.none { it.fileStatus == FileStatus.AVAILABLE }
+        }
+
+        val mapped = books.mapNotNull { book ->
             val edition = effectiveEdition(book, editions, progressById)
-            val progress = edition?.let { progressById[it.id] }
-            val played = progress?.currentPositionMs ?: 0L
-            val total = edition?.totalDurationMs ?: 0L
-            val fraction = if (total > 0L) (played.toFloat() / total).coerceIn(0f, 1f) else 0f
-            LibraryBookUi(
-                book = book,
-                authorName = authorName(book.authorId),
-                seriesName = book.seriesId?.let { seriesById[it]?.name },
-                coverColor = parseColor(seriesColor(book.seriesId) ?: authors.firstOrNull { it.id == book.authorId }?.colorTheme, 0xFF356B68),
-                effectiveEditionId = edition?.id,
-                hasMissingFile = book.id in booksWithMissingFile,
-                progressFraction = fraction,
-                remainingMs = (total - played).coerceAtLeast(0L),
-                isFavorite = book.id in favoriteIds,
-                addedOrder = byAddedIndex[book.id] ?: 0,
-                lastPlayedAt = progress?.lastPlayedAt ?: 0L
-            )
+            if (edition != null && isFullyMissing(book)) {
+                null
+            } else {
+                val progress = edition?.let { progressById[it.id] }
+                val played = progress?.currentPositionMs ?: 0L
+                val total = edition?.totalDurationMs ?: 0L
+                val fraction = if (total > 0L) (played.toFloat() / total).coerceIn(0f, 1f) else 0f
+                LibraryBookUi(
+                    book = book,
+                    authorName = authorName(book.authorId),
+                    seriesName = book.seriesId?.let { seriesById[it]?.name },
+                    coverColor = parseColor(seriesColor(book.seriesId) ?: authors.firstOrNull { it.id == book.authorId }?.colorTheme, 0xFF356B68),
+                    effectiveEditionId = edition?.id,
+                    hasMissingFile = book.id in booksWithMissingFile,
+                    progressFraction = fraction,
+                    remainingMs = (total - played).coerceAtLeast(0L),
+                    isFavorite = book.id in favoriteIds,
+                    addedOrder = byAddedIndex[book.id] ?: 0,
+                    lastPlayedAt = progress?.lastPlayedAt ?: 0L
+                )
+            }
         }
         LibraryUiState(
             books = mapped,

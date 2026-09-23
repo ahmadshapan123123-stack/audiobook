@@ -36,6 +36,7 @@ import java.util.UUID
 fun SeriesListScreen(
     onBack: () -> Unit,
     onOpenSeries: (UUID) -> Unit,
+    onSeriesOptions: (UUID) -> Unit = {},
     viewModel: SeriesListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -94,6 +95,7 @@ fun SeriesListScreen(
                     avatarTitle = series.name,
                     avatarColor = Color(row.coverColor.toInt()),
                     onClick = { onOpenSeries(series.id) },
+                    onLongPress = { onSeriesOptions(series.id) },
                     menuActions = listOf(
                         EntityMenuAction(R.string.entity_context_open) { onOpenSeries(series.id) },
                         EntityMenuAction(R.string.entity_context_rename) { renameTarget = row },

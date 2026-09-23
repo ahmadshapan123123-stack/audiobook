@@ -56,6 +56,14 @@ class CosmicHeaderState {
 
 val LocalCosmicHeader = staticCompositionLocalOf { CosmicHeaderState() }
 
+/** ارتفاع الشريط الزجاجي العلوي (CosmicTopBar) أسفل شريط الحالة — المصدر الوحيد
+ *  لحساب الإزاحة العلوية التي تحجزها الشاشات كي لا يتداخل محتواها مع الشريط المنهار. */
+val CosmicTopBarContentHeight: Dp = 64.dp
+
+/** إزاحة علوية يجب حجزها فوق محتوى الشاشة عند ظهور [CosmicTopBar] المنهار.
+ *  تُوفَّر من MainActivity وتتأرجح بسلاسة: 0.dp عند توسيع الرأس، وارتفاع الشريط عند انهياره. */
+val LocalCosmicHeaderInset = staticCompositionLocalOf<Dp> { 0.dp }
+
 /** هل انضمّ المحور بعد تجاوز حد معيّن؟ تُستخدم لتفعيل الرأس المنهار. */
 @Composable
 fun rememberHeaderCollapsed(scroll: ScrollState, threshold: Dp = 64.dp): Boolean {

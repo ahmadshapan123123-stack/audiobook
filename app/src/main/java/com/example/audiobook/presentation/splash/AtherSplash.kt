@@ -63,7 +63,7 @@ fun AtherSplash(
                         }
                 )
                 Image(
-                    painter = painterResource(id = R.drawable.app_logo),
+                    painter = painterResource(id = R.drawable.app_logo_source),
                     contentDescription = null,
                     modifier = Modifier
                         .size(160.dp)

@@ -140,7 +140,7 @@ class ScanRoot @Inject constructor(
             val edition = resolveEdition(root, folderPath, signals, context,
                 onCreated = { report.editionsCreated++ },
                 onRefined = { report.editionsRefined++ }
-            )
+            ) ?: return@forEach
             val importedChapters = mutableListOf<ChapterEntity>()
             var runningOffsetMs = 0L
             folder.files.forEach { file ->
@@ -217,28 +217,33 @@ class ScanRoot @Inject constructor(
         context: AuthorSeriesContext,
         onCreated: () -> Unit,
         onRefined: () -> Unit
-    ): EditionEntity {
+    ): EditionEntity? {
         val existingEdition = database.editionDao().getByRootAndFolder(root.id, folderPath)
-            ?: return createEdition(root, folderPath, signals, context).also { onCreated() }
-        val book = database.bookDao().getById(existingEdition.bookId) ?: return existingEdition
+        if (existingEdition == null && database.pendingDiscoveryDao().isIgnored(root.id, folderPath)) {
+            // مجلد «تم تجاهله» مسبقًا: لا ننشئ له كتابًا ولا نسجّل اكتشافًا جديدًا.
+            return null
+        }
+        val target = existingEdition
+            ?: createEdition(root, folderPath, signals, context).also { onCreated() }
+        val book = database.bookDao().getById(target.bookId) ?: return target
 
         if (!book.isTitleUserConfirmed) {
             val detected = signals.resolvedTitle()?.takeIf { it.isNotBlank() } ?: book.title
             if (detected != book.title) database.bookDao().update(book.copy(title = detected))
         }
 
-        if (existingEdition.isUserConfirmed) {
-            return existingEdition
+        if (target.isUserConfirmed) {
+            return target
         }
 
-        val refreshed = existingEdition.copy(
-            narratorName = if (existingEdition.isNarratorUserConfirmed) existingEdition.narratorName else signals.narrator,
-            label = if (existingEdition.isLabelUserConfirmed) existingEdition.label else signals.folderName.substringAfterLast('/').ifBlank { existingEdition.label },
-            totalDurationMs = if (signals.hasKnownDuration()) signals.totalDurationMs else existingEdition.totalDurationMs,
-            fileFormat = signals.format ?: existingEdition.fileFormat,
+        val refreshed = target.copy(
+            narratorName = if (target.isNarratorUserConfirmed) target.narratorName else signals.narrator,
+            label = if (target.isLabelUserConfirmed) target.label else signals.folderName.substringAfterLast('/').ifBlank { target.label },
+            totalDurationMs = if (signals.hasKnownDuration()) signals.totalDurationMs else target.totalDurationMs,
+            fileFormat = signals.format ?: target.fileFormat,
             confidenceScore = EditionIntelligence.calculateConfidence(signals)
         )
-        if (refreshed != existingEdition && signals.haveMoreInfoThan(existingEdition)) {
+        if (refreshed != target && signals.haveMoreInfoThan(target)) {
             database.editionDao().update(refreshed)
             onRefined()
         }
@@ -253,6 +258,12 @@ class ScanRoot @Inject constructor(
      *  - سلسلة = مجلد السلسلة الحاوي يُبحث أو يُنشأ تحت المؤلف، ويُثبت seriesId +
      *    orderInSeries وقت الإنشاء فقط؛ أي إعادة فحص لاحقة لا تكتب رأيًا جديدًا فوق
      *    التعديلات اليدوية.
+     *
+     *  ملاحظة مقصودة (لا تغيير): هوية الكتاب في الفحص هي «مسار المجلد» (libraryRootId +
+     *  sourceFolderPath) وليست المؤلف+العنوان. لذلك إعادة تسمية مجلد = مسار جديد = إصدار
+     *  وكتاب جديدان دائمًا؛ أما الصف القديم فتبقى ملفاته دون فحص فتتحول إلى MISSING (الفحص
+     *  يعلِّم ولا يحذف)، ويختفي من بطاقات المكتبة عبر فلتر «مفقود بالكامل» في الشاشة.
+     *  هذا سلوك مقصود ولا يوجد تتبّع لهوية المجلد عبر إعادة التسمية.
      */
     private suspend fun createEdition(root: LibraryRootEntity, folderPath: String, signals: EditionSignals, context: AuthorSeriesContext): EditionEntity = database.withTransaction {
         database.editionDao().getByRootAndFolder(root.id, folderPath) ?: run {
@@ -287,7 +298,7 @@ class ScanRoot @Inject constructor(
                 remoteId = null,
                 syncStatus = SyncStatus.LOCAL_ONLY
             ).also { database.bookDao().insert(it) }
-            EditionEntity(
+            val edition = EditionEntity(
                 bookId = book.id,
                 narratorName = signals.narrator,
                 label = signals.folderName.substringAfterLast('/').ifBlank { folderPath },
@@ -300,6 +311,21 @@ class ScanRoot @Inject constructor(
                 remoteId = null,
                 syncStatus = SyncStatus.LOCAL_ONLY
             ).also { database.editionDao().insert(it) }
+            // Part 4: تسجيل الاكتشاف بالتوازي مع الاستيراد التلقائي — قائمة انتظار
+            // مفاتَشة في بوب-أب (الجذور ذات الأولوية) وفي الإعدادات، دون تغيير سلوك الفحص.
+            // IGNORE يمتص إعادة الفحص (المفتاح الفريد (rootId, folderPath)).
+            database.pendingDiscoveryDao().insert(
+                PendingDiscoveryEntity(
+                    rootId = root.id,
+                    folderPath = folderPath,
+                    detectedTitle = title,
+                    authorName = authorName,
+                    seriesName = seriesFolder,
+                    discoveredAt = System.currentTimeMillis(),
+                    status = DiscoveryStatus.PENDING
+                )
+            )
+            edition
         }
     }
 

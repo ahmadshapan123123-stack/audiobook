@@ -31,4 +31,6 @@ class RoomConverters {
     @TypeConverter fun toSessionState(value: String?) = value?.let(SessionState::valueOf)
     @TypeConverter fun fromUserDecision(value: UserDecision?) = value?.name
     @TypeConverter fun toUserDecision(value: String?) = value?.let(UserDecision::valueOf)
+    @TypeConverter fun fromDiscoveryStatus(value: DiscoveryStatus?) = value?.name
+    @TypeConverter fun toDiscoveryStatus(value: String?) = value?.let(DiscoveryStatus::valueOf)
 }

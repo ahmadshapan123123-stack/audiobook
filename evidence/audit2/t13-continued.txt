@@ -1,0 +1,35 @@
+TEST 13 (تابع) - إكمال الكتاب / إشعار الإكمال
+==========================================
+التاريخ: 2026-09-21
+الحالة: BUG مؤكّد - تسلسل الإكمال لا يُفعَّل أبدًا لكتب الفحص الممسوحة ضوئيًا
+
+الخطوات:
+1. منح POST_NOTIFICATIONS (طريق: الإعدادات -> الإشعارات -> «تفعيل إذن الإشعارات» ->
+   إعدادات النظام -> All أثير notifications ON) — dumpsys: granted=true
+2. فتح «ملف المستقبل» -> «تشغيل» -> keyevent 85 (تشغيل)
+3. دُرست حتى النهاية: media_session state=STOPPED(1) position=20025 (الملف 20ث)
+4. فحص الإشعارات وإشعار الإكمال (النظام): لا يوجد إشعار بفئة achievements/الإنجازات
+
+الأدلة من قاعدة البيانات (run-as sqlite3):
+- ملفات الصوت: audio_files.durationMs = 20036 لكل الملفات (مدة الحاوية)
+- listening_progress:
+  276899b6-... | 3a660e3f-... | 20025 | IN_PROGRESS | 1.0   (ملف المستقبل)
+  7927dd15-... | a79f32d2-... | 20006 | IN_PROGRESS | 1.0   (سافاري الجديد)
+  => وضع «مكتمل» لم يُسجَّل أبدًا رغم الوصول لنهاية الملف فعليًا
+
+الجذر (code):
+- ExoPlaybackController.saveProgress (ExoPlaybackController.kt:330-344):
+  finishedNow = position >= timeline.durationMs && timeline.durationMs > 0
+  status = FINISHED عندها فقط. لكن appSettings/durationMs = 20036 (حاوية)
+  بينما يصل المشغّل (المفكّك) للنهاية الفعلية عند position=20025.
+  الشرط position >= durationMs غير قابل للتحقق (20025 < 20036) => وضع IN_PROGRESS
+- نتيجة: finishedNow=false => bookCompletionNotifier.onPlaybackEnded لا يُستدعى =>
+  showBookCompleted لا يُرسَل => لا إشعار إكمال (قناة achievements)
+- عامل مساعد: ChapterCompletionObserver (ChapterCompletionObserver.kt:27-37) يعود مبكرًا
+  عند خلاء chapter (كتب الفحص بلا فصول مضمّنة، ScanRoot.kt فقط embeddedChapters)
+
+ملاحظة إضافية: Home عرضة «100٪ · 0 دقيقة» لسافاري الجديد — النسبة محسوبة من
+currentPositionMs ليس من الحالة، لذا لا تعني status=FINISHED.
+
+المستندات: t13-lib2.xml, t13-book-details.xml, t13-start.png, t13-notif-dump.txt,
+          t12-notif-row.png, t12-system-after2.xml

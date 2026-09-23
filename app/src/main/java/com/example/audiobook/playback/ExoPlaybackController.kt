@@ -38,6 +38,10 @@ import javax.inject.Singleton
 
 /** المسافة الزمنية بين عينات فحص اكتمال الفصول أثناء التشغيل. */
 private const val CHAPTER_COMPLETION_CHECK_INTERVAL_MS = 2_000L
+/** هامش التسامح مع فرق ترميز MP3 بين الموضع الفعلي ومدة الحاوية عند كشف اكتمال الكتاب. */
+private const val COMPLETION_TOLERANCE_MS = 2_000L
+/** حد التراجع الصريح (60 ثانية) الذي يُعيد الكتاب إلى حالة "قيد الاستماع" بعد إنهائه. */
+private const val UNFINISH_REWIND_THRESHOLD_MS = 60_000L
 
 @Singleton
 class ExoPlaybackController @Inject constructor(
@@ -62,6 +66,11 @@ class ExoPlaybackController @Inject constructor(
     private var mediaController: MediaController? = null
     /** اختزال فحص اكتمال الفصول: يُؤخذ عينة كل ثانيتين فقط بدل كل تحديث موضع (500ms). */
     private var lastChapterCompletionCheckAtMs = 0L
+    /**
+     * علامة نقطة اكتمال الكتاب: ما دامت مُنصوبة لا يُعاد الكتاب صامتًا إلى
+     * IN_PROGRESS بعد FINISHED، إلا إذا تراجع المستخدم تراجعًا صريحًا كبيرًا.
+     */
+    private var finishedMarkMs: Long? = null
 
     /** يبدأ خدمة التشغيل كخدمة في المقدمة عند أول تشغيل فعلي — Media3 ينشر إشعار التشغيل. */
     private fun ensureMediaServiceStarted() {
@@ -144,6 +153,7 @@ class ExoPlaybackController @Inject constructor(
         playableFiles = files.filter { it.fileStatus == FileStatus.AVAILABLE }
         timeline = EditionTimeline(files.map { TimelineItem(it.fileUri, it.durationMs, it.fileStatus == FileStatus.AVAILABLE) })
         val progress = database.progressDao().getByParent(editionId)
+        if (progress?.status == ProgressStatus.FINISHED) finishedMarkMs = timeline.durationMs
         // أولوية السرعة: سرعة الكتاب المحفوظة، وإلا السرعة الافتراضية من الإعدادات.
         val resolvedSpeed = progress?.playbackSpeed ?: appSettings.defaultSpeed.value
         val missingFirst = files.firstOrNull()?.fileStatus == FileStatus.MISSING
@@ -212,7 +222,12 @@ class ExoPlaybackController @Inject constructor(
         player.pause()
         saveProgress()
     }
-    override fun seekTo(positionMs: Long) { seekToGlobal(positionMs); saveProgress() }
+    override fun seekTo(positionMs: Long) {
+        val mark = finishedMarkMs
+        if (mark != null && positionMs <= mark - UNFINISH_REWIND_THRESHOLD_MS) finishedMarkMs = null
+        seekToGlobal(positionMs)
+        saveProgress()
+    }
     override fun skipForward15Seconds() { seekTo(currentGlobalPosition() + 15_000L) }
     override fun skipBack15Seconds() { seekTo(currentGlobalPosition() - 15_000L) }
 
@@ -331,16 +346,35 @@ class ExoPlaybackController @Inject constructor(
         val id = editionId ?: return
         val position = currentGlobalPosition()
         val speed = player.playbackParameters.speed
+        val durationMs = timeline.durationMs
+        // قراءات ExoPlayer تتم على الخيط الرئيسي (قواعد media3) قبل الانتقال إلى IO.
+        val ended = player.playbackState == Player.STATE_ENDED
+        val nearEnd = durationMs > 0 && position >= durationMs - COMPLETION_TOLERANCE_MS
+        val isFinishedNow = durationMs > 0 && (ended || nearEnd)
+        val hasFinishedMark = finishedMarkMs != null
+        if (isFinishedNow) finishedMarkMs = durationMs
         scope.launch(Dispatchers.IO) {
             val existing = database.progressDao().getByParent(id)
-            val finishedNow = position >= timeline.durationMs && timeline.durationMs > 0 && existing?.status != ProgressStatus.FINISHED
+            val wasFinished = existing?.status == ProgressStatus.FINISHED
+            // اكتمال الكتاب: الإشارة الأساسية هي وصول ExoPlayer إلى STATE_ENDED،
+            // والتسامح احتياطيًا بسبب فرق ترميز MP3 (توقف الموضع قبل نهاية الحاوية).
+            val status = when {
+                isFinishedNow -> ProgressStatus.FINISHED
+                // منع الرجوع الصامت إلى IN_PROGRESS بعد FINISHED: يحافظ الكتاب على
+                // حالة الإنتهاء عند إعادة التشغيل ما لم يتراجع المستخدم تراجعًا كبيرًا.
+                hasFinishedMark && wasFinished -> ProgressStatus.FINISHED
+                position > 0 -> ProgressStatus.IN_PROGRESS
+                else -> ProgressStatus.NOT_STARTED
+            }
             val progress = ListeningProgressEntity(
                 id = existing?.id ?: UUID.randomUUID(), editionId = id, currentPositionMs = position,
-                lastPlayedAt = System.currentTimeMillis(), status = if (position >= timeline.durationMs && timeline.durationMs > 0) ProgressStatus.FINISHED else if (position > 0) ProgressStatus.IN_PROGRESS else ProgressStatus.NOT_STARTED,
+                lastPlayedAt = System.currentTimeMillis(), status = status,
                 playbackSpeed = speed, remoteId = existing?.remoteId, syncStatus = existing?.syncStatus ?: com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY
             )
             if (existing == null) database.progressDao().insert(progress) else database.progressDao().update(progress)
-            if (finishedNow) bookCompletionNotifier.onPlaybackEnded(id)
+            // إشعار واحد لكل اكتمال فعلي (انتقال الجامعة إلى FINISHED لأول مرة)،
+            // وBookCompletionNotifier نفسه يحرس بـ24 ساعة كحد إضافي.
+            if (isFinishedNow && !wasFinished) bookCompletionNotifier.onPlaybackEnded(id)
         }
     }
 }

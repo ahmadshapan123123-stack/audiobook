@@ -20,23 +20,26 @@ class LibraryManagement @Inject constructor(
     private val collectionDao: CollectionDao,
     private val crossRefDao: CollectionBookCrossRefDao,
     private val favoriteBookDao: FavoriteBookDao,
-    private val libraryRootDao: LibraryRootDao,
-    private val chapterCompletionDao: ChapterCompletionDao
+    private val chapterCompletionDao: ChapterCompletionDao,
+    private val libraryRootDao: LibraryRootDao
 ) {
 
     // ── Author Operations ──
 
     data class AuthorSnapshot(
         val author: AuthorEntity,
-        val books: List<BookEntity>,
-        val series: List<SeriesEntity>
+        val series: List<SeriesEntity>,
+        val bookSnapshots: List<BookSnapshot>
     )
 
     suspend fun snapshotAuthor(authorId: UUID): AuthorSnapshot {
         val author = authorDao.getById(authorId) ?: throw IllegalStateException("Author not found")
         val books = bookDao.getByParent(authorId)
         val series = seriesDao.getByParent(authorId)
-        return AuthorSnapshot(author, books, series)
+        // deleteAuthor يحذف الكتب كاملة عبر deleteBookCascade (إصدارات + فصول + إشارات +
+        // تقدّم…) — لذا اللقطة يجب أن تحفظ كل كتاب بكامل أعمدته لاستعادته دون فقدان.
+        val bookSnapshots = books.mapNotNull { snapshotBook(it.id) }
+        return AuthorSnapshot(author, series, bookSnapshots)
     }
 
     suspend fun deleteAuthor(authorId: UUID) {
@@ -57,9 +60,7 @@ class LibraryManagement @Inject constructor(
         for (s in snapshot.series) {
             seriesDao.insert(s)
         }
-        for (book in snapshot.books) {
-            bookDao.insert(book)
-        }
+        restoreBooks(DeletedBooksSnapshot(snapshot.bookSnapshots))
     }
 
     data class AuthorMergeSnapshot(
@@ -88,13 +89,14 @@ class LibraryManagement @Inject constructor(
     }
 
     suspend fun undoMergeAuthors(snapshot: AuthorMergeSnapshot) {
+        // الترتيب مهم: أعِد المؤلف المصدر أولًا ليكون FK authorId سليمًا عند تحديث الكتب.
+        authorDao.insert(snapshot.sourceAuthor)
         for (s in snapshot.deletedSeries) {
             seriesDao.insert(s)
         }
         for (book in snapshot.movedBooks) {
             bookDao.update(book.copy(authorId = snapshot.sourceAuthor.id))
         }
-        authorDao.insert(snapshot.sourceAuthor)
     }
 
     // ── Series Operations ──
@@ -197,6 +199,7 @@ class LibraryManagement @Inject constructor(
         val edition: EditionEntity,
         val audioFiles: List<AudioFileEntity>,
         val chapters: List<ChapterEntity>,
+        val chapterCompletions: List<ChapterCompletionEntity>,
         val bookmarks: List<BookmarkEntity>,
         val progress: ListeningProgressEntity?
     )
@@ -207,7 +210,7 @@ class LibraryManagement @Inject constructor(
         val chapters = chapterDao.getByParent(editionId)
         val bookmarks = bookmarkDao.getByParent(editionId)
         val progress = progressDao.getByParent(editionId)
-        return EditionSnapshot(edition, audioFiles, chapters, bookmarks, progress)
+        return EditionSnapshot(edition, audioFiles, chapters, chapterCompletionDao.getByEdition(editionId), bookmarks, progress)
     }
 
     suspend fun deleteEdition(editionId: UUID) {
@@ -253,45 +256,6 @@ class LibraryManagement @Inject constructor(
         }
     }
 
-    // ── Library Root Operations ──
-
-    data class RootSnapshot(
-        val root: LibraryRootEntity,
-        val editionCount: Int
-    )
-
-    suspend fun snapshotRoot(rootId: UUID): RootSnapshot {
-        val root = libraryRootDao.getById(rootId) ?: throw IllegalStateException("Root not found")
-        val count = audioFileDao.getByRoot(rootId).size
-        return RootSnapshot(root, count)
-    }
-
-    suspend fun deleteRoot(rootId: UUID) {
-        val root = libraryRootDao.getById(rootId) ?: return
-        libraryRootDao.delete(root)
-    }
-
-    suspend fun deleteRootCascade(rootId: UUID) {
-        val root = libraryRootDao.getById(rootId) ?: return
-        val editions = editionDao.getByRoot(rootId)
-        for (edition in editions) {
-            deleteEditionCascade(edition.id)
-            val bookId = edition.bookId
-            val remaining = editionDao.getByParent(bookId)
-            if (remaining.isEmpty()) {
-                favoriteBookDao.delete(bookId)
-                bookDao.getById(bookId)?.let { bookDao.delete(it) }
-            } else {
-                bookDao.getById(bookId)?.let { book ->
-                    if (book.defaultEditionId == edition.id) {
-                        bookDao.update(book.copy(defaultEditionId = remaining.firstOrNull()?.id))
-                    }
-                }
-            }
-        }
-        libraryRootDao.delete(root)
-    }
-
     // ── Create helpers ──
 
     suspend fun getOrCreateAuthor(name: String): AuthorEntity {
@@ -327,11 +291,6 @@ class LibraryManagement @Inject constructor(
 
     suspend fun removeBookFromCollection(collectionId: UUID, bookId: UUID) {
         crossRefDao.delete(collectionId, bookId)
-    }
-
-    suspend fun updateBookGenre(bookId: UUID, genre: String?) {
-        val book = bookDao.getById(bookId) ?: return
-        bookDao.update(book.copy(genre = genre))
     }
 
     suspend fun updateCollectionName(collectionId: UUID, newName: String) {
@@ -433,6 +392,7 @@ class LibraryManagement @Inject constructor(
                 editionDao.insert(edition.edition)
                 edition.audioFiles.forEach { audioFileDao.insert(it) }
                 edition.chapters.forEach { chapterDao.insert(it) }
+                edition.chapterCompletions.forEach { chapterCompletionDao.insert(it) }
                 edition.bookmarks.forEach { bookmarkDao.insert(it) }
                 edition.progress?.let { progressDao.insert(it) }
             }
@@ -531,11 +491,40 @@ class LibraryManagement @Inject constructor(
 
     // ── Demo Data ──
 
+    /**
+     * إزالة كل بيانات التجربة (كتب + جذور + أي عناصر تجريبية يتيمة) دون المساس ببيانات المستخدم.
+     *
+     * الترتيب حاسم بسبب قيود المفاتيح الأجنبية:
+     *  1) الكتب التجريبية أولًا (بـ clearOps Cascade كامل ليُحذف ما تحتها من إصدارات/فصول/ملفات…).
+     *  2) جذور التجربة (isDemo=1) — تُحذف فقط ما لم يبقَ تحتها إصدار (إصدارات الكتب التجريبية
+     *     كانت تشير إليها، وقد رُحِّلت في الخطوة 1؛ الإصدارات الحقيقية تشير لاحقًا لجذر مستخدم).
+     *  3) المؤلفون/السلاسل/المجموعات التجريبية اليتيمة: isDemo=1 وبلا أي كتب/أعضاء حقيقية.
+     *     قاعدة «يتيم = لا كتب حقيقية» تحمي المؤلف التجريبي الذي أعاد الفحص الحقيقي استخدامه
+     *     (مثل «أحمد خالد توفيق»): يبقى إن كانت تحته كتب حقيقية، وتُرفع علامة isDemo عنه.
+     *
+     * ملاحظة: لا تُحذف العناصر إلا إذا كان isDemo=1، فأي مؤلف/سلسلة/مجموعة أنشأها المستخدم
+     * (حتى لو أصبحت فارغة لاحقًا) تبقى بلا مساس مهما تكرر هذا التنظيف.
+     */
     suspend fun clearDemoData() {
         val demoBooks = bookDao.getDemoBooks()
         for (book in demoBooks) {
             deleteBookCascade(book.id)
         }
         bookDao.deleteDemoBooks()
+
+        for (root in libraryRootDao.getDemoRoots()) {
+            if (editionDao.getByRoot(root.id).isEmpty()) {
+                libraryRootDao.delete(root)
+            }
+        }
+
+        authorDao.getDemoOrphans().forEach { authorDao.delete(it) }
+        authorDao.clearDemoFlagForAuthorsWithBooks()
+
+        seriesDao.getDemoOrphans().forEach { seriesDao.delete(it) }
+        seriesDao.clearDemoFlagForSeriesWithBooks()
+
+        collectionDao.getDemoOrphans().forEach { collectionDao.delete(it) }
+        collectionDao.clearDemoFlagForCollectionsWithMembers()
     }
 }

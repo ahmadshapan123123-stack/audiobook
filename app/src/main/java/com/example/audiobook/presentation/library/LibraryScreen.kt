@@ -1,6 +1,7 @@
 package com.example.audiobook.presentation.library
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -63,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +73,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -89,7 +94,6 @@ import com.example.audiobook.presentation.common.MoveBookDialog
 import com.example.audiobook.presentation.common.MoveBookTab
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
-import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.bottomContentPadding
 import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
@@ -125,7 +129,10 @@ fun LibraryScreen(
     onReviewMatches: () -> Unit = {},
     reviewBadgeCount: Int = 0,
     onSettings: () -> Unit = {},
+    onOpenAuthors: () -> Unit = {},
+    onOpenSeries: () -> Unit = {},
     onBookOptions: (UUID) -> Unit = {},
+    bookManager: BookManagerViewModel,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -140,8 +147,10 @@ fun LibraryScreen(
     var showCollectionDialog by remember { mutableStateOf(false) }
     var newCollectionName by remember { mutableStateOf("") }
     var showMenu by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
-    val gridCollapsed = gridState.firstVisibleItemIndex > 0
+    // الرأس يُنهار فور بدء التمرير (أي إزاحة رأسية) ويعود للتوسّع عند العودة للأعلى.
+    val gridCollapsed = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
 
     // ── التحديد المتعدد ──
     var selectionMode by remember { mutableStateOf(false) }
@@ -183,121 +192,143 @@ fun LibraryScreen(
     val searching = searchQuery.isNotBlank()
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = AppSpacing.lg)) {
-        Spacer(Modifier.height(AppSpacing.lg))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+        // ── الرأس المثبّت: عند التمرير ينكمش إلى شريط زجاجي رفيع (المكتبة + بحث + قائمة)،
+        //    وعند العودة للأعلى يعيد التوسّع ليُظهر العنوان مع حقل البحث في سطر واحد.
+        val hasGlassBar = gridCollapsed && !selectionMode && !searchOpen
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(if (hasGlassBar) RoundedCornerShape(bottomStart = AppSpacing.md, bottomEnd = AppSpacing.md) else RoundedCornerShape(0.dp))
+                .background(if (hasGlassBar) MaterialTheme.colorScheme.surface.copy(alpha = 0.7f) else Color.Transparent)
+                .padding(top = AppSpacing.xs)
+                .animateContentSize()
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                if (selectionMode) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(R.string.bulk_selection_count, selectedIds.size),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(
-                            onClick = {
-                                selectedIds = if (selectedIds.size == sectionBooks.size) {
-                                    emptySet()
-                                } else {
-                                    sectionBooks.map { it.book.id }.toSet()
-                                }
-                            },
-                            modifier = Modifier.minTouchTarget()
-                        ) {
-                            Text(stringResource(R.string.bulk_select_toggle))
-                        }
+            if (searchOpen) {
+                // وضع البحث المنبثق: سطر واحد فيه حقل بحث مركّز + زر إغلاق.
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { searchOpen = false }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.library_close_search))
                     }
-                } else {
-                    AnimatedVisibility(
-                        visible = !gridCollapsed,
-                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                    LibrarySearchField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it; viewModel.updateSearch(it) },
+                        onClear = { searchQuery = ""; viewModel.updateSearch("") },
+                        autoFocus = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else if (selectionMode) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.bulk_selection_count, selectedIds.size),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = {
+                            selectedIds = if (selectedIds.size == sectionBooks.size) {
+                                emptySet()
+                            } else {
+                                sectionBooks.map { it.book.id }.toSet()
+                            }
+                        },
+                        modifier = Modifier.minTouchTarget()
                     ) {
-                        Column {
-                            CosmicScreenHeader(
-                                title = stringResource(R.string.library_title),
-                                subtitle = stringResource(R.string.library_subtitle),
-                                collapsed = false,
-                                compact = gridCollapsed
-                            )
-                            Spacer(Modifier.height(AppSpacing.xs))
+                        Text(stringResource(R.string.bulk_select_toggle))
+                    }
+                    IconButton(onClick = exitSelection, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.bulk_close_selection))
+                    }
+                }
+            } else {
+                val bookCountText = pluralStringResource(R.plurals.book_count, uiState.books.size, uiState.books.size)
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (gridCollapsed) {
                             Text(
-                                pluralStringResource(R.plurals.book_count, uiState.books.size, uiState.books.size),
+                                stringResource(R.string.library_topbar_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                stringResource(R.string.library_title),
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                bookCountText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                }
-            }
-            Box {
-                if (selectionMode) {
-                    IconButton(onClick = exitSelection, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.bulk_close_selection))
+                    IconButton(onClick = { searchOpen = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.library_search_action))
                     }
-                } else {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                        Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
-                    }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.bulk_selection_title)) },
-                            onClick = { showMenu = false; selectionMode = true; selectedIds = emptySet() },
-                            modifier = Modifier.minTouchTarget()
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.library_menu_history)) },
-                            onClick = { showMenu = false; onHistory() },
-                            modifier = Modifier.minTouchTarget()
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.library_menu_statistics)) },
-                            onClick = { showMenu = false; onStatistics() },
-                            modifier = Modifier.minTouchTarget()
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (reviewBadgeCount > 0) R.string.library_menu_review_count else R.string.library_menu_review, reviewBadgeCount)) },
-                            onClick = { showMenu = false; onReviewMatches() },
-                            modifier = Modifier.minTouchTarget()
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.library_menu_roots)) },
-                            onClick = { showMenu = false; onManageRoots() },
-                            modifier = Modifier.minTouchTarget()
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(AppSpacing.sm))
-        Box(
-            modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(AppSpacing.md))
-                .background(if (gridCollapsed) MaterialTheme.colorScheme.surface.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it; viewModel.updateSearch(it) },
-                modifier = Modifier.fillMaxWidth()
-                    .semantics { this[SemanticsProperties.ContentDataType] = ContentDataType.None },
-                singleLine = true,
-                shape = RoundedCornerShape(AppSpacing.md),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                label = { Text(stringResource(R.string.library_search_label)) },
-                placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
-                trailingIcon = {
-                    if (searchQuery.isNotBlank()) {
-                        IconButton(onClick = { searchQuery = ""; viewModel.updateSearch("") }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.library_search_clear))
+                    Box {
+                        IconButton(onClick = { showMenu = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.bulk_selection_title)) },
+                                onClick = { showMenu = false; selectionMode = true; selectedIds = emptySet() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_menu_history)) },
+                                onClick = { showMenu = false; onHistory() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_menu_statistics)) },
+                                onClick = { showMenu = false; onStatistics() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (reviewBadgeCount > 0) R.string.library_menu_review_count else R.string.library_menu_review, reviewBadgeCount)) },
+                                onClick = { showMenu = false; onReviewMatches() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_menu_roots)) },
+                                onClick = { showMenu = false; onManageRoots() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_menu_authors)) },
+                                onClick = { showMenu = false; onOpenAuthors() },
+                                modifier = Modifier.minTouchTarget()
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_menu_series)) },
+                                onClick = { showMenu = false; onOpenSeries() },
+                                modifier = Modifier.minTouchTarget()
+                            )
                         }
                     }
                 }
-            )
+                AnimatedVisibility(
+                    visible = !gridCollapsed,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column {
+                        Spacer(Modifier.height(AppSpacing.xs))
+                        LibrarySearchField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it; viewModel.updateSearch(it) },
+                            onClear = { searchQuery = ""; viewModel.updateSearch("") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(AppSpacing.sm))
+                    }
+                }
+            }
         }
-        Spacer(Modifier.height(AppSpacing.md))
         LazyVerticalGrid(
             columns = GridCells.Fixed(if (layout == LibraryLayout.GRID) 2 else 1),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
@@ -414,7 +445,7 @@ fun LibraryScreen(
         }
     }
     if (selectionMode) {
-        val manager: BookManagerViewModel = hiltViewModel()
+        val manager = bookManager
         val catalog by manager.catalog.collectAsStateWithLifecycle()
         val noSeriesLabel = stringResource(R.string.move_book_no_series)
         movePickerTab?.let { tab ->
@@ -511,6 +542,46 @@ fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun LibrarySearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+    autoFocus: Boolean = false
+) {
+    val focusRequester = remember { FocusRequester() }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(AppSpacing.md))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .semantics { this[SemanticsProperties.ContentDataType] = ContentDataType.None },
+            singleLine = true,
+            shape = RoundedCornerShape(AppSpacing.md),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            label = { Text(stringResource(R.string.library_search_label)) },
+            placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+            trailingIcon = {
+                if (value.isNotBlank()) {
+                    IconButton(onClick = onClear, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.library_search_clear))
+                    }
+                }
+            }
+        )
+    }
+    if (autoFocus) {
+        LaunchedEffect(focusRequester) { focusRequester.requestFocus() }
     }
 }
 

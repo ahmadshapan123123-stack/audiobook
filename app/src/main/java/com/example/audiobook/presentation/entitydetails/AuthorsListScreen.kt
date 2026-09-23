@@ -36,6 +36,7 @@ import java.util.UUID
 fun AuthorsListScreen(
     onBack: () -> Unit,
     onOpenAuthor: (UUID) -> Unit,
+    onAuthorOptions: (UUID) -> Unit = {},
     viewModel: AuthorsListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -91,6 +92,7 @@ fun AuthorsListScreen(
                     avatarTitle = author.name,
                     avatarColor = Color(row.coverColor.toInt()),
                     onClick = { onOpenAuthor(author.id) },
+                    onLongPress = { onAuthorOptions(author.id) },
                     menuActions = listOf(
                         EntityMenuAction(R.string.entity_context_open) { onOpenAuthor(author.id) },
                         EntityMenuAction(R.string.entity_context_rename) { renameTarget = row },

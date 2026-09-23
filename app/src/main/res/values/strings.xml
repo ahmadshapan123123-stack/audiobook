@@ -107,9 +107,14 @@
     <string name="library_menu_review">مراجعة المطابقات</string>
     <string name="library_menu_review_count">مراجعة المطابقات (%1$d)</string>
     <string name="library_menu_roots">مجلدات المكتبة</string>
+    <string name="library_menu_authors">المؤلفون</string>
+    <string name="library_menu_series">السلاسل</string>
     <string name="library_search_label">ابحث في أثير</string>
     <string name="library_search_placeholder">العنوان أو المؤلف</string>
     <string name="library_search_clear">مسح البحث</string>
+    <string name="library_topbar_title">المكتبة</string>
+    <string name="library_search_action">بحث في المكتبة</string>
+    <string name="library_close_search">إغلاق البحث</string>
     <string name="no_results_title">لم نجد نتائج</string>
     <string name="no_results_hint">جرّب كلمة أخرى، أو امسح البحث</string>
     <string name="clear_search">مسح البحث</string>
@@ -385,6 +390,33 @@
     <string name="settings_version">الإصدار %1$s</string>
     <string name="settings_about_desc">مكتبة صوتية عربية ذكية مفتوحة المصدر.</string>
 
+    <string name="settings_pending_discoveries">الاكتشافات المعلّقة</string>
+    <string name="settings_pending_discoveries_desc">مراجعة المجلدات الصوتية المكتشفة حديثًا: دمج أو إسناد أو تجاهل.</string>
+
+    <!-- ===== Part 4: الاكتشافات المعلّقة (قائمة الانتظار + البوب-أب + شاشة الإعدادات) ===== -->
+    <string name="pending_discoveries_title">الاكتشافات المعلّقة</string>
+    <string name="pending_discoveries_empty">لا توجد اكتشافات معلّقة حاليًا.</string>
+    <string name="pending_discoveries_root">المصدر: %1$s</string>
+    <string name="pending_discoveries_folder">المجلد: %1$s</string>
+    <string name="pending_discoveries_count">%1$d عنصرًا</string>
+    <string name="discovery_popup_title">تم اكتشاف %1$d عنصرًا جديدًا</string>
+    <string name="discovery_popup_subtitle">اختر كيف تتعامل معها.</string>
+    <string name="discovery_popup_later">لاحقًا</string>
+    <string name="discovery_decision_create_books">إنشاء كتاب لكل مجلد</string>
+    <string name="discovery_decision_merge_one">دمج ككتاب واحد</string>
+    <string name="discovery_decision_assign_series">إسناد إلى سلسلة</string>
+    <string name="discovery_decision_assign_author">إسناد إلى مؤلف</string>
+    <string name="discovery_decision_ignore">تجاهل</string>
+    <string name="discovery_assign_apply">تطبيق على الكل</string>
+    <string name="discovery_assign_hint_series">اسم السلسلة</string>
+    <string name="discovery_assign_hint_author">اسم المؤلف</string>
+    <string name="discovery_assign_confirm">تطبيق</string>
+    <string name="discovery_assigned_series">أُسند إلى سلسلة «%1$s».</string>
+    <string name="discovery_assigned_author">أُسند إلى المؤلف «%1$s».</string>
+    <string name="discovery_merged_done">دُمجت في كتاب واحد.</string>
+    <string name="discovery_ignored_done">تجاهلتها — لن تُستورد في الفحوصات التالية.</string>
+    <string name="discovery_resolved_done">تم اعتماد الاكتشافات.</string>
+
     <!-- ===== الإعدادات (توحيد العرض: عنوان الرأس + وصف كل قسم + أسماء الخيارات) ===== -->
     <string name="settings_title">الإعدادات</string>
     <string name="settings_subtitle">تخصيص أثير</string>
@@ -569,6 +601,11 @@
     <string name="undo_action_moved">تم النقل</string>
     <string name="undo_snackbar_message">%1$s — %2$s</string>
     <string name="undo_tap_to_undo">تراجع</string>
+    <string name="author_deleted_undo">تم حذف المؤلف — تراجع</string>
+    <string name="author_merged_undo">تم دمج المؤلفين — تراجع</string>
+    <string name="series_deleted_undo">تم حذف السلسلة — تراجع</string>
+    <string name="series_merged_undo">تم دمج السلسلتين — تراجع</string>
+    <string name="collection_deleted_undo">تم حذف المجموعة — تراجع</string>
 
     <!-- ===== حقل السحب/الإفلات ===== -->
     <string name="move_to_title">نقل إلى</string>
@@ -606,6 +643,9 @@
     <string name="author_menu_merge">دمج مع مؤلف آخر</string>
     <string name="author_menu_delete">حذف المؤلف</string>
     <string name="author_merge_select">اختر المؤلف الذي سيحتفظ بالكتب</string>
+    <string name="author_add_series">إضافة سلسلة</string>
+    <string name="author_add_series_label">اسم السلسلة الجديدة</string>
+    <string name="series_created_done">تم إنشاء السلسلة</string>
 
     <!-- ===== إدارة السلاسل ===== -->
     <string name="series_menu_merge">دمج مع سلسلة أخرى</string>
@@ -624,6 +664,23 @@
     <string name="collection_menu_remove_book">إزالة من المجموعة</string>
     <string name="collection_edit_name_label">اسم المجموعة</string>
     <string name="collection_edit_save">حفظ</string>
+    <string name="collection_options_add_title">إضافة كتاب إلى المجموعة</string>
+    <string name="collection_options_add_none">كل كتب المكتبة موجودة في هذه المجموعة</string>
+    <string name="collection_added_done">أُضيف الكتاب إلى المجموعة</string>
+    <string name="collection_removed_done">تمت الإزالة من المجموعة — تراجع</string>
+    <string name="collection_remove_confirm">هل تريد إزالة \"%1$s\" من هذه المجموعة؟</string>
+
+    <!-- ===== ورقة خيارات الكيانات (ضغطة مطوّلة) ===== -->
+    <string name="entity_options_author_title">خيارات المؤلف</string>
+    <string name="entity_options_series_title">خيارات السلسلة</string>
+    <string name="entity_options_collection_title">خيارات المجموعة</string>
+    <string name="entity_options_edit">تعديل البيانات</string>
+    <string name="entity_options_view_books">عرض الكتب</string>
+    <string name="entity_options_add_book">إضافة كتاب</string>
+    <string name="author_options_move_book">نقل كتاب لمؤلف آخر</string>
+    <string name="author_options_pick_book">اختر الكتاب الذي ستنقله</string>
+    <string name="author_options_pick_author">اختر المؤلف الذي ستقله إليه</string>
+    <string name="series_merge_select">اختر السلسلة التي ستحتفظ بالكتب</string>
 
     <!-- ===== إدارة مجلدات المكتبة ===== -->
     <string name="root_menu_delete">حذف المجلد</string>

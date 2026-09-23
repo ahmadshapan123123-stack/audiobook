@@ -104,7 +104,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     showBack: Boolean = true,
     viewModel: SettingsViewModel = hiltViewModel(),
-    onOpenLibraryRoots: (() -> Unit)? = null
+    onOpenLibraryRoots: (() -> Unit)? = null,
+    onOpenPendingDiscoveries: (() -> Unit)? = null
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val logoColor by viewModel.logoColor.collectAsStateWithLifecycle()
@@ -281,6 +282,14 @@ fun SettingsScreen(
                         onClick = onOpenLibraryRoots
                     )
                     SettingsDivider()
+                    if (onOpenPendingDiscoveries != null) {
+                        SettingsNavRow(
+                            title = stringResource(R.string.settings_pending_discoveries),
+                            subtitle = stringResource(R.string.settings_pending_discoveries_desc),
+                            onClick = onOpenPendingDiscoveries
+                        )
+                        SettingsDivider()
+                    }
                     SettingsActionRow(
                         title = stringResource(R.string.settings_scan_now),
                         subtitle = if (isScanning) {

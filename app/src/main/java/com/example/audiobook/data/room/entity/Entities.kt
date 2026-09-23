@@ -15,6 +15,7 @@ enum class ProgressStatus { NOT_STARTED, IN_PROGRESS, FINISHED }
 enum class SessionEndReason { MANUAL_PAUSE, SLEEP_TIMER, FINISHED_BOOK, APP_CLOSED, INTERRUPTED }
 enum class SessionState { ACTIVE, COMPLETED, INTERRUPTED }
 enum class UserDecision { SAME_EDITION, DIFFERENT_EDITION, NOT_SAME_BOOK }
+enum class DiscoveryStatus { PENDING, RESOLVED, IGNORED }
 
 @Entity(tableName = "library_roots")
 data class LibraryRootEntity(
@@ -24,7 +25,8 @@ data class LibraryRootEntity(
     val isPriority: Boolean,
     val isEnabled: Boolean,
     val lastScanAt: Long?,
-    val scanStatus: ScanStatus
+    val scanStatus: ScanStatus,
+    val isDemo: Boolean = false
 )
 
 @Entity(tableName = "authors")
@@ -33,7 +35,8 @@ data class AuthorEntity(
     val name: String,
     val colorTheme: String?,
     val imagePath: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val isDemo: Boolean = false
 )
 
 @Entity(
@@ -47,7 +50,8 @@ data class SeriesEntity(
     val name: String,
     val colorTheme: String?,
     val imagePath: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val isDemo: Boolean = false
 )
 
 @Entity(
@@ -190,7 +194,8 @@ data class CollectionEntity(
     val name: String,
     val icon: String?,
     val remoteId: UUID?,
-    val syncStatus: SyncStatus
+    val syncStatus: SyncStatus,
+    val isDemo: Boolean = false
 )
 
 @Entity(
@@ -247,4 +252,26 @@ data class EditionMatchDecisionEntity(
     val signalsSnapshot: String,
     val userDecision: UserDecision,
     val createdAt: Long
+)
+
+/**
+ * اكتشاف جديد يُسجَّل عند ظهور مجلد صوتي لأول مرة (قائمة انتظار التعامل مع الاكتشافات).
+ * يُسجَّل بالتوازي مع الاستيراد التلقائي فلا يغيّر سلوك الفحص؛ «تجاهل» يمنع
+ * استيراد هذا المجلد في الفحوصات اللاحقة، و«الإسناد» يعدّل البنية التي أنشأها الفحص.
+ * المفتاح الطبيعي (rootId, folderPath) يضمن تسجيلًا واحدًا لكل مجلد مهما تكرر الفحص.
+ */
+@Entity(
+    tableName = "pending_discoveries",
+    foreignKeys = [ForeignKey(entity = LibraryRootEntity::class, parentColumns = ["id"], childColumns = ["rootId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["rootId", "folderPath"], unique = true), Index("status")]
+)
+data class PendingDiscoveryEntity(
+    @androidx.room.PrimaryKey val id: UUID = UUID.randomUUID(),
+    val rootId: UUID,
+    val folderPath: String,
+    val detectedTitle: String,
+    val authorName: String,
+    val seriesName: String?,
+    val discoveredAt: Long,
+    val status: DiscoveryStatus
 )

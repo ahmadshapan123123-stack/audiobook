@@ -1,0 +1,17 @@
+AUDIT2 PRE-CLEAR STATE (2026-09-21)
+emulator: emulator-5554, Android 16 (SDK 36), AVD pixel7_api36
+app DB version (PRAGMA user_version): 5
+books: 6
+library_roots: 1 (real Audiobooks root only)
+authors: 2 (أحمد خالد توفيق, نبيل فاروق)
+series: 0
+collections: 0
+demo entities: 0 (after prior cleanup pass)
+
+/sdcard/Audiobooks contents at pass start:
+  أحمد خالد توفيق/ما وراء الطبيعة/01.mp3
+  أحمد خالد توفيق/فانتازيا 2/01.mp3,02.mp3
+  أحمد خالد توفيق/سافاري الجديد/01.mp3
+  نبيل فاروق/ملف المستقبل/01.mp3
+
+Next: pm clear com.example.audiobook (fresh test state).
