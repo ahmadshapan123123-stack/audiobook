@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
+import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.domain.model.ScanMode
 import java.net.URLConnection
 
 data class EmbeddedChapter(val title: String?, val startPositionMs: Long)
@@ -20,10 +22,38 @@ data class AudioMetadata(
 
 interface AudioMetadataReader {
     fun read(uri: Uri, fileName: String): AudioMetadata
+
+    /**
+     * قراءة بعلم الحجم — يستفيد منه [MediaAudioMetadataReader] لتفادي استعلام
+     * SAF إضافي وتطبيق حارس الحجم قبل `setDataSource`.
+     * التنفيذ الافتراضي يتجاهل الحجم حتى تبقى المنفّذات المختبرة بلا تغيير.
+     */
+    fun read(uri: Uri, fileName: String, sizeBytes: Long?): AudioMetadata = read(uri, fileName)
 }
 
-class MediaAudioMetadataReader(private val context: Context) : AudioMetadataReader {
-    override fun read(uri: Uri, fileName: String): AudioMetadata {
+/**
+ * قارئ بيانات الوسائط الحقيقي. يقرأ من الملف عبر SAF.
+ *
+ * [appSettings] يحدّد وضع الفحص: [ScanMode.FAST] يتخطّى القراءة كليًا،
+ * [ScanMode.ECONOMY] يتخطّى ما فوق 100 م.ب. وفوق
+ * [ScanMode.MAX_READABLE_BYTES] (500 م.ب) يُتخطّى في كل الأوضاع — قراءة
+ * ملف بهذه الحجم تطلب ذاكرة أصلية من `MediaMetadataRetriever` (خارج كومة
+ * Java) وتُنتج SIGABRT على الأجهزة محدودة الذاكرة.
+ */
+class MediaAudioMetadataReader(
+    private val context: Context,
+    private val appSettings: AppSettings
+) : AudioMetadataReader {
+    override fun read(uri: Uri, fileName: String): AudioMetadata = read(uri, fileName, null)
+
+    override fun read(uri: Uri, fileName: String, sizeBytes: Long?): AudioMetadata {
+        // نمط واحد على المسار الساخن: استعلام حجم واحد، وقرار تخطّي قبل setDataSource.
+        val size = sizeBytes ?: documentSize(uri)
+        val mode = appSettings.currentScanMode()
+        if (!mode.allows(size)) {
+            Log.w(TAG, "Skipping metadata for $fileName (${size}b) in mode $mode")
+            return skipped()
+        }
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(context, uri)
@@ -57,6 +87,46 @@ class MediaAudioMetadataReader(private val context: Context) : AudioMetadataRead
         "opus" -> "audio/opus"
         "flac" -> "audio/flac"
         else -> "application/octet-stream"
+    }
+
+    /** نتيجة صفرية نظيفة عند تخطّي القراءة: الملف يُسجَّل بمدة صفر بلا وسوم. */
+    private fun skipped(): AudioMetadata {
+        val extension = ""
+        return AudioMetadata(
+            durationMs = 0L,
+            mimeType = URLConnection.guessContentTypeFromName(".$extension")
+                ?: "application/octet-stream",
+            title = null,
+            narratorName = null,
+            genre = null,
+            embeddedChapters = emptyList(),
+            album = null
+        )
+    }
+
+    /**
+     * حجم الملف عبر SAF دون رمي. نقرأ مباشرةً من `ContentResolver` (استعلام
+     * واحد بأعمدة `OpenableColumns.SIZE`) بلا إنشاء `DocumentFile` كاملة.
+     * فشل الاستعلام يعيد -1 أي «غير معروف» فيُقرأ الملف طبيعيًا (سلوك سابق)
+     * بدل إسقاطه خطأً.
+     */
+    private fun documentSize(uri: Uri): Long = try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(android.provider.OpenableColumns.SIZE),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else -1L
+        } ?: -1L
+    } catch (error: Exception) {
+        Log.w(TAG, "Unable to read size for $uri", error)
+        -1L
+    }
+
+    private companion object {
+        const val TAG = "AudioMetadataReader"
     }
 }
 

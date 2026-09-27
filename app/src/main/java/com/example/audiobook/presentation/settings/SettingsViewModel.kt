@@ -2,8 +2,16 @@ package com.example.audiobook.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import android.util.Log
+import androidx.lifecycle.viewModelScope
 import com.example.audiobook.background.reclassify.ReclassifyResultNotifier
 import com.example.audiobook.background.reclassify.ReclassifyScheduler
+import com.example.audiobook.background.scan.ScanServiceLauncher
+import com.example.audiobook.background.scan.ScanJob
+import com.example.audiobook.background.scan.ScanOutcome
+import com.example.audiobook.background.scan.ScanRequest
+import com.example.audiobook.background.scan.ScanServiceNotifier
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.domain.usecases.ClearDemoDataResult
 import com.example.audiobook.domain.usecases.ClassificationPreviewPerRoot
@@ -16,16 +24,21 @@ import com.example.audiobook.domain.usecases.ScanLibraryNow
 import com.example.audiobook.domain.usecases.RebuildLibraryStructure
 import com.example.audiobook.domain.usecases.RebuildStructureResult
 import com.example.audiobook.domain.usecases.ScanNowResult
+import com.example.audiobook.domain.usecases.ScanProgress
+import com.example.audiobook.domain.usecases.ScanProgressBus
 import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.domain.model.LogoColorMode
+import com.example.audiobook.domain.model.ScanMode
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.LibraryRootDao
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -36,17 +49,23 @@ class SettingsViewModel @Inject constructor(
     private val libraryManagement: LibraryManagement,
     private val libraryRootDao: LibraryRootDao,
     private val bookDao: BookDao,
-    private val scanLibraryNow: ScanLibraryNow,
-    private val rebuildLibraryStructure: RebuildLibraryStructure,
+    private val scanServiceLauncher: ScanServiceLauncher,
     private val reclassifyLibrary: ReclassifyLibrary,
     private val libraryClassificationPreview: LibraryClassificationPreview,
-    private val reclassifyScheduler: ReclassifyScheduler
+    private val reclassifyScheduler: ReclassifyScheduler,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     val themeMode: StateFlow<AppThemeMode> = appSettings.themeMode
     val logoColor: StateFlow<LogoColorMode> = appSettings.logoColor
     val intelligenceLevel: StateFlow<IntelligenceLevel> = appSettings.intelligenceLevel
     val autoSeriesClassification: StateFlow<Boolean> = appSettings.autoSeriesClassification
+
+    /** PART 12: «وضع الفحص» — عادي/اقتصادي/سريع. */
+    val scanMode: StateFlow<ScanMode> = appSettings.scanMode
+
+    fun setScanMode(mode: ScanMode) = appSettings.setScanMode(mode)
+
     val defaultSpeed: StateFlow<Float> = appSettings.defaultSpeed
     val autoResume: StateFlow<Boolean> = appSettings.autoResume
     val defaultSleepMinutes: StateFlow<Int> = appSettings.defaultSleepMinutes
@@ -127,6 +146,19 @@ class SettingsViewModel @Inject constructor(
     private val _scanFailed = MutableStateFlow(false)
     val scanFailed: StateFlow<Boolean> = _scanFailed.asStateFlow()
 
+    /**
+     * PART 11: رُفض الفحص لأن فحصًا آخر يعمل (حارس [ScanProgressBus]). حالة منفصلة
+     * عن [scanFailed] لأن الرسالة مختلفة — ليست خطأً ولا «فشل».
+     */
+    private val _scanAlreadyRunning = MutableStateFlow(false)
+    val scanAlreadyRunning: StateFlow<Boolean> = _scanAlreadyRunning.asStateFlow()
+
+    /** PART 1: تقدّم الفحص الآتي من الخدمة الأمامية (يملؤه مراقب ScanProgressBus). */
+    private val _scanProgress = MutableStateFlow<ScanProgress?>(null)
+    val scanProgress: StateFlow<ScanProgress?> = _scanProgress.asStateFlow()
+
+    private var progressObserver: kotlinx.coroutines.Job? = null
+
     private val _isPreviewingClassification = MutableStateFlow(false)
     val isPreviewingClassification: StateFlow<Boolean> = _isPreviewingClassification.asStateFlow()
 
@@ -182,12 +214,40 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             _isScanning.value = true
-            runCatching { scanLibraryNow() }
-                .onSuccess { result ->
-                    _scanResult.value = result
-                    refreshRootsCount()
+            // PART 1: الفحص يمرّ عبر ScanForegroundService — نطاق foreground
+            // لا مقيّد بظهور الشاشة، فلا يقتله lmkd على مكتبة كبيرة. التقدّم
+            // يأتي من ScanProgressBus مباشرةً فيُبقي الشريط حيًّا.
+            progressObserver?.cancel()
+            progressObserver = viewModelScope.launch {
+                ScanProgressBus.state.collect { progress ->
+                    if (progress != null) _scanProgress.value = progress
                 }
-                .onFailure { _scanFailed.value = true }
+            }
+            // PART 1: لا مسار احتياطي مباشر. الفحص في هذه الشاشة إما عبر
+            // الخدمة الأمامية أو لا فحص — تشغيل `scanLibraryNow()` من
+            // ViewModel كان يسقط كل ضمانة بقاء الخدمة عند فشل `start()`،
+            // وهو بالضبط ما يفشل على مكتبة كبيرة.
+            // الناقل يُصفَّر **قبل** `launch` لا بعده: الخدمة قد تنشر حصيلتها
+            // وتعود قبل أن يُرجع `launch` قيمة `true`، فتصفييرٌ بعده يمحو
+            // حصيلة هذا الطلب ويُنتظر التالية إلى الأبد.
+            ScanServiceNotifier.reset()
+            if (!scanServiceLauncher.launch(ScanRequest(ScanJob.FULL_SCAN))) {
+                Log.w(TAG, "scan-service-unavailable; scan not started")
+                _scanFailed.value = true
+            } else {
+                when (val outcome = awaitScanOutcome()) {
+                    is ScanOutcome.Completed -> {
+                        _scanResult.value = outcome.outcome
+                        refreshRootsCount()
+                    }
+                    is ScanOutcome.Failed -> _scanFailed.value = true
+                    // ليس خطأ: فحص آخر يعمل. نُظهر الرسالة المخصّصة لا رسالة الفشل.
+                    ScanOutcome.Rejected -> _scanAlreadyRunning.value = true
+                    ScanOutcome.Cancelled -> Unit
+                }
+            }
+            progressObserver?.cancel()
+            progressObserver = null
             _isScanning.value = false
         }
     }
@@ -196,8 +256,19 @@ class SettingsViewModel @Inject constructor(
         _scanResult.value = null
     }
 
+    /**
+     * ينتظر حصيلة هذا الفحص من الناقل. الناقل يُصفَّر قبل `launch` في
+     * `scanNow`/`rebuildStructure`، فأول قيمة غير null تخصّ هذا الطلب.
+     */
+    private suspend fun awaitScanOutcome(): ScanOutcome =
+        ScanServiceNotifier.result.first { it != null } ?: ScanOutcome.Failed("no-result")
+
     fun consumeScanFailed() {
         _scanFailed.value = false
+    }
+
+    fun consumeScanAlreadyRunning() {
+        _scanAlreadyRunning.value = false
     }
 
     /**
@@ -238,15 +309,44 @@ class SettingsViewModel @Inject constructor(
             _rebuildError.value = null
             // [_rebuildBookCount] يُبقى كما هو: الحوار يظل ظاهرًا أثناء التنفيذ
             // لعرض مؤشّر التقدّم، وهو ما يحجب ما خلفه عن اللمس أصلًا.
-            runCatching { rebuildLibraryStructure() }
-                .onSuccess { result ->
-                    _rebuildResult.value = result
-                    refreshRootsCount()
+            // PART 1: عبر الخدمة الأمامية — نظافة القشور + الفحص كلاهما مغطّى
+            // بستوى foreground، فلا يُقتل الفحص على مكتبة كبيرة.
+            progressObserver?.cancel()
+            progressObserver = viewModelScope.launch {
+                ScanProgressBus.state.collect { progress ->
+                    if (progress != null) _scanProgress.value = progress
                 }
-                .onFailure { error ->
-                    _rebuildError.value = error.message ?: error::class.java.simpleName
-                    _rebuildFailed.value = true
+            }
+            ScanServiceNotifier.reset()
+            if (!scanServiceLauncher.launch(ScanRequest(ScanJob.REBUILD))) {
+                // لا rebuild مباشر: المسار القديم كان ينظّف القشور ثم يفحص
+                // داخل ViewModel، أي بلا ضمانة بقاء عند خروج التطبيق للخلفية.
+                Log.w(TAG, "scan-service-unavailable; rebuild not started")
+                _rebuildError.value = "تعذّر بدء خدمة الفحص"
+                _rebuildFailed.value = true
+            } else {
+                val outcome = ScanServiceNotifier.result.first { it != null }
+                    ?: ScanOutcome.Failed("no-result")
+                ScanServiceNotifier.reset()
+                when (outcome) {
+                    is ScanOutcome.Completed -> {
+                        // إعادة البناء تُغلَّف بنفس عقد RebuildStructureResult ليبقى
+                        // مسار العرض (Snackbar) واحدًا في الحالتين. الخدمة تنفّذ
+                        // إعادة البناء كاملةً فتُرجع نفس العقد.
+                        _rebuildResult.value = outcome.rebuildResult
+                            ?: RebuildStructureResult(shellsRemoved = 0, orphanBooksRemoved = 0, scan = outcome.outcome)
+                        refreshRootsCount()
+                    }
+                    is ScanOutcome.Failed -> {
+                        _rebuildError.value = outcome.reason
+                        _rebuildFailed.value = true
+                    }
+                    ScanOutcome.Rejected -> _scanAlreadyRunning.value = true
+                    ScanOutcome.Cancelled -> Unit
                 }
+            }
+            progressObserver?.cancel()
+            progressObserver = null
             _isRebuilding.value = false
             // انتهى التنفيذ: يُغلق الحوار ليظهر الـSnackbar.
             _rebuildBookCount.value = null
@@ -366,5 +466,9 @@ class SettingsViewModel @Inject constructor(
     fun setResumeReminderEnabled(enabled: Boolean) {
         appSettings.setResumeReminderEnabled(enabled)
         reminderScheduler.syncWithSettings()
+    }
+
+    private companion object {
+        const val TAG = "SettingsVM"
     }
 }

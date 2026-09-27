@@ -1,11 +1,19 @@
 package com.example.audiobook.presentation.onboarding
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
+import com.example.audiobook.background.scan.ScanJob
+import com.example.audiobook.background.scan.ScanOutcome
+import com.example.audiobook.background.scan.ScanRequest
+import com.example.audiobook.background.scan.ScanServiceLauncher
+import com.example.audiobook.background.scan.ScanServiceNotifier
+import com.example.audiobook.domain.usecases.OnboardingImportMaterializer
+import com.example.audiobook.domain.usecases.PendingOnboardingImport
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.data.preferences.AppSettings
@@ -35,8 +43,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
 /** حالات آلة الإعداد (المرحلة 5): ترحيب → اختيار مجلد → معاينة → اعتماد/تعديل → استيراد → تم. */
 sealed interface OnboardingState {
@@ -60,9 +70,15 @@ class OnboardingViewModel @Inject constructor(
     application: Application,
     private val database: AppDatabase,
     private val fileSource: LibraryFileSource,
-    private val scanRoot: ScanRoot,
-    private val appSettings: AppSettings
+    private val appSettings: AppSettings,
+    private val scanServiceLauncher: ScanServiceLauncher,
+    private val pendingOnboardingImport: PendingOnboardingImport
 ) : AndroidViewModel(application) {
+
+    // GAP 2: لم يعد هذا الـViewModel يملك ScanRoot ولا يفتح الخدمة بنفسه.
+    // كان يدخل ScanRoot ليُسقط مسارًا احتياطيًا يستورد داخل النطاق، وهو
+    // تحديدًا ما أُزيل: الاستيراد كله صار في ScanForegroundService عبر
+    // scanServiceLauncher، فلا حاجة لـContext هنا ولا لمسار فحص مباشر.
 
     private val _state = MutableStateFlow<OnboardingState>(OnboardingState.Welcome)
     val state: StateFlow<OnboardingState> = _state.asStateFlow()
@@ -178,6 +194,16 @@ class OnboardingViewModel @Inject constructor(
         val tree = currentTree() ?: return
         val uri = _pickedUri.value ?: return
         _state.value = OnboardingState.Importing(ScanPhase.DISCOVERING, 0, 0)
+        // PART 1: بمجرد تفويض الفحص للخدمة، نراقب تقدّمها على الناقل المشترك
+        // حتى تُبقي شاشة Importing حيّة. الإلغاء يمرّ عبر نفس الناقل فيصل
+        // الخدمة عبر requestCancel.
+        val progressJob = viewModelScope.launch {
+            ScanProgressBus.state.collect { progress ->
+                if (_state.value is OnboardingState.Importing && progress != null) {
+                    publishImport(progress)
+                }
+            }
+        }
         viewModelScope.launch {
             try {
                 // 1) الجذر — يلزم أولًا لأن PendingDiscovery تحمل FK إليه.
@@ -191,24 +217,88 @@ class OnboardingViewModel @Inject constructor(
                 )
                 database.libraryRootDao().insert(root)
 
-                // 2) شجرة القاعدة مطابقة للمعاينة المعتمَدة (تعديلات + تخطي).
-                database.withTransaction { materializeTree(root, tree) }
+                // 2) GAP 2: لم نعد نموّه الشجرة هنا. الشجرة تُسطَّح إلى قائمة
+                //    مواصفات وتُحفظ حالةً معلَّقة، ثم تتولّى الخدمة الأمامية
+                //    الكتابة والفحص. السبب: `materializeTree` كانتDirectories
+                //    آلاف INSERT في معاملات صغيرة بلا أي تغطية foreground،
+                //    فخروج المستخدم أو ضغط النظام على العملية يقتلها في
+                //    منتصف شجرة 10,000 كتاب.
+                val bookSpecs = flattenTree(tree)
+                val renamedPaths = edits
+                    .filterIsInstance<ClassificationEdit.RenameBook>()
+                    .map { it.path }
+                    .toSet()
+                val skippedPaths = edits.filterIsInstance<ClassificationEdit.SkipFolder>().map { it.path }
+                pendingOnboardingImport.enqueue(
+                    PendingOnboardingImport.Payload(
+                        rootId = root.id,
+                        books = bookSpecs,
+                        renamedPaths = renamedPaths,
+                        skippedPaths = skippedPaths
+                    )
+                )
 
-                // 3) الفحص الفعلي (المرحلة 4 بلا تغيير) يملأ الملفات/المدد/الفصول
-                //    ويربطها بالإصدارات الممهَّدة؛ المتخطاة تُتجاهَل (أُشير إليها IGNORED).
-                val report = scanRoot(root.id, onProgress = { publishImport(it) })
-
-                // 4) تفريغ التعديلات بعد الاستيراد الناجح ثم الخروج للمكتبة.
-                database.onboardingEditDao().deleteForRoot(uri.toString())
-                appSettings.setHasCompletedOnboarding(true)
-                _state.value = OnboardingState.Done
-                Log.i(TAG, "import-done root=${root.id} files=${report.filesSeen} books=${report.editionsCreated}")
+                // 3) الفحص الفعلي يملأ الملفات/المدد/الفصول ويربطها بالإصدارات
+                //    الممهَّدة؛ المتخطاة تُتجاهَل (أُشير إليها IGNORED).
+                //    الخدمة هي التي تطبّق التوجيه ثم تفحص — كلاهما في نطاق
+                //    أمامي واحد. التقدّم يصل عبر ScanProgressBus (المشترك)
+                //    والنتيجة عبر ScanServiceNotifier — observes أدناه تنقلهما
+                //    لشاشة Importing.
+                // الناقل يُصفَّر **قبل** الإطلاق: الخدمة قد تنشر حصيلتها وتعود
+                // قبل أن يُرجع `launch` قيمة `true`، فتصفييرٌ بعده يمحو حصيلة
+                // هذا الاستيراد وينتظر الشاشة التالية إلى الأبد.
+                ScanServiceNotifier.reset()
+                val started = scanServiceLauncher.launch(
+                    ScanRequest(ScanJob.ONBOARDING_IMPORT, root.id.toString())
+                )
+                if (started) {
+                    // الخدمة تملك التوجيه والفحص من الآن. نجلس على الناقل المشترك حتى
+                    // تُنهي الخدمة العمل، ثم نُكمل خطوات ما بعد الاستيراد
+                    // (تفريغ التعديلات + الانتقال للمكتبة) في هذا النطاق نفسه.
+                    val outcome = ScanServiceNotifier.result.first { it != null }
+                        ?: ScanOutcome.Failed("no-result")
+                    ScanServiceNotifier.reset()
+                    when (outcome) {
+                        is ScanOutcome.Completed -> completeImport(
+                            root = root,
+                            filesSeen = outcome.outcome.filesSeen,
+                            booksFound = outcome.outcome.booksFound
+                        )
+                        ScanOutcome.Cancelled -> {
+                            Log.i(TAG, "import-cancelled root=${root.id}")
+                            currentTree()?.let { _state.value = OnboardingState.ShowPreview(it) }
+                        }
+                        is ScanOutcome.Failed -> throw IllegalStateException(outcome.reason)
+                        // رفض بالحارس: shouldn’t happen (we are the only scan)، لكن
+                        // نُعيد المستخدم لشاشة الاعتماد بدل تعليق.
+                        ScanOutcome.Rejected -> {
+                            Log.w(TAG, "import-rejected reason=scan-busy")
+                            currentTree()?.let { _state.value = OnboardingState.ShowPreview(it) }
+                        }
+                    }
+                } else {
+                    // GAP 2: لا مسار احتياطي. استيراد 10,000 كتاب داخل
+                    // ViewModel بلا تغطية أمامية هو تحديدًا ما نحاول إلغاؤه.
+                    pendingOnboardingImport.clear()
+                    Log.w(TAG, "scan-service-unavailable; import aborted before any insert")
+                    _state.value = OnboardingState.ShowPreview(currentTree() ?: return@launch)
+                }
             } catch (error: Throwable) {
                 // لا نترك الإعداد عالقًا: العودة لشاشة الاعتماد مع إبقاء التعديلات للاستئناف.
                 Log.w(TAG, "import-failed", error)
                 currentTree()?.let { _state.value = OnboardingState.ShowPreview(it) }
+            } finally {
+                progressJob.cancel()
             }
         }
+    }
+
+    /** ما بعد فحص ناجح: تفريغ التعديلات والانتقال للمكتبة. */
+    private suspend fun completeImport(root: LibraryRootEntity, filesSeen: Int, booksFound: Int) {
+        database.onboardingEditDao().deleteForRoot(root.uri)
+        appSettings.setHasCompletedOnboarding(true)
+        _state.value = OnboardingState.Done
+        Log.i(TAG, "import-done root=${root.id} files=$filesSeen books=$booksFound")
     }
 
     fun retry() = confirmAndImport()
@@ -243,106 +333,47 @@ class OnboardingViewModel @Inject constructor(
     }
 
     /**
+     * GAP 2: تسطيح الشجرة المعتمدة إلى قائمة مواصفات تعبر إلى الخدمة.
+     *
+     * الترتيب محفوظ كما كان في `materializeTree` القديم: كتب المؤلف أولًا،
+     * ثم كتب كل سلسلة بالترتيب، ثم الكتب غير المنسوبة.
+     */
+    private fun flattenTree(tree: PreviewTree): List<OnboardingImportMaterializer.BookSpec> {
+        val specs = ArrayList<OnboardingImportMaterializer.BookSpec>()
+        tree.authors.forEach { authorNode ->
+            val authorName = authorNode.name
+            authorNode.books.forEach { book -> specs += bookSpec(authorName, null, book) }
+            authorNode.series.forEach { seriesNode ->
+                seriesNode.books.forEach { book -> specs += bookSpec(authorName, seriesNode.name, book) }
+            }
+        }
+        tree.unassignedBooks.forEach { book -> specs += bookSpec(null, null, book) }
+        return specs
+    }
+
+    private fun bookSpec(
+        authorName: String?,
+        seriesName: String?,
+        book: PreviewBook
+    ) = OnboardingImportMaterializer.BookSpec(
+        authorName = authorName,
+        seriesName = seriesName,
+        title = book.title,
+        folderPath = book.folderPath,
+        totalDurationMs = book.totalDurationMs
+    )
+
+    /**
      * إنشاء شجرة قاعدة البيانات من شجرة المعاينة المعتمَدَة (داخل معاملة واحدة):
      * مؤلف ← سلسلة ← كتاب + إصدار لكل مسار، حتى يعثر عليها الفحص بمسار المجلد
      * ولا يعيد اشتقاق الأسماء وفق التصنيف التلقائي (تطبيق «التعديلات عند الفحص»).
      * العنوان المعاد تسميته يُعلَّم isTitleUserConfirmed حتى لا يكتب فوقه الفحص.
      * المتخطاة تُسجَّل اكتشافًا IGNORED فيتجاهلها ScanRoot (لا تُنشأ لها كتب).
      */
-    private suspend fun materializeTree(root: LibraryRootEntity, tree: PreviewTree) {
-        val authorCache = HashMap<String, AuthorEntity>()
-        val seriesCache = HashMap<String, SeriesEntity>()
-        val renamedFolders = edits
-            .filterIsInstance<ClassificationEdit.RenameBook>()
-            .map { it.path }
-            .toSet()
-
-        suspend fun authorFor(name: String?): AuthorEntity? {
-            if (name.isNullOrBlank()) return null
-            authorCache[name]?.let { return it }
-            val author = database.authorDao().getByName(name)
-                ?: AuthorEntity(name = name, colorTheme = null).also { database.authorDao().insert(it) }
-            authorCache[name] = author
-            return author
-        }
-
-        suspend fun seriesFor(author: AuthorEntity, name: String?): SeriesEntity? {
-            if (name.isNullOrBlank()) return null
-            val key = "${author.id}:$name"
-            seriesCache[key]?.let { return it }
-            val series = database.seriesDao().getByParent(author.id)
-                .firstOrNull { it.name == name }
-                ?: SeriesEntity(authorId = author.id, name = name, colorTheme = null)
-                    .also { database.seriesDao().insert(it) }
-            seriesCache[key] = series
-            return series
-        }
-
-        suspend fun createBook(
-            author: AuthorEntity?,
-            series: SeriesEntity?,
-            book: PreviewBook
-        ) {
-            val titleConfirmed = book.folderPath in renamedFolders
-            val bookRow = BookEntity(
-                title = book.title,
-                authorId = author?.id,
-                seriesId = series?.id,
-                orderInSeries = null,
-                genre = null,
-                coverImagePath = null,
-                coverSource = CoverSource.PLACEHOLDER,
-                isCoverUserSelected = false,
-                isTitleUserConfirmed = titleConfirmed,
-                defaultEditionId = null,
-                remoteId = null,
-                syncStatus = SyncStatus.LOCAL_ONLY
-            ).also { database.bookDao().insert(it) }
-            database.editionDao().insert(
-                EditionEntity(
-                    bookId = bookRow.id,
-                    narratorName = null,
-                    label = book.folderPath.substringAfterLast('/').ifBlank { root.displayName },
-                    totalDurationMs = book.totalDurationMs,
-                    fileFormat = "UNKNOWN",
-                    libraryRootId = root.id,
-                    sourceFolderPath = book.folderPath,
-                    confidenceScore = 1f,
-                    isUserConfirmed = false,
-                    remoteId = null,
-                    syncStatus = SyncStatus.LOCAL_ONLY
-                )
-            )
-        }
-
-        tree.authors.forEach { authorNode ->
-            val author = authorFor(authorNode.name)
-            authorNode.books.forEach { createBook(author, null, it) }
-            authorNode.series.forEach { seriesNode ->
-                val series = author?.let { seriesFor(it, seriesNode.name) }
-                seriesNode.books.forEach { createBook(author, series, it) }
-            }
-        }
-        tree.unassignedBooks.forEach { createBook(null, null, it) }
-
-        // المجلدات المتخطاة: يتجاهلها الفحص (يمنع إنشاء كتب لها خلاف المعاينة).
-        val skippedPaths = edits.filterIsInstance<ClassificationEdit.SkipFolder>().map { it.path }
-        skippedPaths.forEach { folderPath ->
-            database.pendingDiscoveryDao().insert(
-                PendingDiscoveryEntity(
-                    rootId = root.id,
-                    folderPath = folderPath,
-                    detectedTitle = "",
-                    authorName = "",
-                    seriesName = null,
-                    discoveredAt = System.currentTimeMillis(),
-                    status = DiscoveryStatus.IGNORED
-                )
-            )
-        }
-    }
-
     companion object {
         private const val TAG = "Onboarding"
+
+        /** PART 9: حجم دفعة الاستيراد — WAL قصير وعدد معاملات معقول. */
+        private const val MATERIALIZE_BATCH_SIZE = 50
     }
 }

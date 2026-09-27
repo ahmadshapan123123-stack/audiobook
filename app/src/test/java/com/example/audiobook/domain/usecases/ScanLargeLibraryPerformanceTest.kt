@@ -76,7 +76,7 @@ class ScanLargeLibraryPerformanceTest {
             prepared = scanRoot.prepareFiles(
                 rootId = root.id,
                 files = files,
-                existing = emptyMap(),
+                root = root,
                 foundUris = mutableSetOf(),
                 report = report
             )

@@ -71,6 +71,7 @@ import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.domain.model.LogoColorMode
+import com.example.audiobook.domain.model.ScanMode
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.LocalAppAccent
@@ -144,6 +145,9 @@ fun SettingsScreen(
     val rebuildBookCount by viewModel.rebuildBookCount.collectAsStateWithLifecycle()
     val rebuildError by viewModel.rebuildError.collectAsStateWithLifecycle()
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
+    val scanAlreadyRunning by viewModel.scanAlreadyRunning.collectAsStateWithLifecycle()
+    val scanMode by viewModel.scanMode.collectAsStateWithLifecycle()
+    var scanModeDialog by remember { mutableStateOf(false) }
     val demoCleanupResult by viewModel.demoCleanupResult.collectAsStateWithLifecycle()
     val isReclassifying by viewModel.isReclassifying.collectAsStateWithLifecycle()
     val reclassifyPreview by viewModel.reclassifyPreview.collectAsStateWithLifecycle()
@@ -170,6 +174,7 @@ fun SettingsScreen(
 
     val scanDoneTemplate = stringResource(R.string.settings_scan_result)
     val scanFailedMessage = stringResource(R.string.settings_scan_failed)
+    val scanAlreadyRunningMessage = stringResource(R.string.settings_scan_already_running)
     val reclassifyDoneTemplate = stringResource(R.string.settings_reclassify_result)
     val demoRemovedTemplate = stringResource(R.string.settings_demo_removed)
     val demoNotFoundMessage = stringResource(R.string.settings_demo_not_found)
@@ -212,6 +217,13 @@ fun SettingsScreen(
         if (scanFailed) {
             snackbarHostState.showSnackbar(scanFailedMessage)
             viewModel.consumeScanFailed()
+        }
+    }
+    // PART 11: رفض بسبب فحص جارٍ — رسالة مختلفة عن الفشل.
+    LaunchedEffect(scanAlreadyRunning) {
+        if (scanAlreadyRunning) {
+            snackbarHostState.showSnackbar(scanAlreadyRunningMessage)
+            viewModel.consumeScanAlreadyRunning()
         }
     }
     LaunchedEffect(demoCleanupResult) {
@@ -359,6 +371,19 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
+                    // PART 12: وضع الفحص — صفّان بنفس نمط الصفوف المجاورة (لا تصميم جديد).
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_scan_mode),
+                        subtitle = stringResource(
+                            when (scanMode) {
+                                ScanMode.NORMAL -> R.string.settings_scan_mode_normal
+                                ScanMode.ECONOMY -> R.string.settings_scan_mode_economy
+                                ScanMode.FAST -> R.string.settings_scan_mode_fast
+                            }
+                        ),
+                        onClick = { scanModeDialog = true }
+                    )
+                    SettingsDivider()
                     SettingsActionRow(
                         title = stringResource(R.string.settings_scan_now),
                         subtitle = if (isScanning) {
@@ -556,6 +581,53 @@ fun SettingsScreen(
                     },
                     title = { Text(stringResource(R.string.settings_notif_daily_time)) },
                     text = { TimePicker(state = timeState) }
+                )
+            }
+
+            // PART 12: حوار وضع الفحص — نفس AlertDialog RadioButton المستخدَم
+            // في حوارات الإعداد الأخرى، بلا تصميم جديد.
+            if (scanModeDialog) {
+                val options = listOf(
+                    ScanMode.NORMAL to R.string.settings_scan_mode_normal,
+                    ScanMode.ECONOMY to R.string.settings_scan_mode_economy,
+                    ScanMode.FAST to R.string.settings_scan_mode_fast
+                )
+                AlertDialog(
+                    onDismissRequest = { scanModeDialog = false },
+                    confirmButton = {
+                        TextButton(onClick = { scanModeDialog = false }) {
+                            Text(stringResource(R.string.settings_time_cancel))
+                        }
+                    },
+                    title = { Text(stringResource(R.string.settings_scan_mode)) },
+                    text = {
+                        Column {
+                            options.forEach { (mode, labelRes) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.setScanMode(mode)
+                                            scanModeDialog = false
+                                        }
+                                        .padding(vertical = 10.dp)
+                                ) {
+                                    RadioButton(
+                                        selected = scanMode == mode,
+                                        onClick = {
+                                            viewModel.setScanMode(mode)
+                                            scanModeDialog = false
+                                        }
+                                    )
+                                    Text(
+                                        text = stringResource(labelRes),
+                                        modifier = Modifier.padding(start = 12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 )
             }
 

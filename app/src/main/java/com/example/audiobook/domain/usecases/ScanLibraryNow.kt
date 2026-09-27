@@ -21,11 +21,20 @@ class ScanLibraryNow @Inject constructor(
     private val scanRoot: ScanRoot,
     private val database: AppDatabase
 ) {
+    /**
+     * PART 1: يفضّل تشغيل الفحص عبر [com.example.audiobook.background.scan.ScanForegroundService]
+     * حتى لا يُقتل التطبيق تحت ضغط الذاكرة. هذا المسار احتياطي: متى كان التطبيق
+     * في المقدمة والخدمة غير متاحة (restricted context) يعمل الفحص مباشرة،
+     * و[scanRoot] يحمي نفسه بحارس [ScanProgressBus] على أي حال.
+     */
     suspend operator fun invoke(): ScanNowResult {
         val roots = libraryRoots.getEnabledBackgroundRoots() + libraryRoots.getEnabledPriorityRoots()
         if (roots.isEmpty()) return ScanNowResult(0, 0, 0)
         var filesSeen = 0
         roots.forEach { root ->
+            // PART 11: حارس الجلسة يُفتح ويُغلق داخل [ScanRoot] لنفسه لكل خطأ
+            // (بما فيه [ScanAlreadyRunningException])، فلا تسرّب هنا: الجذر التالي
+            // يفتح حارسًا نظيفًا.
             val report = scanRoot(root.id)
             filesSeen += report.filesSeen + report.filesDeduped
         }

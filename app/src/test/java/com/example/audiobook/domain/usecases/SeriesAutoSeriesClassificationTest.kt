@@ -1,5 +1,6 @@
 package com.example.audiobook.domain.usecases
 
+import com.example.audiobook.testing.FakeScanServiceLauncher
 import android.content.Context
 import android.net.Uri
 import android.os.Looper
@@ -104,11 +105,15 @@ class SeriesAutoSeriesClassificationTest {
             libraryManagementFor(database),
             database.libraryRootDao(),
             database.bookDao(),
-            scanLibraryNowFor(database, appSettings),
-            rebuildStructureFor(database, appSettings),
+            FakeScanServiceLauncher.running(
+                database,
+                scanLibraryNowFor(database, appSettings),
+                rebuildStructureFor(database, appSettings)
+            ),
             reclassifyLibrary,
             preview,
-            ReclassifyScheduler(context)
+            ReclassifyScheduler(context),
+            context
         )
         root = LibraryRootEntity(
             uri = "content://library", displayName = "Library", isPriority = true,

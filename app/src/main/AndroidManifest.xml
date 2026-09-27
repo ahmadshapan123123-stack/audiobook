@@ -13,6 +13,7 @@
         android:theme="@style/Theme.Audiobook"
         android:allowBackup="false"
         android:fullBackupContent="false"
+        android:largeHeap="true"
         android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
@@ -30,6 +31,15 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!--
+          PART 1C: المالك الأمامي لكل عمليات الفحص. قبله كانت «فحص المكتبة الآن»
+          تعمل داخل viewModelScope (لا foreground) فيقتلها lmkd على مكتبات كبيرة.
+          foregroundServiceType="dataSync" يطابق الأذونات في السطرين 3-4 على أندرويد 14+.
+        -->
+        <service
+            android:name=".background.scan.ScanForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

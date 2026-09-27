@@ -1,5 +1,6 @@
 package com.example.audiobook.domain.usecases
 
+import com.example.audiobook.testing.FakeScanServiceLauncher
 import android.content.Context
 import android.net.Uri
 import androidx.room.Room
@@ -63,11 +64,15 @@ class SettingsChoiceDrivesScanIntegrationTest {
             libraryManagementFor(database),
             database.libraryRootDao(),
             database.bookDao(),
-            scanLibraryNowFor(database, appSettings),
-            rebuildStructureFor(database, appSettings),
+            FakeScanServiceLauncher.running(
+                database,
+                scanLibraryNowFor(database, appSettings),
+                rebuildStructureFor(database, appSettings)
+            ),
             ReclassifyLibrary(database, appSettings),
             classificationPreviewFor(database, appSettings),
-            ReclassifyScheduler(context)
+            ReclassifyScheduler(context),
+            context
         )
         scanRoot = ScanRoot(database, source, reader, appSettings, EditionMerge(database))
         root = LibraryRootEntity(uri = "content://library", displayName = "Library", isPriority = true, isEnabled = true, lastScanAt = null, scanStatus = ScanStatus.IDLE)

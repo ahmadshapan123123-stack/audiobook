@@ -771,6 +771,7 @@ private fun DemoBadge() {
 @Composable
 private fun phaseLabel(progress: ScanProgress?): String = when (progress?.phase) {
     ScanPhase.DISCOVERING -> stringResource(R.string.scan_phase_discovering)
+    ScanPhase.IMPORTING -> stringResource(R.string.scan_phase_importing, progress.processed, progress.total)
     ScanPhase.PARSING -> stringResource(R.string.scan_phase_parsing, progress.processed, progress.total)
     ScanPhase.CLASSIFYING -> stringResource(R.string.scan_phase_classifying)
     ScanPhase.CREATING -> if (progress.currentFolder.isBlank()) {

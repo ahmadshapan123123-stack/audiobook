@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.domain.model.LogoColorMode
+import com.example.audiobook.domain.model.ScanMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -85,6 +86,13 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _autoSeriesClassification = MutableStateFlow(prefs.getBoolean(KEY_AUTO_SERIES, true))
     val autoSeriesClassification: StateFlow<Boolean> = _autoSeriesClassification.asStateFlow()
 
+    /**
+     * وضع الفحص (عادي/اقتصادي/سريع) — يحدّ من قراءة بيانات الوسائط للملفات الضخمة
+     * التي تُرهق الذاكرة الأصليّة على الأجهزة الضعيفة.
+     */
+    private val _scanMode = MutableStateFlow(loadScanMode())
+    val scanMode: StateFlow<ScanMode> = _scanMode.asStateFlow()
+
     // ── Onboarding / Demo ──
     private val _hasCompletedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false))
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
@@ -105,6 +113,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     /** قراءة متزامنة لوضع تصنيف السلاسل — يستخدمها المصنِّف أثناء الفحص/إعادة التصنيف. */
     fun currentAutoSeriesClassification(): Boolean = _autoSeriesClassification.value
+
+    /** قراءة متزامنة لوضع الفحص — يستخدمه قارئ بيانات الوسائط أثناء العمل. */
+    fun currentScanMode(): ScanMode = _scanMode.value
 
     // ── Setters ──
 
@@ -224,10 +235,18 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         appearancePrefs.edit().putString(KEY_LOGO_COLOR, value.name).apply()
     }
 
+    fun setScanMode(value: ScanMode) {
+        if (_scanMode.value == value) return
+        _scanMode.value = value
+        scanPrefs.edit().putString(KEY_SCAN_MODE, value.name).apply()
+    }
+
     private fun loadThemeMode(): AppThemeMode =
         appearancePrefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
             ?.let { runCatching { AppThemeMode.valueOf(it) }.getOrDefault(AppThemeMode.DARK) }
             ?: AppThemeMode.DARK
+
+    private fun loadScanMode(): ScanMode = ScanMode.fromName(scanPrefs.getString(KEY_SCAN_MODE, null))
 
     private fun loadIntelligenceLevel(): IntelligenceLevel =
         scanPrefs.getString(KEY_INTELLIGENCE_LEVEL, IntelligenceLevel.BALANCED.name)
@@ -261,6 +280,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_LOGO_COLOR = "logo_color"
         const val KEY_INTELLIGENCE_LEVEL = "intelligence_level"
         const val KEY_AUTO_SERIES = "auto_series_classification"
+        const val KEY_SCAN_MODE = "scan_mode"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         const val KEY_HAS_SKIPPED_ONBOARDING = "has_skipped_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"

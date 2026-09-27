@@ -8,6 +8,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.audiobook.background.reclassify.ReclassifyScheduler
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.localfilesystem.LibraryFileSource
+import com.example.audiobook.background.scan.ScanJob
+import com.example.audiobook.background.scan.ScanOutcome
+import com.example.audiobook.background.scan.ScanServiceLauncher
+import com.example.audiobook.background.scan.ScanServiceNotifier
 import com.example.audiobook.data.localfilesystem.ScanFile
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.repository.LocalOnlyLibraryRootRepository
@@ -116,12 +120,32 @@ class SettingsRebuildDialogTest {
         libraryManagementFor(database),
         database.libraryRootDao(),
         database.bookDao(),
-        scanNowWith(ImmediateFileSource()),
-        rebuild,
+        // PART 1: `SettingsViewModel` لا يملك مسار فحص مباشر بعد الآن — الطلب
+        // يمرّ عبر [ScanServiceLauncher]. هذا الخادم المزيف يحاكي ما تفعله
+        // الخدمة الأمامية (تنظّف القشور ثم تفحص) ليبقى الحوار قابلًا للاختبار
+        // دون تشغيل Service فعلي داخل Robolectric.
+        ScanServiceLauncher { request ->
+            lastLaunchedJob = request.job
+            if (request.job == ScanJob.REBUILD) {
+                // تحاكي الخدمة الأمامية: تنفيذ العمل ثم نشر الحصيلة.
+                val result = rebuild()
+                ScanServiceNotifier.notify(
+                    ScanOutcome.Completed(
+                        outcome = result.scan,
+                        rebuildResult = result
+                    )
+                )
+            }
+            true
+        },
         ReclassifyLibrary(database, appSettings),
         classificationPreviewFor(database, appSettings),
-        ReclassifyScheduler(context)
+        ReclassifyScheduler(context),
+        context
     )
+
+    /** آخر job طُلب عبر الخدمة — يثبت أن الطلب مرّ من المسار الأمامي. */
+    private var lastLaunchedJob: ScanJob? = null
 
     private fun idleMainLooper() {
         Shadows.shadowOf(Looper.getMainLooper()).idle()

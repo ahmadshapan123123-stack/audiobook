@@ -311,6 +311,8 @@ private fun ImportStep(phase: ScanPhase, processed: Int, total: Int, onCancel: (
 @Composable
 private fun phaseText(phase: ScanPhase, processed: Int, total: Int): String = when (phase) {
     ScanPhase.DISCOVERING -> stringResource(R.string.scan_phase_discovering)
+    // GAP 2: التوجيه قبل الفحص — «N كتاب من M».
+    ScanPhase.IMPORTING -> stringResource(R.string.scan_phase_importing, processed, total)
     ScanPhase.PARSING -> stringResource(R.string.scan_phase_parsing, processed, total)
     ScanPhase.CLASSIFYING -> stringResource(R.string.scan_phase_classifying)
     ScanPhase.CREATING -> stringResource(R.string.scan_phase_creating, processed, total)

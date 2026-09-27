@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.settings
 
+import com.example.audiobook.testing.FakeScanServiceLauncher
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -56,11 +57,15 @@ class SettingsViewModelTest {
         libraryManagementFor(database),
             database.libraryRootDao(),
             database.bookDao(),
-        scanLibraryNowFor(database, AppSettings(context)),
-        rebuildStructureFor(database, AppSettings(context)),
+        FakeScanServiceLauncher.running(
+            database,
+            scanLibraryNowFor(database, AppSettings(context)),
+            rebuildStructureFor(database, AppSettings(context))
+        ),
         ReclassifyLibrary(database, AppSettings(context)),
         classificationPreviewFor(database, AppSettings(context)),
-        ReclassifyScheduler(context)
+        ReclassifyScheduler(context),
+        context
     )
 
     @Test

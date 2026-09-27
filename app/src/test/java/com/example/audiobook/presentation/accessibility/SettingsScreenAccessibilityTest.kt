@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.accessibility
 
+import com.example.audiobook.testing.FakeScanServiceLauncher
 import android.content.Context
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -68,11 +69,15 @@ class SettingsScreenAccessibilityTest {
             libraryManagementFor(database),
             database.libraryRootDao(),
             database.bookDao(),
-            scanLibraryNowFor(database, appSettings),
-            rebuildStructureFor(database, appSettings),
+            FakeScanServiceLauncher.running(
+                database,
+                scanLibraryNowFor(database, appSettings),
+                rebuildStructureFor(database, appSettings)
+            ),
             ReclassifyLibrary(database, appSettings),
             classificationPreviewFor(database, appSettings),
-            ReclassifyScheduler(context)
+            ReclassifyScheduler(context),
+            context
         )
     }
 

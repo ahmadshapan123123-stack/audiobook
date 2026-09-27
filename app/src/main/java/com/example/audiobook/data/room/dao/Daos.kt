@@ -152,6 +152,42 @@ interface AudioFileDao : CrudDao<AudioFileEntity> {
     @Query("SELECT * FROM audio_files WHERE editionId = :editionId AND fileName = :fileName AND fileSizeBytes = :size LIMIT 1") suspend fun getByEditionNameSize(editionId: UUID, fileName: String, size: Long): AudioFileEntity?
     @Query("SELECT * FROM audio_files") fun observeAll(): Flow<List<AudioFileEntity>>
     @Query("SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<AudioFileEntity>
+
+    /**
+     * PART 5: ملفات مجلد واحد فقط (ينضم عبر `editions.sourceFolderPath`).
+     * بديل [getByRoot] في مسار إعادة الفحص: تحميل كل ملفات الجذر دفعةً واحدة
+     * يستهلك عشرات الميغابايت على مكتبة كبيرة، بينما الاستعلام لكل مجلد يبقي
+     * الذاكرة بحجم مجلد واحد. `e.sourceFolderPath = :folderPath` وحدها تسبق
+     * فرع الجذر المباشر: الملف胃口 الجذر يُخزَّن بمجلد أب واحد على الأقل
+     * (`ScanFile.folderPath`)، فليس هناك مسار فارغ يُطابَق.
+     */
+    @Query(
+        "SELECT af.* FROM audio_files af " +
+            "INNER JOIN editions e ON af.editionId = e.id " +
+            "WHERE e.libraryRootId = :rootId AND e.sourceFolderPath = :folderPath"
+    )
+    suspend fun getByRootFolder(rootId: UUID, folderPath: String): List<AudioFileEntity>
+
+    /**
+     * PART 5: صفحات من ملفات الجذر بترتيب `id` ثابت.
+     * `markMissingFiles` يمشي بها بدل `getByRoot` الكامل، فتبقى الذاكرة الحيّة
+     * بحجم صفحة واحدة بدل كل كيانات المكتبة. الترتيب بـ `id` لا يتأثر بتحديث
+     * `fileStatus` فالتصفّح بالـ offset آمن.
+     */
+    @Query(
+        "SELECT af.* FROM audio_files af INNER JOIN editions e ON af.editionId = e.id " +
+            "WHERE e.libraryRootId = :rootId ORDER BY af.id LIMIT :limit OFFSET :offset"
+    )
+    suspend fun getByRootPaged(rootId: UUID, limit: Int, offset: Int): List<AudioFileEntity>
+
+    /**
+     * PART 5: عدّ ملفات الجذر في SQL بدل `getByRoot(...).size` — الأخير
+     * كان يحمّل كل كيانات المكتبة (50 ألف صف) لقراءة عددها فقط، وهو عكس
+     * ما قصده تفريغ الذاكرة.
+     */
+    @Query("SELECT COUNT(*) FROM audio_files af INNER JOIN editions e ON af.editionId = e.id WHERE e.libraryRootId = :rootId")
+    suspend fun countByRoot(rootId: UUID): Int
+
     @Query("SELECT COUNT(*) FROM audio_files") suspend fun countAll(): Int
 }
 

@@ -760,6 +760,8 @@
 
     <!-- ===== المرحلة 4: فحص تدفقي + إشعار الفحص الأمامي ===== -->
     <string name="scan_phase_discovering">اكتشاف الملفات…</string>
+    <!-- GAP 2: مرحلة التوجيه قبل الفحص (استيراد الاستهلال داخل الخدمة الأمامية). -->
+    <string name="scan_phase_importing">تجهيز المكتبة… %1$d / %2$d كتاب</string>
     <string name="scan_phase_parsing">قراءة تفاصيل الملفات (%1$d/%2$d)…</string>
     <string name="scan_phase_classifying">تصنيف المجلدات…</string>
     <string name="scan_phase_creating">بناء الكتب (%1$d/%2$d)…</string>
@@ -767,6 +769,24 @@
     <string name="library_folder_retry">إعادة المحاولة</string>
     <string name="notif_scan_title">فحص المكتبة</string>
     <string name="notif_scan_text">جارٍ فحص مجلد “%1$s”…</string>
+
+    <!-- PART 1: إشعار الخدمة الأمامية -->
+    <string name="notif_scan_title_scanning">جارٍ فحص المكتبة</string>
+    <string name="notif_scan_progress">%1$s · %2$d / %3$d ملف</string>
+    <string name="notif_scan_progress_indeterminate">جارٍ استكشاف المجلدات…</string>
+    <string name="notif_scan_no_folder">المكتبة</string>
+    <string name="notif_scan_finished">اكتمل فحص المكتبة: %1$d كتاب</string>
+    <string name="notif_scan_cancelled">أُلغي فحص المكتبة</string>
+    <string name="notif_scan_failed">فشل فحص المكتبة</string>
+    <string name="action_cancel_scan">إلغاء</string>
+    <string name="settings_scan_already_running">الفحص جارٍ بالفعل</string>
+
+    <!-- PART 12: وضع الفحص -->
+    <string name="settings_scan_mode">وضع الفحص</string>
+    <string name="settings_scan_mode_normal">عادي — يقرأ كل الملفات (إن بطيء على الأجهزة الضعيفة)</string>
+    <string name="settings_scan_mode_economy">اقتصادي — يتخطّى الملفات الأكبر من 100 م.ب</string>
+    <string name="settings_scan_mode_fast">سريع — لا يقرأ بيانات الوسائط إطلاقًا</string>
+    <string name="notif_scan_already_running">الفحص جارٍ بالفعل</string>
     <string name="channel_scan_name">فحص المكتبة</string>
     <string name="channel_scan_desc">إشعار تقدم فحص المكتبة الصوتية.</string>
 

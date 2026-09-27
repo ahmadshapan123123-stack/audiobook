@@ -41,6 +41,19 @@ object NotificationChannels {
         ))
     }
 
+    /**
+     * قناة الفحص — ينشئها [com.example.audiobook.background.scan.ScanForegroundService]
+     * بنفس تعريف [createAll] لأن `startForeground` إلزامي خلال 5 ثوانٍ من
+     * `startForegroundService`، فلا يصحّ انتظار `createAll` في onCreate للتطبيق.
+     */
+    fun createScanChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val mgr = context.getSystemService(NotificationManager::class.java) ?: return
+        mgr.createNotificationChannel(
+            channel(context, SCAN, R.string.channel_scan_name, R.string.channel_scan_desc, NotificationManager.IMPORTANCE_LOW)
+        )
+    }
+
     private fun channel(ctx: Context, id: String, nameRes: Int, descRes: Int, importance: Int) =
         NotificationChannel(id, ctx.getString(nameRes), importance).apply {
             description = ctx.getString(descRes)

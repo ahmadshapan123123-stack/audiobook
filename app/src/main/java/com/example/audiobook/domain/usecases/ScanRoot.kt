@@ -43,13 +43,27 @@ data class ScanProgress(
 )
 
 /** أطوار الفحص بترتيبها: اكتشاف الملفات ← قراءة الوسائط ← التصنيف ← إنشاء الكتب ← تم. */
-enum class ScanPhase { DISCOVERING, PARSING, CLASSIFYING, CREATING, DONE }
+enum class ScanPhase {
+    DISCOVERING,
+
+    /** GAP 2: مرحلة الاستيراد قبل الفحص — تُنشر من الخدمة أثناء التوجيه. */
+    IMPORTING,
+    PARSING, CLASSIFYING, CREATING, DONE
+}
 
 /**
  * الفحص الحقيقي (R2): يستخرج الإشارات العشر فعليًا لكل مجلد، يحسب
  * Confidence Score حقيقيًا، يتخذ قرارات الدمج التلقائي تحت المستوى المختار
  * مع القيد الصارم، يسجل قرارات EditionMatchDecision، ويحترم User Override Wins.
  */
+/**
+ * رُفض الفحص لأن فحصًا آخر يعمل بالفعل (حارس [ScanProgressBus.tryBegin]).
+ * ليست خطأً في الفحص: لا حالة تتغيّر ولا يُوسَم الجذر ERROR. تُلتقط في
+ * [com.example.audiobook.background.scan.ScanForegroundService] وواجهات
+ * الاستدعاء لتُعرض رسالة «الفحص جارٍ» بدل رسالة خطأ.
+ */
+class ScanAlreadyRunningException : IllegalStateException("Another scan is already running")
+
 class ScanRoot @Inject constructor(
     private val database: AppDatabase,
     private val fileSource: LibraryFileSource,
@@ -62,17 +76,32 @@ class ScanRoot @Inject constructor(
         onProgress: (ScanProgress) -> Unit = {}
     ): ScanReport = withContext(Dispatchers.IO) {
         val root = database.libraryRootDao().getById(rootId) ?: error("LibraryRoot not found: $rootId")
-        database.libraryRootDao().setScanStatus(root.id, ScanStatus.SCANNING)
         val checkpointDao = database.scanCheckpointDao()
-        ScanProgressBus.begin()
+        // PART 11: فحص واحد فقط في الوقت نفسه. الفحص اليدوي + ScanWorker لم
+        // يكونا يتشاركان هذا الحارس، فيتولّى آخرُهما حالة التقدّم ويلغي طلب
+        // الإلغاء عن الأول. الفحص المرفوض يُلغى فورًا بلا أثر على الجارِي.
+        //
+        // ترتيب سطرين مقصود: `setScanStatus(SCANNING)` **بعد** `tryBegin()`
+        // لا قبله. كان يُكتب أولاً، فإن رُفض هذا الفصر جارٍ آخر فالجذر يبقى
+        // معلَّمًا SCANNING إلى ما لا نهاية رغم أنه لم يُفحص قط — وحالة
+        // كذبة تخدع الواجهة وتُظهر «جارٍ الفحص» على جذر خامل.
+        if (!ScanProgressBus.tryBegin()) {
+            Log.w(TAG, "scan-rejected root=$rootId reason=another-scan-running")
+            throw ScanAlreadyRunningException()
+        }
+        database.libraryRootDao().setScanStatus(root.id, ScanStatus.SCANNING)
         var cancelled = false
         try {
-            val existing = database.audioFileDao().getByRoot(root.id).associateBy { it.fileUri }
+            // PART 5: لم نعد تُحمَّل كل ملفات الجذر هنا. نحتفظ بعدّ إجمالي فقط
+            // لتحديد «فحص أول»، ونترك استدعاءات الملفات لكل مجلد في
+            // `existingForFolder` — فمكتبة 50 ألف ملف كانت تحمّل 50 ألف كيان دفعةً
+            // واحدة فوق قائمة الملفات نفسها.
+            val existingCount = database.audioFileDao().countByRoot(root.id)
             val foundUris = mutableSetOf<String>()
             val report = MutableScanReport(root.id)
             // الفحص الأول = لا ملف مُتتبَّع لهذا الجذر بعد (لا كتب) — فيُتخطى markMissingFiles
             // كليًا، حتى لا يعلّم فحص أول/جزئي عن قائمة ناقصة شيئًا موجودًا على أنه مفقود.
-            val isFirstScan = existing.isEmpty()
+            val isFirstScan = existingCount == 0
 
             val files = fileSource.listAudioFiles(Uri.parse(root.uri))
             publish(ScanProgress(ScanPhase.DISCOVERING, files.size, files.size, root.displayName), onProgress)
@@ -85,8 +114,8 @@ class ScanRoot @Inject constructor(
 
             // قراءة metadata تدفقية — يُنشر كل 100 ملف — مع إعادة استخدام كاش الفحص السابق
             // (نفس uri + نفس lastModified) بلا قراءة فعلية.
-            val prepared = prepareFiles(root.id, files, existing, foundUris, report) { parsed, total ->
-                publish(ScanProgress(ScanPhase.PARSING, parsed, total, ""), onProgress)
+            val prepared = prepareFiles(root.id, files, root, foundUris, report) { parsed, total, currentFolder ->
+                publish(ScanProgress(ScanPhase.PARSING, parsed, total, currentFolder), onProgress)
             }
 
             val resumeIndex = resumeIndexFor(root.id, checkpointDao, prepared, System.currentTimeMillis())
@@ -105,7 +134,7 @@ class ScanRoot @Inject constructor(
 
             cancelled = ScanProgressBus.isCancelRequested
             if (!cancelled && !isFirstScan) {
-                markMissingFiles(root.id, existing, foundUris, report)
+                markMissingFiles(root.id, root, foundUris, report)
             }
             if (!cancelled && StrictModeFlags.ENABLE_AUTO_MERGE) {
                 reconcileAutoMerges(root.id, signalsByFolder, report)
@@ -118,6 +147,10 @@ class ScanRoot @Inject constructor(
             publish(ScanProgress(ScanPhase.DONE, report.filesSeen, report.filesSeen, ""), onProgress)
             Log.i(TAG, "scan-complete root=${root.id} files=${report.filesSeen} metadataReads=${report.metadataReads} cacheHits=${report.cacheHits} missing=${report.missingMarked} restored=${report.restored} created=${report.editionsCreated} refined=${report.editionsRefined} autoMerged=${report.editionsAutoMerged} deduped=${report.filesDeduped} cancelled=$cancelled")
             report.toReport()
+        } catch (error: ScanAlreadyRunningException) {
+            // رفض بالحارس: لا حالة تغيّر، ولا نُفسد scanStatus للجذر المتصدّر
+            // ولا نمسّ حارس الفحص القائم.
+            throw error
         } catch (error: Throwable) {
             // أي فشل في دفعة/مرحلة: تبقى الدفعات السابقة (معاملات منفصلة) ويبقى
             // checkpoint (لم يُحذف) فيستأنف الفحص التالي من حيث توقف.
@@ -162,39 +195,91 @@ class ScanRoot @Inject constructor(
     )
 
     /** pass 1: تجميع الملفات حسب المجلد، وقراءة metadata فقط للملفات المتغيرة/الجديدة (Metadata Cache). */
-    internal fun prepareFiles(
+    internal suspend fun prepareFiles(
         rootId: UUID,
         files: List<ScanFile>,
-        existing: Map<String, AudioFileEntity>,
+        root: LibraryRootEntity,
         foundUris: MutableSet<String>,
         report: MutableScanReport,
-        onParsed: (parsed: Int, total: Int) -> Unit = { _, _ -> }
+        onParsed: (parsed: Int, total: Int, currentFolder: String) -> Unit = { _, _, _ -> }
     ): Map<String, PreparedFolder> {
         val byFolder = LinkedHashMap<String, MutableList<PreparedFile>>()
-        files.forEachIndexed { index, file ->
+
+        // GAP 5 — تجاور ملفات المجلد شرطٌ لصحة ما بعده، لا مجرّد تحسين.
+        // كان الإفراغ عن كاش المجلد ومجموعة تكراره مشروطين بأن يكون باقي
+        // ملفات المجلد متجاورًا (`files[index + 1].folderPath == folderPath`).
+        // وزح SAF يفرز الأبناء بالاسم، فملفات المجلد الأب تتقطّع حول مجلدات
+        // ابنائه: «أ/1.mp3، ب/1.mp3، أ/2.mp3». عندها:
+        //   - مجموعة `seenKeys` تُفرَّغ ثم تُعاد، فالنسخة الثانية من الملف
+        //     المكرر داخل المجلد نفسه تمرّ بلا كشف → يتكرر الملف مرتين.
+        //   - `existingByFolder` يُفرَّغ فتُعاد استعلامات الـDAO بلا داعٍ.
+        // الترتيب حسب `folderPath` يجعل التجاور مضمونًا، فيصحّ الإفراغ ويبقى
+        // الكاش محصورًا بأكبر مجلد. `sortedBy` مستقرّ، فترتيب الملفات داخل
+        // المجلد الواحد يبقى كما جاء من الاستكشاف، و`orderIndex` يأخذ الفهرس
+        // الأصلي لا الموضّع الجديد حتى لا يتغيّر معنى «أول ملف في الكتاب».
+        val ordered = files.withIndex().sortedBy { it.value.folderPath }
+
+        // PART 2: كان `bucket.any { … }` مسحًا خطيًا لكل ملف داخل مجلده، أي O(N²)
+        // على مجلد واحد (50 ألف ملف ≈ 1.25 مليار مقارنة). الآن مجموعة مفاتيح
+        // لكل مجلد: O(1) لكل ملف.
+        val seenKeysByFolder = HashMap<String, HashSet<Pair<String, Long>>>()
+
+        // PART 5: كاش الملفات السابقة يُملأ مسبقًا للمجلد *المعالَج حاليًا* فقط
+        // (getByRootFolder) بدل `getByRoot` الكامل. الطلب واحد لكل مجلد، فيبقى
+        // الكاش الحيّ بحجم أكبر مجلد لا بحجم المكتبة كلها.
+        val existingByFolder = HashMap<String, Map<String, AudioFileEntity>>()
+
+        ordered.forEachIndexed { position, indexed ->
+            val file = indexed.value
+            val originalIndex = indexed.index
             val uri = file.uri.toString()
             foundUris += uri
             report.filesSeen++
+
+            val folderPath = file.folderPath
+            val existing = existingByFolder.getOrPut(folderPath) {
+                database.audioFileDao().getByRootFolder(root.id, folderPath).associateBy { it.fileUri }
+            }
+
             val previous = existing[uri]
             val unchanged = previous != null &&
                 previous.fileSizeBytes == file.size &&
                 previous.lastModified == file.lastModified
-            val metadata = if (unchanged) null else metadataReader.read(file.uri, file.fileName).also { report.metadataReads++ }
+            val metadata = if (unchanged) null else metadataReader.read(file.uri, file.fileName, file.size).also { report.metadataReads++ }
             if (unchanged) report.cacheHits++
-            val bucket = byFolder.getOrPut(file.folderPath, ::mutableListOf)
-            val isDuplicate = bucket.any { it.scanFile.fileName == file.fileName && it.scanFile.size == file.size }
-            if (isDuplicate) {
+
+            val bucket = byFolder.getOrPut(folderPath, ::mutableListOf)
+
+            // PART 2 (تابع): مفتاح التكرار يُسجَّل في مجموعة المجلد — O(1).
+            // PART 5 (تابع): إفراغ كاش المجلد بعد آخر ملف فيه — ثم تكمل الذاكرة
+            // في الاستعلام التالي بمجلد واحد فقط. والآن صحيح لأن الترتيب
+            // أعلاه يضمن التجاور.
+            val seenKeys = seenKeysByFolder.getOrPut(folderPath, ::HashSet)
+            if (!seenKeys.add(file.fileName to file.size)) {
                 report.filesDeduped++
             } else {
                 bucket.add(
-                    PreparedFile(file, previous, metadata, metadata?.durationMs ?: previous?.durationMs ?: 0L, index)
+                    PreparedFile(file, previous, metadata, metadata?.durationMs ?: previous?.durationMs ?: 0L, originalIndex)
                 )
             }
-            if ((index + 1) % PROGRESS_INTERVAL == 0) onParsed(index + 1, files.size)
+
+            // GAP 4: الإشعار كان يُنشر بمجلد فارغ `""` طوال مرحلة القراءة،
+            // فيرى المستخدم «جارٍ فحص المكتبة» بلا أي موضع يتقدّم منه.
+            // نمرّر الآن اسم المجلد الحقيقي للملف الجاري قراءته.
+            if ((position + 1) % PROGRESS_INTERVAL == 0 || position + 1 == ordered.size) {
+                onParsed(position + 1, ordered.size, folderPath)
+            }
+
+            if (position + 1 == ordered.size || ordered[position + 1].value.folderPath != folderPath) {
+                existingByFolder.remove(folderPath)
+                seenKeysByFolder.remove(folderPath)
+            }
         }
-        if (files.isNotEmpty()) onParsed(files.size, files.size)
-        return byFolder.mapValues { (folderPath, files) ->
-            PreparedFolder(folderPath, files, hasFreshRead = files.any { it.freshMetadata != null })
+        existingByFolder.clear()
+        seenKeysByFolder.clear()
+
+        return byFolder.mapValues { (folderPath, folderFiles) ->
+            PreparedFolder(folderPath, folderFiles, hasFreshRead = folderFiles.any { it.freshMetadata != null })
         }
     }
 
@@ -230,12 +315,15 @@ class ScanRoot @Inject constructor(
     ): List<BookUnit> {
         val byUri = HashMap<String, PreparedFile>()
         prepared.values.forEach { folder -> folder.files.forEach { byUri[it.scanFile.uri.toString()] = it } }
-        val claimed = HashSet<String>()
         val units = classified.mapNotNullTo(mutableListOf()) { book ->
-            val owned = book.files.mapNotNull { file -> byUri[file.uri]?.also { claimed += file.uri } }
+            // `remove` بدل `also { claimed += … }`: الملف المُسند يخرج من
+            // `byUri` فورًا، فيصير `byUri` (وحده) مصدر اليتامي لاحقًا. كان
+            // السطران معًا يبقيان 10,000 مفتاح + 10,000 عنصر في `claimed`
+            // على مكتبة 50 ألف ملف بلا دالة تبريرهما.
+            val owned = book.files.mapNotNull { file -> byUri.remove(file.uri) }
             if (owned.isEmpty()) null else BookUnit(book, book.folderPath, owned)
         }
-        byUri.values.filter { it.scanFile.uri.toString() !in claimed }
+        byUri.values
             .groupBy { it.scanFile.folderPath }
             .forEach { (folderPath, orphans) ->
                 units += BookUnit(
@@ -280,12 +368,19 @@ class ScanRoot @Inject constructor(
         val checkpointDao = database.scanCheckpointDao()
         var done = 0
 
-        orderedFolders.drop(resumeIndex).chunked(BATCH_SIZE).forEach { batch ->
-            // توقف تعاوني: ننهي ونُبقي checkpoint بلا رمي.
+        // PART 4: الوحدات تُستهلك مجلدًا مجلدًا لا دفعةً دفعة، فتبقى مجموعة
+        // books-batch واحدة حيّة (BATCH_SIZE) بدل كل الوحدات في الذاكرة.
+        var index = 0
+        while (index < orderedFolders.size) {
             if (ScanProgressBus.isCancelRequested) return result
-            checkpointDao.upsert(ScanCheckpointEntity(root.id, batch.first(), System.currentTimeMillis()))
+            if (index < resumeIndex) {
+                index++
+                continue
+            }
+            val batchFolders = orderedFolders.subList(index, minOf(index + BATCH_SIZE, orderedFolders.size))
+            checkpointDao.upsert(ScanCheckpointEntity(root.id, batchFolders.first(), System.currentTimeMillis()))
             database.withTransaction {
-                batch.forEach { folderPath ->
+                batchFolders.forEach { folderPath ->
                     unitsByFolder[folderPath].orEmpty().forEach { unit ->
                         val signals = resolveUnit(root, unit, report,
                             onCreated = { report.editionsCreated++ },
@@ -299,6 +394,7 @@ class ScanRoot @Inject constructor(
                     }
                 }
             }
+            index += BATCH_SIZE
         }
         return result
     }
@@ -833,12 +929,29 @@ class ScanRoot @Inject constructor(
         }
     }
 
-    private suspend fun markMissingFiles(rootId: UUID, existing: Map<String, AudioFileEntity>, foundUris: Set<String>, report: MutableScanReport) {
-        existing.values.filter { it.fileUri !in foundUris }.forEach {
-            if (it.fileStatus != FileStatus.MISSING) {
-                database.audioFileDao().update(it.copy(fileStatus = FileStatus.MISSING))
-                report.missingMarked++
+    /**
+     * PART 5: يمشي على ملفات الجذر صفحات ([MISSING_SCAN_PAGE]) بدل تحميلها كلّها،
+     * فيبقى الاستهلاك بحجم صفحة. `foundUris` يبقى كاملًا في الذاكرة (وهو
+     * Requirement لاختبار «الملف اختفى»)، لكن الكيانات لم تعد كلها حيّة معًا.
+     */
+    private suspend fun markMissingFiles(
+        rootId: UUID,
+        root: LibraryRootEntity,
+        foundUris: Set<String>,
+        report: MutableScanReport
+    ) {
+        var offset = 0
+        while (true) {
+            val page = database.audioFileDao().getByRootPaged(root.id, MISSING_SCAN_PAGE, offset)
+            if (page.isEmpty()) return
+            page.forEach { file ->
+                if (file.fileUri !in foundUris && file.fileStatus != FileStatus.MISSING) {
+                    database.audioFileDao().update(file.copy(fileStatus = FileStatus.MISSING))
+                    report.missingMarked++
+                }
             }
+            if (page.size < MISSING_SCAN_PAGE) return
+            offset += page.size
         }
     }
 
@@ -889,6 +1002,9 @@ class ScanRoot @Inject constructor(
         private const val TAG = "ScanRoot"
         private const val BATCH_SIZE = 50
         private const val PROGRESS_INTERVAL = 100
+
+        /** حجم صفحة [markMissingFiles] — يحدّ ذروة كيانات audio_files الحيّة. */
+        private const val MISSING_SCAN_PAGE = 200
         private const val CHECKPOINT_TTL_MS = 24L * 60L * 60L * 1000L
     }
 }

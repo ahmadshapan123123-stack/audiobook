@@ -86,6 +86,19 @@ object StrictFolderClassifier {
     private const val BOOK = "BOOK"
 
     /**
+     * عمق مسار مجلد = عدد مقاطعه غير الفارغة. يقيس المقاطع بعدّ '/'
+     * بلا إنشاء قوائم، ويستخدمه [classify] بعد خبز كل الأعمدة في [depthByPath]
+     * مرّة واحدة (لا يستدعيه المقارن).
+     */
+    private fun String.depth(): Int {
+        if (isEmpty()) return 0
+        var segments = 1
+        for (index in indices) if (this[index] == '/') segments++
+        // المسار المتتبِع من allPaths لا يحتوي مقاطع فارغة، لذا العدّ المباشر صحيح.
+        return segments
+    }
+
+    /**
      * يصنّف قائمة الملفات المسطحة إلى كتب. `rootName` اسم الجذر للاحتياط عند
      * غياب امتداد اسمي لملف مباشر على الجذر. يُرجع كتبًا بترتيب مستقر
      * (بالعمق فالحرف للمسارات، وترتيب الإدخال لملفات الحاويات المباشرة).
@@ -106,7 +119,10 @@ object StrictFolderClassifier {
             }
         }
 
-        val depthOf = { path: String -> path.split('/').filter(String::isNotBlank).size }
+        // عمق كل مسار محسوب مرّة واحدة: previously this was recomputed inside the
+        // sort comparator, allocating a list per comparison (~800k lists @ 50k paths).
+        val depthByPath = HashMap<String, Int>(allPaths.size * 2)
+        allPaths.forEach { path -> depthByPath[path] = path.depth() }
         val childrenOf = allPaths.groupBy { it.substringBeforeLast('/', "") }
 
         // هل شجرة المجلد تحوي صوتًا؟ (مباشر أو في أحفاد) — من الأسفل للأعلى.
@@ -122,6 +138,8 @@ object StrictFolderClassifier {
             kindCache[path]?.let { return it }
             val segments = path.split('/').filter(String::isNotBlank)
             val kind = when {
+                // يُستخدم العمق المخبوز لا split: kindOf يصل لكل مسار مرّة واحدة على
+                // الأقل، فلا داعي لإعادة تقسيم المسار إلى قائمة هنا.
                 segments.size == 1 -> AUTHOR
                 segments.size == 2 ->
                     if (byFolder[path].orEmpty().isNotEmpty()) BOOK
@@ -147,7 +165,7 @@ object StrictFolderClassifier {
         // 2) بقية العقد بترتيب العمق فالحرف — قرار الدور بالعمق والمحتوى فقط.
         allPaths
             .filter { it.isNotEmpty() && subtreeHasAudio[it] == true }
-            .sortedWith(compareBy({ depthOf(it) }, { it }))
+            .sortedWith(compareBy({ depthByPath[it] ?: 0 }, { it }))
             .forEach { path ->
                 val segments = path.split('/').filter(String::isNotBlank)
                 val direct = byFolder[path].orEmpty()
@@ -187,6 +205,10 @@ object StrictFolderClassifier {
                 }
             }
 
+        // PART 4: الخرائط المؤقتة تصبح غير مرئية للنطاق فتسقط معه (JVM local
+        // reference clearing بعد آخر استخدام)، والكتب الناتجة تحتفظ بمرجعاتها
+        // إلى InputFile فقط فلا تحتاج أيًّا منها لاحقًا. تفريغها يدويًا هنا
+        // كان سيفسد الخريطة التي قد يحتاجها `preview` لاحقًا.
         return books
     }
 
