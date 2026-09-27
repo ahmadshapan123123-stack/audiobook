@@ -222,7 +222,35 @@ private val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
-val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+/**
+ * Migration 10→11 (Phase 2 — هوية الكتاب البنيوية):
+ * تنسخ هوية كل إصدار من جدول `books` إلى صفّه في `editions` (authorId, seriesId,
+ * bookTitle) ثم تُنشئ فهرسًا مركّبًا على (libraryRootId, authorId, seriesId,
+ * bookTitle). السبب: `libraryRootId` في `editions` بينما `authorId/seriesId/title`
+ * في `books` — والفهرس المركّب لا يجمع جدولين، فنُنزع المفتاح ليصير قابلًا
+ * للاستعلام والفهرسة على جدول واحد. `sourceFolderPath` تبقى كما هي (لا تُحذف).
+ * النسخة تُنسخ من `books.id` (لا من `editions.id`).
+ */
+private val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `editions` ADD COLUMN `authorId` TEXT")
+        db.execSQL("ALTER TABLE `editions` ADD COLUMN `seriesId` TEXT")
+        db.execSQL("ALTER TABLE `editions` ADD COLUMN `bookTitle` TEXT")
+        // تعبئة رجعية: كل إصدار يورث هوية كتابه القائم (كتب بلا مؤلف/سلسلة تبقى NULL).
+        db.execSQL(
+            "UPDATE `editions` SET " +
+                "`authorId` = (SELECT `books`.`authorId` FROM `books` WHERE `books`.`id` = `editions`.`bookId`), " +
+                "`seriesId` = (SELECT `books`.`seriesId` FROM `books` WHERE `books`.`id` = `editions`.`bookId`), " +
+                "`bookTitle` = (SELECT `books`.`title` FROM `books` WHERE `books`.`id` = `editions`.`bookId`)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_editions_libraryRootId_authorId_seriesId_bookTitle` " +
+                "ON `editions` (`libraryRootId`, `authorId`, `seriesId`, `bookTitle`)"
+        )
+    }
+}
+
+val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
 @Database(
 	entities = [
@@ -233,7 +261,7 @@ val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, M
         ChapterCompletionEntity::class, PendingDiscoveryEntity::class, ScanCheckpointEntity::class,
         OnboardingEditEntity::class
 	],
-	version = 10,
+	version = 11,
 	exportSchema = false
 )
 @TypeConverters(RoomConverters::class)

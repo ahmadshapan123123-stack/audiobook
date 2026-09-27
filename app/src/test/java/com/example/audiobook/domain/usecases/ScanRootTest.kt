@@ -223,7 +223,91 @@ class ScanRootTest {
         assertEquals("M4B", edition.fileFormat)
         assertTrue("الثقة حقيقية في المدى [0,1] وليست واحدًا ثابتًا", edition.confidenceScore in 0f..1f)
         assertEquals("ثقة حقيقية محسوبة من الإشارات (0.20 راوٍ + 0.15 مجلد + 0.10 سلسلة + 0.10 مدة + 0.10 ملفات + 0.05 مؤلف عمق-1 يُنسب لمجلده بعد النموذج المصحَّح)", 0.70f, edition.confidenceScore, 0.001f)
+        // عنوان العرض يبقى كما كان: وسم الـmetadata إن وُجد وإلا اسم المجلد
+        // (resolvedTitle) — عمود bookTitle على الإصدار هو مفتاح الهوية البنيوية فقط.
         assertEquals("السيرة النبوية", database.bookDao().getById(edition.bookId)?.title)
+        assertEquals("مفتاح الهوية البنيوية = stem الملف (عمق-1 ملف مباشر)", "Part 1", edition.bookTitle)
+    }
+
+    // ---- Phase 2: المجلد الواحد يُنتج كتبًا لا إصدارًا واحدًا. هذا هو العيب الأصلي:
+    //      إصدارات متعددة طُويت في إصدار لكل مجلد، فصارت المكتبة 14 كتابًا بدل آلاف. ----
+
+    @Test
+    fun oneFolderWithSeveralDirectFilesBecomesSeveralBooks() = runBlocking {
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/1.mp3"), "Author/standalone.mp3", "Author", "standalone.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/2.mp3"), "Author/other.mp3", "Author", "other.mp3", 100, 10),
+            ScanFile(Uri.parse("content://audio/3.mp3"), "random.mp3", "", "random.mp3", 100, 10)
+        )
+
+        val report = scanRoot(root.id)
+
+        // ثلاثة كتب: كتابان تحت مجلد المؤلف + كتاب على الجذر (المسار القديم = إصداران).
+        assertEquals(3, report.editionsCreated)
+        val editions = database.editionDao().getByRoot(root.id)
+        assertEquals(3, editions.size)
+        assertEquals("ثلاثة كتب مختلفة فعلًا", 3, editions.map { it.bookId }.toSet().size)
+        assertEquals(
+            "مفتاح الهوية البنيوية لكل كتاب = عنوانه من المصنِّف (لا المسار)",
+            setOf("standalone", "other", "random"),
+            editions.map { it.bookTitle }.toSet()
+        )
+        assertEquals(
+            "كتاب الجذر وحده بلا مؤلف",
+            setOf(true, false),
+            editions.map { it.authorId == null }.toSet()
+        )
+        assertEquals(
+            "كل كتاب مستقل يحمل ملفاته بالضبط (بلا تكرار ولا فقد)",
+            3,
+            database.audioFileDao().getByRoot(root.id).size
+        )
+
+        val second = scanRoot(root.id)
+        assertEquals("إعادة الفحص لا تكرّر أي كتاب", 0, second.editionsCreated)
+        assertEquals(3, database.editionDao().getByRoot(root.id).size)
+    }
+
+    // ---- Phase 2: عمود bookTitle على الإصدار يحمل مفتاح الهوية (لا مسار المجلد). ----
+
+    @Test
+    fun editionStoresStructuralKeyColumns() = runBlocking {
+        source.files = listOf(
+            ScanFile(Uri.parse("content://audio/1.m4b"), "أحمد خالد/فانتازيا/01.mp3", "أحمد خالد/فانتازيا", "01.mp3", 100, 10)
+        )
+        scanRoot(root.id)
+
+        val edition = database.editionDao().getByRoot(root.id).single()
+        val author = database.authorDao().getByName("أحمد خالد")!!
+        val book = database.bookDao().getById(edition.bookId)!!
+        val seriesId = book.seriesId
+        assertNotNull("العمق-2 بملفات = سلسلة", seriesId)
+        assertEquals("المؤلف على الإصدار", author.id, edition.authorId)
+        assertEquals("السلسلة على الإصدار", seriesId, edition.seriesId)
+        assertEquals("العنوان على الإصدار", "فانتازيا", edition.bookTitle)
+        assertEquals("المسار يبقى محفوظًا كما هو", "أحمد خالد/فانتازيا", edition.sourceFolderPath)
+        assertEquals(
+            "الاستعلام بالمفتاح البنيوي يجد الإصدار",
+            edition.id,
+            database.editionDao().getByStructuralKey(root.id, author.id, seriesId, "فانتازيا")?.id
+        )
+    }
+
+    // ---- Phase 2: authorId/seriesId القابلان لـ NULL يُطابَقان بـ IS لا بـ = NULL. ----
+
+    @Test
+    fun structuralKeyMatchesNullAuthorAndSeries() = runBlocking {
+        source.files = listOf(ScanFile(Uri.parse("content://audio/1.m4b"), "random.m4b", "", "random.m4b", 100, 10))
+        scanRoot(root.id)
+
+        val edition = database.editionDao().getByRoot(root.id).single()
+        assertNull("كتاب جذر بلا مؤلف", edition.authorId)
+        assertNull("بلا سلسلة", edition.seriesId)
+        assertEquals(
+            "مفتاح بنيوي بمؤلف وسلسلة NULL يُطابَق",
+            edition.id,
+            database.editionDao().getByStructuralKey(root.id, null, null, "random")?.id
+        )
     }
 
     // ---- P4: القيد الصارم فعلي في الفحص الكامل — لا دمج صامت لراويين مختلفين ----

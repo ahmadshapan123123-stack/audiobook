@@ -171,17 +171,24 @@ class SeriesAutoSeriesClassificationTest {
         assertNotNull("فانتازيا مربوطة بسلسلتها في قاعدة البيانات", fantasia.seriesId)
     }
 
-    // ── E.2: الإيقاف → «فانتازيا» كتاب بلا سلسلة في فحص جديد ──
+    // ── E.2: الوضع المحافظ لا يمسّ قاعدة العمق-2 الصارمة (سلسلة + كتاب بنفس الاسم) ──
+    // تغيّر Phase 2: التصنيف الصارم يقرّر العمق-2 سلسلةً دائمًا بملفاته المباشرة،
+    // ولا يقرأ إعداد «التصنيف التلقائي للسلاسل» إطلاقًا. فإيقافه لم يعد يعني
+    // «فانتازيا بلا سلسلة».
 
     @Test
-    fun autoSeriesOffMakesFantasiaABookWithNoSeries() {
+    fun autoSeriesOffDoesNotAffectStrictDepthTwoSeriesRule() {
         appSettings.setAutoSeriesClassification(false)
         seedBiblioteca()
         scanOnce()
 
-        assertEquals("لا سلسلة تُنشأ في الفحص المحافظ", emptyList<String>(), runBlocking { seriesNames() })
+        assertEquals(
+            "العمق-2 ذو الملفات سلسلة في الوضع الصارم حتى والضبط التلقائي مُطفأ",
+            listOf("فانتازيا", "ما وراء الطبيعة"),
+            runBlocking { seriesNames() }
+        )
         val fantasia = runBlocking { bookAt("أحمد خالد توفيق/فانتازيا")!! }
-        assertNull("فانتازيا كتاب بلا سلسلة عند الإيقاف", fantasia.seriesId)
+        assertNotNull("فانتازيا مربوطة بسلسلتها رغم إيقاف التصنيف التلقائي", fantasia.seriesId)
     }
 
     // ── E.3: معاينة → تأكيد → Worker خلفي يطبّق البنية ──

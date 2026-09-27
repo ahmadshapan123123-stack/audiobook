@@ -77,8 +77,11 @@ class ScanRoot @Inject constructor(
             val files = fileSource.listAudioFiles(Uri.parse(root.uri))
             publish(ScanProgress(ScanPhase.DISCOVERING, files.size, files.size, root.displayName), onProgress)
 
-            val contexts = buildContextByPath(files, root.displayName)
-            publish(ScanProgress(ScanPhase.CLASSIFYING, contexts.size, files.size, root.displayName), onProgress)
+            // Phase 2: التصنيف الصارم يُحسب مرة واحدة هنا فيغذّي عدّ النشرة وربط
+            // الوحدات بالملفات لاحقًا — لا يُصنَّف مرة ثانية ولا يُطوى في خريطة سياق.
+            val classified = if (StrictModeFlags.USE_STRICT_CLASSIFIER) classifyFiles(files, root.displayName) else null
+            val classifiedCount = classified?.size ?: buildContextByPath(files, root.displayName).size
+            publish(ScanProgress(ScanPhase.CLASSIFYING, classifiedCount, files.size, root.displayName), onProgress)
 
             // قراءة metadata تدفقية — يُنشر كل 100 ملف — مع إعادة استخدام كاش الفحص السابق
             // (نفس uri + نفس lastModified) بلا قراءة فعلية.
@@ -87,8 +90,17 @@ class ScanRoot @Inject constructor(
             }
 
             val resumeIndex = resumeIndexFor(root.id, checkpointDao, prepared, System.currentTimeMillis())
-            val signalsByFolder = resolveEditions(root, prepared, contexts, report, resumeIndex) { done, total, folderPath ->
-                publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+            // كل ClassifiedBook كتاب مستقل بهويته البنيوية (author, series, title)؛
+            // المسار القديم (إصدار لكل مجلد) باقٍ للمسار غير الصارم فقط.
+            val signalsByFolder = if (classified != null) {
+                resolveClassifiedBooks(root, bookUnits(classified, prepared, root.displayName), report, resumeIndex) { done, total, folderPath ->
+                    publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+                }
+            } else {
+                val contexts = buildContextByPath(files, root.displayName)
+                resolveEditions(root, prepared, contexts, report, resumeIndex) { done, total, folderPath ->
+                    publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+                }
             }
 
             cancelled = ScanProgressBus.isCancelRequested
@@ -123,6 +135,27 @@ class ScanRoot @Inject constructor(
         val freshMetadata: AudioMetadata?,
         val durationMs: Long,
         val orderIndex: Int
+    )
+
+    /**
+     * Phase 2: وحدة الحفظ = **كتاب** من [StrictFolderClassifier] لا مجلد. المجلد
+     * الواحد قد يُنتج عدة كتب (ملفات مباشرة تحت مؤلف، ملفات على الجذر، وعمق-2 صار
+     * سلسلة وكتابًا)، وكتب المجلد الواحد كانت تُطوى كلها في إصدار واحد.
+     * `files` هي حصّة الكتاب من ملفات المجلد (بمطابقة uri) لا كل ملفات المجلد.
+     */
+    private data class BookUnit(
+        val classified: StrictFolderClassifier.ClassifiedBook,
+        val folderPath: String,
+        val files: List<PreparedFile>
+    )
+
+    /** هوية كتاب محسومة داخل القاعدة: (authorId, seriesId, title) — لا مسار. */
+    private data class StructuralIdentity(
+        val authorId: UUID?,
+        val seriesId: UUID?,
+        val title: String,
+        val authorName: String?,
+        val seriesName: String?
     )
 
     /** pass 1: تجميع الملفات حسب المجلد، وقراءة metadata فقط للملفات المتغيرة/الجديدة (Metadata Cache). */
@@ -160,6 +193,285 @@ class ScanRoot @Inject constructor(
         return byFolder.mapValues { (folderPath, files) ->
             PreparedFolder(folderPath, files, hasFreshRead = files.any { it.freshMetadata != null })
         }
+    }
+
+    /** تصنيف صارم واحد لمجلدات الجذر — نفس مدخلات [buildContextByPath]. */
+    private fun classifyFiles(files: List<ScanFile>, rootName: String): List<StrictFolderClassifier.ClassifiedBook> =
+        StrictFolderClassifier.classify(
+            files.map {
+                StrictFolderClassifier.InputFile(
+                    uri = it.uri.toString(),
+                    filename = it.fileName,
+                    folderPath = it.folderPath,
+                    sizeBytes = it.size,
+                    durationMs = 0L
+                )
+            },
+            rootName
+        )
+
+    /**
+     * Phase 2: ربط كل [StrictFolderClassifier.ClassifiedBook] بحصّته من الملفات
+     * المحضَّرة عبر مطابقة `uri` (لا عبر المجلد) — فمجلد واحد قد يحمل كتبًا
+     * متعدّدة، وملف الجذر كتاب مستقل بمفرده.
+     *
+     * حاويات بلا ملفات مباشرة تنتج ClassifiedBook بـ `files` فارغة ولا تُحفظ
+     * (كما كان المجلد الفارغ لا يُنشئ إصدارًا) — وكتب عمق-3 تحمل كتب أبنائها.
+     * شبكة أمان: أي ملف لم ينسبه المصنِّف يُضاف كتابًا احتياطيًا باسمه بدل أن
+     * يضيع (وإلا لعلّمه الفحص التالي مفقودًا).
+     */
+    private fun bookUnits(
+        classified: List<StrictFolderClassifier.ClassifiedBook>,
+        prepared: Map<String, PreparedFolder>,
+        rootName: String
+    ): List<BookUnit> {
+        val byUri = HashMap<String, PreparedFile>()
+        prepared.values.forEach { folder -> folder.files.forEach { byUri[it.scanFile.uri.toString()] = it } }
+        val claimed = HashSet<String>()
+        val units = classified.mapNotNullTo(mutableListOf()) { book ->
+            val owned = book.files.mapNotNull { file -> byUri[file.uri]?.also { claimed += file.uri } }
+            if (owned.isEmpty()) null else BookUnit(book, book.folderPath, owned)
+        }
+        byUri.values.filter { it.scanFile.uri.toString() !in claimed }
+            .groupBy { it.scanFile.folderPath }
+            .forEach { (folderPath, orphans) ->
+                units += BookUnit(
+                    classified = StrictFolderClassifier.ClassifiedBook(
+                        authorName = null,
+                        seriesName = null,
+                        bookTitle = orphans.minByOrNull { it.orderIndex }?.scanFile?.fileName?.substringBeforeLast('.').orEmpty()
+                            .ifBlank { rootName },
+                        folderPath = folderPath,
+                        files = orphans.map { prepared ->
+                            StrictFolderClassifier.InputFile(
+                                uri = prepared.scanFile.uri.toString(),
+                                filename = prepared.scanFile.fileName,
+                                folderPath = folderPath,
+                                sizeBytes = prepared.scanFile.size,
+                                durationMs = 0L
+                            )
+                        }
+                    ),
+                    folderPath = folderPath,
+                    files = orphans
+                )
+            }
+        return units
+    }
+
+    /**
+     * Phase 2 pass 2: حفظ كتب [BookUnit] بدل المجلدات — بنفس دلالات المعاملات
+     * والدفعات وcheckpoint (المفتاح يبقى مسار المجلد الأول في الدفعة).
+     */
+    private suspend fun resolveClassifiedBooks(
+        root: LibraryRootEntity,
+        units: List<BookUnit>,
+        report: MutableScanReport,
+        resumeIndex: Int,
+        onCreated: (done: Int, total: Int, folderPath: String) -> Unit
+    ): Map<String, EditionSignals> {
+        val result = LinkedHashMap<String, EditionSignals>()
+        val unitsByFolder = units.groupBy { it.folderPath }
+        val orderedFolders = unitsByFolder.keys.toList()
+        val totalFolders = orderedFolders.size
+        val checkpointDao = database.scanCheckpointDao()
+        var done = 0
+
+        orderedFolders.drop(resumeIndex).chunked(BATCH_SIZE).forEach { batch ->
+            // توقف تعاوني: ننهي ونُبقي checkpoint بلا رمي.
+            if (ScanProgressBus.isCancelRequested) return result
+            checkpointDao.upsert(ScanCheckpointEntity(root.id, batch.first(), System.currentTimeMillis()))
+            database.withTransaction {
+                batch.forEach { folderPath ->
+                    unitsByFolder[folderPath].orEmpty().forEach { unit ->
+                        val signals = resolveUnit(root, unit, report,
+                            onCreated = { report.editionsCreated++ },
+                            onRefined = { report.editionsRefined++ }
+                        ) ?: return@forEach
+                        // خريطة الإشارات للدمج التلقائي تبقى بمفتاح المجلد (أول كتاب فيه)
+                        // — ودمج السيارات معطّل (ENABLE_AUTO_MERGE=false).
+                        result.putIfAbsent(folderPath, signals)
+                        done++
+                        onCreated(done, totalFolders, folderPath)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Phase 2: إنشاء/تحديث إصدار كتاب واحد بهويته البنيوية
+     * (libraryRootId, authorId, seriesId, title) — لا بمفتاح المجلد — ثم إرفاق
+     * ملفاته. «تم تجاهله» يبقى بمفتاح المجلد كما كان.
+     */
+    private suspend fun resolveUnit(
+        root: LibraryRootEntity,
+        unit: BookUnit,
+        report: MutableScanReport,
+        onCreated: () -> Unit,
+        onRefined: () -> Unit
+    ): EditionSignals? {
+        val book = unit.classified
+        // مجلد «تم تجاهله» مسبقًا: لا كتاب ولا اكتشاف جديد.
+        if (database.pendingDiscoveryDao().isIgnored(root.id, unit.folderPath)) return null
+
+        val authorName = book.authorName?.takeIf { it.isNotBlank() }
+        val author = authorName?.let { name ->
+            database.authorDao().getByName(name)
+                ?: AuthorEntity(name = name, colorTheme = null).also { database.authorDao().insert(it) }
+        }
+        val seriesName = book.seriesName?.takeIf { it.isNotBlank() }
+        val series = if (author != null && seriesName != null) {
+            database.seriesDao().getByParent(author.id).firstOrNull { it.name == seriesName }
+                ?: SeriesEntity(authorId = author.id, name = seriesName, colorTheme = null)
+                    .also { database.seriesDao().insert(it) }
+        } else null
+        val title = book.bookTitle.takeIf { it.isNotBlank() } ?: return null
+        val identity = StructuralIdentity(author?.id, series?.id, title, authorName, seriesName)
+
+        val folder = PreparedFolder(unit.folderPath, unit.files, unit.files.any { it.freshMetadata != null })
+        val context = AuthorSeriesContext(book.authorName, book.seriesName)
+        val signals = signalsFor(root, folder, context)
+
+        val existing = database.editionDao().getByStructuralKey(root.id, identity.authorId, identity.seriesId, identity.title)
+        val target = existing ?: createStructuralEdition(root, unit, identity, signals).also { onCreated() }
+
+        // قاعدة User Override Wins نفسها المطبَّقة في resolveEdition: العنوان
+        // المكتشف من الوسائط يُكتب على الكتاب ما لم يكن المستخدم قد أكّده. العنوان
+        // البنيوي (اسم المجلد/الكتاب من المصنِّف) يبقى في عمود bookTitle للإصدار
+        // وهوية البحث — فلا يتغيّر مفتاح الهوية لمجرّد تغيّر العنوان المعروض.
+        val bookRow = database.bookDao().getById(target.bookId)
+        if (bookRow != null && !bookRow.isTitleUserConfirmed) {
+            val detected = signals.resolvedTitle()?.takeIf { it.isNotBlank() } ?: bookRow.title
+            if (detected != bookRow.title) database.bookDao().update(bookRow.copy(title = detected))
+        }
+        if (target.isUserConfirmed) return signals
+
+        val refreshed = target.copy(
+            narratorName = if (target.isNarratorUserConfirmed) target.narratorName else signals.narrator,
+            label = if (target.isLabelUserConfirmed) target.label else signals.folderName.substringAfterLast('/').ifBlank { target.label },
+            totalDurationMs = if (signals.hasKnownDuration()) signals.totalDurationMs else target.totalDurationMs,
+            fileFormat = signals.format ?: target.fileFormat,
+            confidenceScore = EditionIntelligence.calculateConfidence(signals)
+        )
+        if (refreshed != target && signals.haveMoreInfoThan(target)) {
+            database.editionDao().update(refreshed)
+            onRefined()
+        }
+
+        attachFiles(root, unit, refreshed, report)
+        return signals
+    }
+
+    /** إرفاق ملفات الكتاب بوحدته — نفس منطق الملفات القديم، لكن بحصة الكتاب لا المجلد. */
+    private suspend fun attachFiles(
+        root: LibraryRootEntity,
+        unit: BookUnit,
+        edition: EditionEntity,
+        report: MutableScanReport
+    ) {
+        val importedChapters = mutableListOf<ChapterEntity>()
+        var runningOffsetMs = 0L
+        unit.files.forEach { file ->
+            val uri = file.scanFile.uri.toString()
+            if (file.previous == null && database.audioFileDao()
+                    .getByEditionNameSize(edition.id, file.scanFile.fileName, file.scanFile.size) != null
+            ) {
+                report.filesDeduped++
+                return@forEach
+            }
+            val entity = AudioFileEntity(
+                id = file.previous?.id ?: UUID.randomUUID(),
+                editionId = edition.id,
+                fileUri = uri,
+                relativePath = file.scanFile.relativePath,
+                fileName = file.scanFile.fileName,
+                orderIndex = file.orderIndex,
+                durationMs = file.durationMs,
+                fileSizeBytes = file.scanFile.size,
+                lastModified = file.scanFile.lastModified,
+                contentFingerprint = "${file.scanFile.size}:${file.scanFile.lastModified}:$uri",
+                mimeType = file.freshMetadata?.mimeType ?: file.previous?.mimeType ?: "application/octet-stream",
+                fileStatus = FileStatus.AVAILABLE
+            )
+            if (file.previous == null) {
+                database.audioFileDao().insert(entity)
+                file.freshMetadata?.embeddedChapters?.forEachIndexed { index, chapter ->
+                    importedChapters += ChapterEntity(
+                        editionId = edition.id,
+                        title = chapter.title,
+                        startPositionMs = runningOffsetMs + chapter.startPositionMs,
+                        orderIndex = index,
+                        createdFrom = ChapterCreatedFrom.IMPORTED
+                    )
+                }
+            } else {
+                if (file.previous.fileStatus == FileStatus.MISSING) report.restored++
+                database.audioFileDao().update(entity)
+            }
+            runningOffsetMs += file.durationMs
+        }
+        if (importedChapters.isNotEmpty()) {
+            database.chapterDao().deleteImported(edition.id)
+            importedChapters.forEach { database.chapterDao().insert(it) }
+            report.importedChapters += importedChapters.size
+        }
+    }
+
+    /**
+     * إنشاء إصدار الكتاب بهويته البنيوية. يُكتب مفتاح الهوية على صفّ الإصدار نفسه
+     * (authorId/seriesId/bookTitle) ليبقى قابلًا للفهرسة والاستعلام بلا join.
+     */
+    private suspend fun createStructuralEdition(
+        root: LibraryRootEntity,
+        unit: BookUnit,
+        identity: StructuralIdentity,
+        signals: EditionSignals
+    ): EditionEntity {
+        val bookRow = BookEntity(
+            title = identity.title,
+            authorId = identity.authorId,
+            seriesId = identity.seriesId,
+            orderInSeries = if (identity.seriesId != null) signals.seriesPart?.partNumber else null,
+            genre = signals.embeddedTags?.genre,
+            coverImagePath = null,
+            coverSource = CoverSource.PLACEHOLDER,
+            isCoverUserSelected = false,
+            defaultEditionId = null,
+            remoteId = null,
+            syncStatus = SyncStatus.LOCAL_ONLY
+        ).also { database.bookDao().insert(it) }
+        val edition = EditionEntity(
+            bookId = bookRow.id,
+            narratorName = signals.narrator,
+            label = signals.folderName.substringAfterLast('/').ifBlank { unit.folderPath },
+            totalDurationMs = signals.totalDurationMs,
+            fileFormat = signals.format ?: "UNKNOWN",
+            libraryRootId = root.id,
+            sourceFolderPath = unit.folderPath,
+            confidenceScore = EditionIntelligence.calculateConfidence(signals),
+            isUserConfirmed = false,
+            remoteId = null,
+            syncStatus = SyncStatus.LOCAL_ONLY,
+            authorId = identity.authorId,
+            seriesId = identity.seriesId,
+            bookTitle = identity.title
+        ).also { database.editionDao().insert(it) }
+        // تسجيل الاكتشاف بالتوازي مع الاستيراد التلقائي. المفتاح الفريد
+        // (rootId, folderPath) مع IGNORE = سجل واحد لكل مجلد مهما أنتج كتبًا.
+        database.pendingDiscoveryDao().insert(
+            PendingDiscoveryEntity(
+                rootId = root.id,
+                folderPath = unit.folderPath,
+                detectedTitle = identity.title,
+                authorName = identity.authorName.orEmpty(),
+                seriesName = identity.seriesName,
+                discoveredAt = System.currentTimeMillis(),
+                status = DiscoveryStatus.PENDING
+            )
+        )
+        return edition
     }
 
     /**

@@ -89,6 +89,21 @@ interface EditionDao : CrudDao<EditionEntity> {
     @Query("SELECT * FROM editions WHERE bookId = :bookId ORDER BY label") fun observeByParent(bookId: UUID): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions ORDER BY label") fun observeAll(): Flow<List<EditionEntity>>
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId AND sourceFolderPath = :folderPath LIMIT 1") suspend fun getByRootAndFolder(rootId: UUID, folderPath: String): EditionEntity?
+
+    /**
+     * هوية الكتاب البنيوية داخل جذر واحد: (المؤلف، السلسلة، العنوان) — بديل
+     * `getByRootAndFolder` الذي كان يجعل إعادة تسمية المجلد كتابًا جديدًا. الأعمدة
+     * مُنسخة على `editions` نفسها (migration 10→11) فيغطيها الفهرس المركب ولا
+     * نحتاج join مع `books`. `authorId`/`seriesId` قابلان لـ NULL، وSQL لا يقارن
+     * بـ `= NULL` أبدًا — لذلك `NULLIF(?,'')` يعطي NULL صريحًا و`IS` يطابقه.
+     */
+    @Query(
+        "SELECT * FROM editions WHERE libraryRootId = :rootId " +
+            "AND (authorId IS NULLIF(:authorId, '')) " +
+            "AND (seriesId IS NULLIF(:seriesId, '')) " +
+            "AND bookTitle = :title LIMIT 1"
+    )
+    suspend fun getByStructuralKey(rootId: UUID, authorId: UUID?, seriesId: UUID?, title: String): EditionEntity?
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<EditionEntity>
     @Query("SELECT COUNT(DISTINCT bookId) FROM editions WHERE libraryRootId IN (:rootIds)") suspend fun countDistinctBooksForRoots(rootIds: List<UUID>): Int
 }

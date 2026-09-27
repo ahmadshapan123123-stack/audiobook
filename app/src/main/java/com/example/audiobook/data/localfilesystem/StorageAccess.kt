@@ -8,12 +8,22 @@ object StorageAccess {
     const val REQUEST_CODE_OPEN_LIBRARY_ROOT = 1001
 
     /**
-     * الاسم المعروض لجذر SAF: الجزء بعد آخر ':' من `lastPathSegment` (يتخلّص من بادئة
-     * المجلد `primary:`)، وإلا المسار كاملًا. مصدر واحد لاسم الجذر في كل الشاشات —
-     * الإعداد ومعاينة الإعدادات وجذور المكتبة — فلا يختلف العرض بينها.
+     * الاسم المعروض لجذر SAF = **اسم مجلد الجذر فقط**.
+     *
+     * `lastPathSegment` لمجلد شجرة قد يحمل مسارًا كاملًا بعد بادئة الحجم:
+     * `primary:المكتبة الصوتية/أحمد خالد توفيق`. المطلوب عرض «المكتبة الصوتية» لا
+     * المسار الكامل، فنقتطع عند أول '/' بعد إسقاط بادئة الحجم (`substringAfterLast(':')`).
+     * جذر بسيط بلا مسار فرعي (`primary:المكتبة الصوتية`) يمرّ كما هو.
+     * مصدر واحد لاسم الجذر في كل الشاشات — الإعداد ومعاينة الإعدادات وجذور المكتبة
+     * وأرشفة الفحص — فلا يختلف العرض بينها.
      */
     fun displayNameOf(uri: Uri): String =
-        uri.lastPathSegment?.substringAfterLast(':')?.takeIf { it.isNotBlank() } ?: uri.toString()
+        uri.lastPathSegment
+            ?.substringAfterLast(':')
+            ?.substringBefore('/')
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: uri.toString()
 
     fun createLibraryRootIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

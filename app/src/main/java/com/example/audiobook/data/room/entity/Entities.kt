@@ -86,7 +86,14 @@ data class BookEntity(
         ForeignKey(entity = BookEntity::class, parentColumns = ["id"], childColumns = ["bookId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = LibraryRootEntity::class, parentColumns = ["id"], childColumns = ["libraryRootId"], onDelete = ForeignKey.RESTRICT)
     ],
-    indices = [Index("bookId"), Index("libraryRootId")]
+    indices = [
+        Index("bookId"),
+        Index("libraryRootId"),
+        // هوية الكتاب البنيوية مُنسخة على جدول editions نفسه (بدل الاعتماد على
+        // books عبر join) فيصير فهرسًا مركّبًا حقيقيًا على المفتاح كاملًا، وتصبح
+        // إعادة تسمية مجلد لا تُنتج كتابًا جديدًا: العنوان يبقى هو نفسه.
+        Index(value = ["libraryRootId", "authorId", "seriesId", "bookTitle"])
+    ]
 )
 data class EditionEntity(
     @androidx.room.PrimaryKey val id: UUID = UUID.randomUUID(),
@@ -102,7 +109,15 @@ data class EditionEntity(
     val isNarratorUserConfirmed: Boolean = false,
     val isLabelUserConfirmed: Boolean = false,
     val remoteId: UUID?,
-    val syncStatus: SyncStatus
+    val syncStatus: SyncStatus,
+    /**
+     * نسخة من هوية كتابه على صفحه (denormalized من [BookEntity]): مؤلفه وسلسلته
+     * وعنوانه وقت الأرشفة. تُملأ مع الإصدار وتبقى ثابتة بعد إعادة التسمية؛
+     * والقراءة عبر getByStructuralKey لا تحتاج join، والفهرس المركب أعلاه يغطيها.
+     */
+    val authorId: UUID? = null,
+    val seriesId: UUID? = null,
+    val bookTitle: String? = null
 )
 
 @Entity(
