@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -136,6 +138,11 @@ fun SettingsScreen(
     val noRootsPrompt by viewModel.noRootsPrompt.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
+    val isRebuilding by viewModel.isRebuilding.collectAsStateWithLifecycle()
+    val rebuildResult by viewModel.rebuildResult.collectAsStateWithLifecycle()
+    val rebuildFailed by viewModel.rebuildFailed.collectAsStateWithLifecycle()
+    val rebuildBookCount by viewModel.rebuildBookCount.collectAsStateWithLifecycle()
+    val rebuildError by viewModel.rebuildError.collectAsStateWithLifecycle()
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
     val demoCleanupResult by viewModel.demoCleanupResult.collectAsStateWithLifecycle()
     val isReclassifying by viewModel.isReclassifying.collectAsStateWithLifecycle()
@@ -166,6 +173,33 @@ fun SettingsScreen(
     val reclassifyDoneTemplate = stringResource(R.string.settings_reclassify_result)
     val demoRemovedTemplate = stringResource(R.string.settings_demo_removed)
     val demoNotFoundMessage = stringResource(R.string.settings_demo_not_found)
+    val rebuildDoneTemplate = stringResource(R.string.settings_rebuild_result)
+    val rebuildFailedMessage = stringResource(R.string.settings_rebuild_failed)
+    val rebuildFailedReasonTemplate = stringResource(R.string.settings_rebuild_failed_reason)
+    LaunchedEffect(rebuildResult) {
+        rebuildResult?.let { result ->
+            snackbarHostState.showSnackbar(
+                String.format(
+                    Locale.US, rebuildDoneTemplate,
+                    result.scan.booksFound
+                )
+            )
+            viewModel.consumeRebuildResult()
+        }
+    }
+    LaunchedEffect(rebuildFailed) {
+        if (rebuildFailed) {
+            val reason = rebuildError
+            val message = if (reason.isNullOrBlank()) {
+                rebuildFailedMessage
+            } else {
+                String.format(Locale.US, rebuildFailedReasonTemplate, reason)
+            }
+            snackbarHostState.showSnackbar(message)
+            viewModel.consumeRebuildFailed()
+            viewModel.consumeRebuildError()
+        }
+    }
     LaunchedEffect(scanResult) {
         scanResult?.let { result ->
             snackbarHostState.showSnackbar(
@@ -333,6 +367,19 @@ fun SettingsScreen(
                             stringResource(R.string.settings_scan_now_desc)
                         },
                         onClick = { viewModel.scanNow() }
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_rebuild_structure),
+                        subtitle = if (isRebuilding) {
+                            stringResource(R.string.settings_rebuilding)
+                        } else {
+                            stringResource(R.string.settings_rebuild_structure_desc)
+                        },
+                        // أثناء البناء: مؤشّر تقدّم + تعطيل الصف حتى لا يُضغط مرتين.
+                        trailingProgress = isRebuilding,
+                        enabled = !isRebuilding,
+                        onClick = { viewModel.requestRebuild() }
                     )
                     SettingsDivider()
                     if (StrictModeFlags.ENABLE_RECLASSIFY) {
@@ -579,6 +626,58 @@ fun SettingsScreen(
             },
             title = { Text(stringResource(R.string.settings_no_roots_title)) },
             text = { Text(stringResource(R.string.settings_no_roots_desc)) }
+        )
+    }
+
+    if (rebuildBookCount != null) {
+        val count = rebuildBookCount ?: 0
+        AlertDialog(
+            onDismissRequest = { if (!isRebuilding) viewModel.cancelRebuild() },
+            confirmButton = {
+                TextButton(
+                    enabled = !isRebuilding,
+                    onClick = { viewModel.rebuildStructure() }
+                ) { Text(stringResource(R.string.settings_rebuild_confirm_action)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isRebuilding,
+                    onClick = { viewModel.cancelRebuild() }
+                ) { Text(stringResource(R.string.settings_rebuild_cancel_action)) }
+            },
+            title = { Text(stringResource(R.string.settings_rebuild_confirm_title)) },
+            text = {
+                // النص أطول من قبل (قائمة ما لن يُحذف)، فصار لازمًا التمرير
+                // وإلا قُصّ آخر سطر والعدّاد على الشاشات القصيرة.
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    Text(stringResource(R.string.settings_rebuild_confirm_body))
+                    HorizontalDivider()
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.settings_rebuild_confirm_books,
+                            count,
+                            count
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    if (isRebuilding) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(R.string.settings_rebuilding),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
         )
     }
 
@@ -862,41 +961,89 @@ private fun SettingsSwitchRow(
 }
 
 @Composable
-private fun SettingsNavRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun SettingsNavRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    trailingProgress: Boolean = false
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().minTouchTarget().clickable(onClick = onClick).padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
+        modifier = Modifier
+            .fillMaxWidth()
+            .minTouchTarget()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SettingsRowText(title, subtitle, modifier = Modifier.weight(1f))
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp)
+        SettingsRowText(
+            title = title,
+            subtitle = subtitle,
+            modifier = Modifier.weight(1f),
+            enabled = enabled
         )
+        if (trailingProgress) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp
+            )
+        } else {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 
 @Composable
-private fun SettingsActionRow(title: String, subtitle: String, onClick: () -> Unit) {
-    SettingsNavRow(title = title, subtitle = subtitle, onClick = onClick)
+private fun SettingsActionRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    trailingProgress: Boolean = false
+) {
+    SettingsNavRow(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        enabled = enabled,
+        trailingProgress = trailingProgress
+    )
 }
 
 @Composable
-private fun SettingsRowContent(title: String, modifier: Modifier = Modifier, subtitle: @Composable () -> Unit = {}) {
+private fun SettingsRowContent(
+    title: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    subtitle: @Composable () -> Unit = {}
+) {
     Column(
         modifier = modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+        )
         subtitle()
     }
 }
 
 @Composable
-private fun SettingsRowText(title: String, subtitle: String, modifier: Modifier = Modifier) {
-    SettingsRowContent(title = title, modifier = modifier) {
+private fun SettingsRowText(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    SettingsRowContent(title = title, modifier = modifier, enabled = enabled) {
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

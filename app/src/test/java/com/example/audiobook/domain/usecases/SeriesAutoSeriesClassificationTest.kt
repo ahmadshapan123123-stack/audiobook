@@ -103,7 +103,9 @@ class SeriesAutoSeriesClassificationTest {
             ReminderScheduler(context, appSettings),
             libraryManagementFor(database),
             database.libraryRootDao(),
+            database.bookDao(),
             scanLibraryNowFor(database, appSettings),
+            rebuildStructureFor(database, appSettings),
             reclassifyLibrary,
             preview,
             ReclassifyScheduler(context)

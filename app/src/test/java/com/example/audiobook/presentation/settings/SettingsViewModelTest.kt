@@ -12,6 +12,7 @@ import com.example.audiobook.domain.usecases.ReclassifyLibrary
 import com.example.audiobook.domain.usecases.classificationPreviewFor
 import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.domain.usecases.scanLibraryNowFor
+import com.example.audiobook.domain.usecases.rebuildStructureFor
 import com.example.audiobook.domain.model.AppThemeMode
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,8 +54,10 @@ class SettingsViewModelTest {
         AppSettings(context),
         ReminderScheduler(context, AppSettings(context)),
         libraryManagementFor(database),
-        database.libraryRootDao(),
+            database.libraryRootDao(),
+            database.bookDao(),
         scanLibraryNowFor(database, AppSettings(context)),
+        rebuildStructureFor(database, AppSettings(context)),
         ReclassifyLibrary(database, AppSettings(context)),
         classificationPreviewFor(database, AppSettings(context)),
         ReclassifyScheduler(context)

@@ -94,6 +94,7 @@ import com.example.audiobook.presentation.common.BookManagerViewModel
 import com.example.audiobook.presentation.common.ConfirmDeleteDialog
 import com.example.audiobook.presentation.common.MoveBookDialog
 import com.example.audiobook.presentation.common.MoveBookTab
+import com.example.audiobook.presentation.common.cleanDisplayTitle
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.bottomContentPadding
@@ -665,7 +666,7 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
     ) {
         Box {
             AtherCoverBlock(
-                title = book.book.title,
+                title = cleanDisplayTitle(book.book.title),
                 coverColor = Color(book.coverColor.toInt()),
                 modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
                 showMissingBadge = book.hasMissingFile,
@@ -685,7 +686,7 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
         }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(
-                book.book.title,
+                cleanDisplayTitle(book.book.title),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
@@ -727,14 +728,14 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
             Checkbox(checked = selected, onCheckedChange = null)
         }
         AtherCoverBlock(
-            title = book.book.title,
+            title = cleanDisplayTitle(book.book.title),
             coverColor = Color(book.coverColor.toInt()),
             modifier = Modifier.width(64.dp).aspectRatio(0.72f),
             showMissingBadge = book.hasMissingFile,
             missingFileDescription = stringResource(R.string.missing_file)
         )
         Column(modifier = Modifier.weight(1f)) {
-            Text(book.book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(cleanDisplayTitle(book.book.title), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(book.authorName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (book.book.isDemo) DemoBadge()
         }

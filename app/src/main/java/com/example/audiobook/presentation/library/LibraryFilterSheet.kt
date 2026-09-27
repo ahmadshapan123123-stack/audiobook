@@ -3,6 +3,8 @@ package com.example.audiobook.presentation.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,22 +16,29 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -121,74 +130,108 @@ internal fun LibraryFilterSheet(
                 }
             }
 
-            Column(
+            // القوائم المتغيّرة (سلاسل/أنواع) قد تبلغ آلاف الخيارات بعد إعادة البناء،
+            // فصارت قائمة كسولة مع بحث يظهر عند تجاوز الحد. أما القوائم الثابتة
+            // (قسم/حالة/ترتيب) فمعدودة الخيارات، فتُعرض عناصرها دفعةً واحدة.
+            var seriesQuery by rememberSaveable { mutableStateOf("") }
+            var genreQuery by rememberSaveable { mutableStateOf("") }
+            val visibleSeries = remember(seriesNames, seriesQuery) { filterOptions(seriesNames, seriesQuery) }
+            val visibleGenres = remember(genreNames, genreQuery) { filterOptions(genreNames, genreQuery) }
+
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md)
             ) {
-                FilterGroup(titleRes = R.string.filter_sheet_section) {
-                    LibrarySection.entries.forEach { entry ->
-                        FilterOptionRow(
-                            label = stringResource(entry.labelRes),
-                            selected = entry == section,
-                            onClick = { onSectionChange(entry) }
-                        )
+                item(key = "section") {
+                    FilterGroup(titleRes = R.string.filter_sheet_section) {
+                        LibrarySection.entries.forEach { entry ->
+                            FilterOptionRow(
+                                label = stringResource(entry.labelRes),
+                                selected = entry == section,
+                                onClick = { onSectionChange(entry) }
+                            )
+                        }
                     }
                 }
 
-                FilterGroup(titleRes = R.string.filter_sheet_status) {
-                    LibraryStatusFilter.entries.forEach { entry ->
-                        FilterOptionRow(
-                            label = stringResource(entry.labelRes),
-                            selected = entry == query.status,
-                            onClick = { onStatusChange(entry) }
-                        )
+                item(key = "status") {
+                    FilterGroup(titleRes = R.string.filter_sheet_status) {
+                        LibraryStatusFilter.entries.forEach { entry ->
+                            FilterOptionRow(
+                                label = stringResource(entry.labelRes),
+                                selected = entry == query.status,
+                                onClick = { onStatusChange(entry) }
+                            )
+                        }
                     }
                 }
 
-                FilterGroup(titleRes = R.string.filter_sheet_sort) {
-                    LibrarySort.entries.forEach { entry ->
-                        FilterOptionRow(
-                            label = stringResource(entry.labelRes),
-                            selected = entry == query.sort,
-                            onClick = { onSortChange(entry) }
-                        )
+                item(key = "sort") {
+                    FilterGroup(titleRes = R.string.filter_sheet_sort) {
+                        LibrarySort.entries.forEach { entry ->
+                            FilterOptionRow(
+                                label = stringResource(entry.labelRes),
+                                selected = entry == query.sort,
+                                onClick = { onSortChange(entry) }
+                            )
+                        }
                     }
                 }
+
                 if (seriesNames.isNotEmpty()) {
-                    FilterGroup(titleRes = R.string.filter_sheet_series) {
+                    item(key = "series_header") { FilterGroupTitle(R.string.filter_sheet_series) }
+                    item(key = "series_all") {
                         FilterOptionRow(
                             label = stringResource(R.string.filter_series_all),
                             selected = query.series == null,
                             onClick = { onSeriesChange(null) }
                         )
-                        seriesNames.forEach { name ->
-                            FilterOptionRow(
-                                label = name,
-                                selected = query.series == name,
-                                onClick = { onSeriesChange(name) }
+                    }
+                    if (seriesNames.size > FILTER_SEARCH_THRESHOLD) {
+                        item(key = "series_search") {
+                            FilterSearchField(
+                                value = seriesQuery,
+                                onValueChange = { seriesQuery = it },
+                                placeholder = stringResource(R.string.filter_search_series)
                             )
                         }
+                    }
+                    items(visibleSeries, key = { "series_$it" }) { name ->
+                        FilterOptionRow(
+                            label = name,
+                            selected = query.series == name,
+                            onClick = { onSeriesChange(name) }
+                        )
                     }
                 }
 
                 // الأنواع تُشتق من بيانات المكتبة نفسها، فلا يوجد نص نوع مثبّت في الواجهة.
                 if (genreNames.isNotEmpty()) {
-                    FilterGroup(titleRes = R.string.filter_sheet_genre) {
+                    item(key = "genre_header") { FilterGroupTitle(R.string.filter_sheet_genre) }
+                    item(key = "genre_all") {
                         FilterOptionRow(
                             label = stringResource(R.string.filter_genre_all),
                             selected = query.genre == null,
                             onClick = { onGenreChange(null) }
                         )
-                        genreNames.forEach { name ->
-                            FilterOptionRow(
-                                label = name,
-                                selected = query.genre == name,
-                                onClick = { onGenreChange(name) }
+                    }
+                    if (genreNames.size > FILTER_SEARCH_THRESHOLD) {
+                        item(key = "genre_search") {
+                            FilterSearchField(
+                                value = genreQuery,
+                                onValueChange = { genreQuery = it },
+                                placeholder = stringResource(R.string.filter_search_genre)
                             )
                         }
+                    }
+                    items(visibleGenres, key = { "genre_$it" }) { name ->
+                        FilterOptionRow(
+                            label = name,
+                            selected = query.genre == name,
+                            onClick = { onGenreChange(name) }
+                        )
                     }
                 }
             }
@@ -241,6 +284,46 @@ private fun FilterGroup(
         content()
     }
 }
+
+/** عنوان مجموعة تصفية بلا محتوى — يُستعمل حين تكون عناصرها عناصر القائمة الكسولة. */
+@Composable
+private fun FilterGroupTitle(titleRes: Int) {
+    Text(
+        text = stringResource(titleRes),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/** حقل بحث داخل ورقة التصفية: يظهر فقط حين تتجاوز القائمة عددًا يصعب التمرير فيه. */
+@Composable
+private fun FilterSearchField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        placeholder = { Text(placeholder) },
+        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+        trailingIcon = {
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.filter_search_clear))
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/** تصفية الخيارات بالاسم مع تجاهل المسافات وحالة الأحرف (عربي وإنجليزي). */
+private fun filterOptions(options: List<String>, query: String): List<String> {
+    val needle = query.trim()
+    if (needle.isEmpty()) return options
+    return options.filter { it.contains(needle, ignoreCase = true) }
+}
+
+/** عدد الخيارات الذي يجعل ورقة التصفية تحتاج حقل بحث. */
+private const val FILTER_SEARCH_THRESHOLD = 12
 
 /** خيار تصفية بأسلوب زجاجي: صف كامل قابل للنقر مع علامة صح للمختار. */
 @Composable

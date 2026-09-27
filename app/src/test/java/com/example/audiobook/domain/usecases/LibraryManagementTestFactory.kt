@@ -61,3 +61,7 @@ fun classificationPreviewFor(database: AppDatabase, appSettings: AppSettings): L
         LocalOnlyLibraryRootRepository(database.libraryRootDao()),
         appSettings
     )
+
+/** RebuildLibraryStructure over an in-memory database and an empty library (safe when never invoked). */
+fun rebuildStructureFor(database: AppDatabase, appSettings: AppSettings): RebuildLibraryStructure =
+    RebuildLibraryStructure(database, scanLibraryNowFor(database, appSettings))

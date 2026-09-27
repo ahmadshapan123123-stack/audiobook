@@ -13,10 +13,13 @@ import com.example.audiobook.domain.usecases.LibraryManagement
 import com.example.audiobook.domain.usecases.ReclassifyLibrary
 import com.example.audiobook.domain.usecases.ReclassifyPreview
 import com.example.audiobook.domain.usecases.ScanLibraryNow
+import com.example.audiobook.domain.usecases.RebuildLibraryStructure
+import com.example.audiobook.domain.usecases.RebuildStructureResult
 import com.example.audiobook.domain.usecases.ScanNowResult
 import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.domain.model.LogoColorMode
 import com.example.audiobook.background.reminders.ReminderScheduler
+import com.example.audiobook.data.room.dao.BookDao
 import com.example.audiobook.data.room.dao.LibraryRootDao
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -32,7 +35,9 @@ class SettingsViewModel @Inject constructor(
     private val reminderScheduler: ReminderScheduler,
     private val libraryManagement: LibraryManagement,
     private val libraryRootDao: LibraryRootDao,
+    private val bookDao: BookDao,
     private val scanLibraryNow: ScanLibraryNow,
+    private val rebuildLibraryStructure: RebuildLibraryStructure,
     private val reclassifyLibrary: ReclassifyLibrary,
     private val libraryClassificationPreview: LibraryClassificationPreview,
     private val reclassifyScheduler: ReclassifyScheduler
@@ -81,6 +86,28 @@ class SettingsViewModel @Inject constructor(
     /** حصيلة آخر فحص فوري (تُستهلك مرة واحدة لعرض Snackbar). */
     private val _scanResult = MutableStateFlow<ScanNowResult?>(null)
     val scanResult: StateFlow<ScanNowResult?> = _scanResult.asStateFlow()
+
+    private val _isRebuilding = MutableStateFlow(false)
+    val isRebuilding: StateFlow<Boolean> = _isRebuilding.asStateFlow()
+
+    /** حصيلة آخر إعادة بناء بنية (تُستهلك مرة واحدة لعرض Snackbar). */
+    private val _rebuildResult = MutableStateFlow<RebuildStructureResult?>(null)
+    val rebuildResult: StateFlow<RebuildStructureResult?> = _rebuildResult.asStateFlow()
+
+    private val _rebuildFailed = MutableStateFlow(false)
+    val rebuildFailed: StateFlow<Boolean> = _rebuildFailed.asStateFlow()
+
+    /**
+     * عدد الكتب الحالي لحظة فتح حوار «إعادة البناء» — يحتاجه المستخدم ليعرف
+     * حجم ما سيُعاد بناؤه قبل أن يؤكّد. يُقرأ من القاعدة عند فتح الحوار
+     * (لا قيمة مخزّنة قد تتقادم)؛ `null` = لم يُقرأ بعد.
+     */
+    private val _rebuildBookCount = MutableStateFlow<Int?>(null)
+    val rebuildBookCount: StateFlow<Int?> = _rebuildBookCount.asStateFlow()
+
+    /** سبب فشل آخر إعادة بناء (يُعرض في Snackbar بدل نص عام). */
+    private val _rebuildError = MutableStateFlow<String?>(null)
+    val rebuildError: StateFlow<String?> = _rebuildError.asStateFlow()
 
     private val _isReclassifying = MutableStateFlow(false)
     val isReclassifying: StateFlow<Boolean> = _isReclassifying.asStateFlow()
@@ -171,6 +198,71 @@ class SettingsViewModel @Inject constructor(
 
     fun consumeScanFailed() {
         _scanFailed.value = false
+    }
+
+    /**
+     * الخطوة 1 (الحوار): يقرأ عدد الكتب الحالي ويعرضه في نصّ التأكيد قبل
+     * أن يلمس المستخدم زر التأكيد. لا يكتب شيئًا.
+     */
+    fun requestRebuild() {
+        if (_isRebuilding.value) return
+        viewModelScope.launch {
+            if (!hasRootsNow()) {
+                _noRootsPrompt.value = true
+                return@launch
+            }
+            _rebuildBookCount.value = runCatching { bookDao.countAll() }.getOrDefault(0)
+        }
+    }
+
+    /** إلغاء قبل البدء فقط؛ أثناء [_isRebuilding] يبقى الحوار مثبّتًا لإظهار التقدّم. */
+    fun cancelRebuild() {
+        if (_isRebuilding.value) return
+        _rebuildBookCount.value = null
+    }
+
+    /**
+     * الخطوة 2: إعادة بناء بنية المكتبة: تحذف القشور الفارغة التي تركها تغيّر نموذج التصنيف
+     * (كتب مجمّعة سابقًا فقدت ملفاتها إلى كتب لكل ملف) ثم تعيد الفحص لبناء
+     * البنية الجديدة. لا تمسّ الملفات على القرص ولا بيانات المستخدم.
+     */
+    fun rebuildStructure() {
+        if (_isRebuilding.value) return
+        viewModelScope.launch {
+            if (!hasRootsNow()) {
+                _rebuildBookCount.value = null
+                _noRootsPrompt.value = true
+                return@launch
+            }
+            _isRebuilding.value = true
+            _rebuildError.value = null
+            // [_rebuildBookCount] يُبقى كما هو: الحوار يظل ظاهرًا أثناء التنفيذ
+            // لعرض مؤشّر التقدّم، وهو ما يحجب ما خلفه عن اللمس أصلًا.
+            runCatching { rebuildLibraryStructure() }
+                .onSuccess { result ->
+                    _rebuildResult.value = result
+                    refreshRootsCount()
+                }
+                .onFailure { error ->
+                    _rebuildError.value = error.message ?: error::class.java.simpleName
+                    _rebuildFailed.value = true
+                }
+            _isRebuilding.value = false
+            // انتهى التنفيذ: يُغلق الحوار ليظهر الـSnackbar.
+            _rebuildBookCount.value = null
+        }
+    }
+
+    fun consumeRebuildResult() {
+        _rebuildResult.value = null
+    }
+
+    fun consumeRebuildFailed() {
+        _rebuildFailed.value = false
+    }
+
+    fun consumeRebuildError() {
+        _rebuildError.value = null
     }
 
     fun consumeNoRootsPrompt() {

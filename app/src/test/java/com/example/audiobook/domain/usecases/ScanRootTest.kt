@@ -103,21 +103,30 @@ class ScanRootTest {
 
         val report = scanRoot(root.id)
 
-        assertEquals("ثلاثة مجلدات تحمل صوتًا → ثلاثة كتب، لا كتاب واحد مدمج", 3, report.editionsCreated)
+        // النموذج الصارم: كل ملف في مجلد سلسلة العمق-2 كتاب مستقل.
+        // 2 (فانتازيا) + 1 (ما وراء الطبيعة) + 1 (سافاري) = 4 كتب.
+        assertEquals("أربعة ملفات في ثلاثة مجلدات ← أربعة كتب، لا كتاب مدمج", 4, report.editionsCreated)
         assertEquals("لا دمج تلقائي بين سلسلات مختلفة", 0, report.editionsAutoMerged)
-        assertEquals(3, allEditions().size)
+        assertEquals(4, allEditions().size)
         val books = database.bookDao().getAll()
-        assertEquals("مجلد واحد ← كتاب واحد", 3, books.size)
+        assertEquals("كتاب لكل ملف", 4, books.size)
         books.forEach {
             assertNotNull("كل كتاب مُصنَّف يجب أن يحمل مؤلفًا", it.authorId)
             assertEquals("المؤلف = مجلد المستوى الأعلى", "أحمد خالد توفيق", database.authorDao().getById(it.authorId!!)?.name)
         }
 
-        val fantasy = database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/فانتازيا")!!
-        assertEquals("ملفات فانتازيا كلها في كتاب فانتازيا", 2, database.audioFileDao().getByParent(fantasy.id).size)
-        assertEquals("فانتازيا", database.bookDao().getById(fantasy.bookId)?.title)
-        assertEquals("ما وراء الطبيعة", database.bookDao().getById(database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/ما وراء الطبيعة")!!.bookId)?.title)
-        assertEquals("سافاري", database.bookDao().getById(database.editionDao().getByRootAndFolder(root.id, "أحمد خالد توفيق/سافاري")!!.bookId)?.title)
+        // عنوان كل كتاب = اسم ملفه، وسلسلته = اسم مجلده.
+        val bySeries = books.groupBy { database.seriesDao().getById(it.seriesId!!)?.name }
+        assertEquals(setOf("فانتازيا", "ما وراء الطبيعة", "سافاري"), bySeries.keys)
+        assertEquals("فانتازيا فيها ملفان ← كتابان", setOf("01", "02"), bySeries["فانتازيا"]!!.map { it.title }.toSet())
+        assertEquals(setOf("01"), bySeries["ما وراء الطبيعة"]!!.map { it.title }.toSet())
+        assertEquals(setOf("01"), bySeries["سافاري"]!!.map { it.title }.toSet())
+
+        // لا كتاب باسم مجلد السلسلة نفسه، وكل إصدار ملفٌ واحد لا أكثر.
+        assertTrue("لا كتاب باسم مجلد سلسلة", books.none { it.title == "فانتازيا" || it.title == "سافاري" })
+        allEditions().forEach { edition ->
+            assertEquals("كل كتاب بملف واحد", 1, database.audioFileDao().getByParent(edition.id).size)
+        }
     }
 
     // ---- R2: مجلدات مسطّحة بلا وسيط — كل مجلد مستقل = كتاب ----
@@ -218,14 +227,13 @@ class ScanRootTest {
         assertEquals(1, report.editionsCreated)
         val edition = database.editionDao().getByRootAndFolder(root.id, "السيرة النبوية")!!
         assertEquals("فلان الراوي", edition.narratorName)
-        assertEquals("السيرة النبوية", edition.label)
+        assertEquals("الملف المباشر في مجلد مؤلف = كتاب مستقل عنوانه stem الملف", "Part 1", edition.label)
         assertEquals(1_800_000L, edition.totalDurationMs)
         assertEquals("M4B", edition.fileFormat)
         assertTrue("الثقة حقيقية في المدى [0,1] وليست واحدًا ثابتًا", edition.confidenceScore in 0f..1f)
         assertEquals("ثقة حقيقية محسوبة من الإشارات (0.20 راوٍ + 0.15 مجلد + 0.10 سلسلة + 0.10 مدة + 0.10 ملفات + 0.05 مؤلف عمق-1 يُنسب لمجلده بعد النموذج المصحَّح)", 0.70f, edition.confidenceScore, 0.001f)
-        // عنوان العرض يبقى كما كان: وسم الـmetadata إن وُجد وإلا اسم المجلد
-        // (resolvedTitle) — عمود bookTitle على الإصدار هو مفتاح الهوية البنيوية فقط.
-        assertEquals("السيرة النبوية", database.bookDao().getById(edition.bookId)?.title)
+        // العنوان = stem الملف، ولا يستبدله اسم المجلد عبر resolvedTitle.
+        assertEquals("Part 1", database.bookDao().getById(edition.bookId)?.title)
         assertEquals("مفتاح الهوية البنيوية = stem الملف (عمق-1 ملف مباشر)", "Part 1", edition.bookTitle)
     }
 
@@ -284,12 +292,12 @@ class ScanRootTest {
         assertNotNull("العمق-2 بملفات = سلسلة", seriesId)
         assertEquals("المؤلف على الإصدار", author.id, edition.authorId)
         assertEquals("السلسلة على الإصدار", seriesId, edition.seriesId)
-        assertEquals("العنوان على الإصدار", "فانتازيا", edition.bookTitle)
+        assertEquals("العنوان على الإصدار = stem الملف لا اسم مجلد السلسلة", "01", edition.bookTitle)
         assertEquals("المسار يبقى محفوظًا كما هو", "أحمد خالد/فانتازيا", edition.sourceFolderPath)
         assertEquals(
             "الاستعلام بالمفتاح البنيوي يجد الإصدار",
             edition.id,
-            database.editionDao().getByStructuralKey(root.id, author.id, seriesId, "فانتازيا")?.id
+            database.editionDao().getByStructuralKey(root.id, author.id, seriesId, "01")?.id
         )
     }
 

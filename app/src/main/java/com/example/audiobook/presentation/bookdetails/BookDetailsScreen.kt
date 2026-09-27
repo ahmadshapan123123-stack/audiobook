@@ -56,6 +56,7 @@ import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.domain.usecases.CoverCandidate
 import com.example.audiobook.domain.usecases.CoverCandidateSource
 import com.example.audiobook.presentation.common.ConfirmDeleteDialog
+import com.example.audiobook.presentation.common.cleanDisplayTitle
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
@@ -114,12 +115,12 @@ fun BookDetailsScreen(
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.Top) {
             AtherCoverBlock(
-                title = book.title,
+                title = cleanDisplayTitle(book.title),
                 coverColor = coverColor,
                 modifier = Modifier.width(120.dp).aspectRatio(0.72f)
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                Text(book.title, style = MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(cleanDisplayTitle(book.title), style = MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(uiState.authorName.ifBlank { stringResource(R.string.bd_edition_narrator) }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (uiState.seriesName != null || book.genre != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {

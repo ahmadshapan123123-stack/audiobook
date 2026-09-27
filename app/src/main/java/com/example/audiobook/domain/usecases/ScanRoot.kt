@@ -127,9 +127,12 @@ class ScanRoot @Inject constructor(
         }
     }
 
-    private data class PreparedFolder(val folderPath: String, val files: List<PreparedFile>, val hasFreshRead: Boolean)
+    // الأنواع التالية `internal` لا `private`: اختبار الأداء في نفس الوحدة يقيس
+    // المرحلتين (prepareFiles / resolveClassifiedBooks) على حدة. `internal` لا
+    // يُتاح خارج هذه الوحدة، فليست واجهة عامة.
+    internal data class PreparedFolder(val folderPath: String, val files: List<PreparedFile>, val hasFreshRead: Boolean)
 
-    private data class PreparedFile(
+    internal data class PreparedFile(
         val scanFile: ScanFile,
         val previous: AudioFileEntity?,
         val freshMetadata: AudioMetadata?,
@@ -143,7 +146,7 @@ class ScanRoot @Inject constructor(
      * سلسلة وكتابًا)، وكتب المجلد الواحد كانت تُطوى كلها في إصدار واحد.
      * `files` هي حصّة الكتاب من ملفات المجلد (بمطابقة uri) لا كل ملفات المجلد.
      */
-    private data class BookUnit(
+    internal data class BookUnit(
         val classified: StrictFolderClassifier.ClassifiedBook,
         val folderPath: String,
         val files: List<PreparedFile>
@@ -159,7 +162,7 @@ class ScanRoot @Inject constructor(
     )
 
     /** pass 1: تجميع الملفات حسب المجلد، وقراءة metadata فقط للملفات المتغيرة/الجديدة (Metadata Cache). */
-    private fun prepareFiles(
+    internal fun prepareFiles(
         rootId: UUID,
         files: List<ScanFile>,
         existing: Map<String, AudioFileEntity>,
@@ -220,7 +223,7 @@ class ScanRoot @Inject constructor(
      * شبكة أمان: أي ملف لم ينسبه المصنِّف يُضاف كتابًا احتياطيًا باسمه بدل أن
      * يضيع (وإلا لعلّمه الفحص التالي مفقودًا).
      */
-    private fun bookUnits(
+    internal fun bookUnits(
         classified: List<StrictFolderClassifier.ClassifiedBook>,
         prepared: Map<String, PreparedFolder>,
         rootName: String
@@ -263,7 +266,7 @@ class ScanRoot @Inject constructor(
      * Phase 2 pass 2: حفظ كتب [BookUnit] بدل المجلدات — بنفس دلالات المعاملات
      * والدفعات وcheckpoint (المفتاح يبقى مسار المجلد الأول في الدفعة).
      */
-    private suspend fun resolveClassifiedBooks(
+    internal suspend fun resolveClassifiedBooks(
         root: LibraryRootEntity,
         units: List<BookUnit>,
         report: MutableScanReport,
@@ -332,7 +335,7 @@ class ScanRoot @Inject constructor(
 
         val folder = PreparedFolder(unit.folderPath, unit.files, unit.files.any { it.freshMetadata != null })
         val context = AuthorSeriesContext(book.authorName, book.seriesName)
-        val signals = signalsFor(root, folder, context)
+        val signals = signalsFor(root, folder, context, signalFolderName(unit, book))
 
         val existing = database.editionDao().getByStructuralKey(root.id, identity.authorId, identity.seriesId, identity.title)
         val target = existing ?: createStructuralEdition(root, unit, identity, signals).also { onCreated() }
@@ -601,17 +604,42 @@ class ScanRoot @Inject constructor(
         return result
     }
 
-    private fun signalsFor(root: LibraryRootEntity, folder: PreparedFolder, context: AuthorSeriesContext): EditionSignals {
+    private fun signalsFor(
+        root: LibraryRootEntity,
+        folder: PreparedFolder,
+        context: AuthorSeriesContext,
+        signalFolderName: String = folder.folderPath
+    ): EditionSignals {
         val allMetadata = folder.files.map { file ->
             file.freshMetadata ?: AudioMetadata(file.durationMs, file.previous?.mimeType ?: "", null, null, null, emptyList())
         }
         return EditionSignalExtractor.build(
-            folderName = folder.folderPath,
+            folderName = signalFolderName,
             authorFolderName = context.authorName,
             seriesFolderName = context.seriesFolderName,
             fileNames = folder.files.map { it.scanFile.fileName },
             metadataList = allMetadata
         )
+    }
+
+    /**
+     * اسم المجلد المستعمل في الإشارات — ليس بالضرورة مسار المجلد الحقيقي.
+     *
+     * الكتاب المصنَّف من ملف واحد (عمق 0 أو 1 أو 2: كتاب لكل ملف) عنوانُه اسمُ
+     * الملف بلا امتداد، فمرورُ مسار المجلد وحده إلى [EditionSignals] كان يجعل
+     * `resolvedTitle()` يُرجع اسم المجلد (اسم المؤلف عند العمق-1، واسم السلسلة
+     * عند العمق-2) فيكتبه فوق عنوان كل كتاب من كتب ذلك المجلد. لذلك يُستخدم هنا
+     * مسار الملف بلا امتداد، فيطابق العنوانَ البنيويَّ الذي قرّره المصنِّف.
+     *
+     * أما الكتب التي عنوانها اسم مجلدها (عمق ≥ 3) أو ذات ملفات متعددة فتبقى
+     * على مسار المجلد كما هو.
+     */
+    private fun signalFolderName(unit: BookUnit, book: StrictFolderClassifier.ClassifiedBook): String {
+        val single = unit.files.singleOrNull() ?: return unit.folderPath
+        val fileName = single.scanFile.fileName
+        val stem = fileName.substringBeforeLast('.', fileName)
+        if (stem.isBlank() || book.bookTitle != stem) return unit.folderPath
+        return if (unit.folderPath.isEmpty()) stem else "${unit.folderPath}/$stem"
     }
 
     /**
@@ -843,7 +871,7 @@ class ScanRoot @Inject constructor(
         return index
     }
 
-    private class MutableScanReport(val rootId: UUID) {
+    internal class MutableScanReport(val rootId: UUID) {
         var filesSeen = 0
         var metadataReads = 0
         var cacheHits = 0

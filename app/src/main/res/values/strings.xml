@@ -734,6 +734,28 @@
     <!-- ===== الفحص الفوري + إعادة التصنيف ===== -->
     <string name="settings_scanning">جارٍ فحص المكتبة…</string>
     <string name="settings_scan_result">تم فحص %1$d ملفًا، وجدت %2$d كتابًا</string>
+    <string name="settings_rebuild_structure">إعادة بناء بنية المكتبة</string>
+    <string name="settings_rebuild_structure_desc">يحذف الكتب الفارغة التي تركها تغيّر قواعد التصنيف ثم يعيد الفحص. لا يحذف ملفاتك ولا تعديلاتك.</string>
+    <string name="settings_rebuilding">جارٍ إعادة البناء…</string>
+    <string name="settings_rebuild_result">تم بناء %1$d كتاب</string>
+    <string name="settings_rebuild_failed">تعذّرت إعادة بناء البنية</string>
+    <string name="settings_rebuild_failed_reason">فشل البناء: %1$s</string>
+    <string name="settings_rebuild_confirm_title">إعادة بناء المكتبة؟</string>
+    <string name="settings_rebuild_confirm_body">سيتم إعادة بناء بنية المكتبة من مجلداتك.\nلن يُحذف:\n• تقدم الاستماع\n• العلامات والملاحظات\n• المفضلة\n• الإحصائيات\nسيبدأ فحص جديد بعد ذلك.</string>
+    <!-- العربية تحتاج صيغ جمع متعددة، ف.plurals وليس format واحد. -->
+    <plurals name="settings_rebuild_confirm_books">
+        <item quantity="zero">لا كتب حاليًا. سيبدأ فحص جديد.</item>
+        <item quantity="one">حاليًا: كتاب واحد. ستُعاد بناؤه.</item>
+        <item quantity="two">حاليًا: كتابان. ستُعاد بناؤهما.</item>
+        <item quantity="few">حاليًا: %1$d كتب. ستُعاد بناؤها.</item>
+        <item quantity="many">حاليًا: %1$d كتابًا. ستُعاد بناؤها.</item>
+        <item quantity="other">حاليًا: %1$d كتاب. ستُعاد بناؤها.</item>
+    </plurals>
+    <string name="settings_rebuild_confirm_action">إعادة البناء</string>
+    <string name="settings_rebuild_cancel_action">إلغاء</string>
+    <string name="filter_search_series">ابحث في السلاسل</string>
+    <string name="filter_search_genre">ابحث في الأنواع</string>
+    <string name="filter_search_clear">مسح البحث</string>
     <string name="settings_scan_failed">تعذّر إكمال الفحص. حاول مرة أخرى.</string>
 
     <!-- ===== المرحلة 4: فحص تدفقي + إشعار الفحص الأمامي ===== -->

@@ -62,7 +62,9 @@ class SettingsChoiceDrivesScanIntegrationTest {
             ReminderScheduler(context, appSettings),
             libraryManagementFor(database),
             database.libraryRootDao(),
+            database.bookDao(),
             scanLibraryNowFor(database, appSettings),
+            rebuildStructureFor(database, appSettings),
             ReclassifyLibrary(database, appSettings),
             classificationPreviewFor(database, appSettings),
             ReclassifyScheduler(context)

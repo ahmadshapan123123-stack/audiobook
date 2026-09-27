@@ -65,12 +65,19 @@ class ScanRootApiCompatTest {
 
         val report = scanRoot(root.id)
 
-        assertEquals("الفحص يكتمل بلا استثناء على API 23 ويُنشئ كتبًا", 2, report.editionsCreated)
-        assertEquals(2, database.bookDao().getAll().size)
+        // النموذج الصارم: كل ملف في مجلد سلسلة العمق-2 كتاب مستقل (2 + 1 = 3).
+        assertEquals("الفحص يكتمل بلا استثناء على API 23 ويُنشئ كتابًا لكل ملف", 3, report.editionsCreated)
+        assertEquals(3, database.bookDao().getAll().size)
+
+        // استخراج الإشارات بالفهرس يعمل بعد التقسيم: الراوي لكل إصدار، والمدة محفوظة.
+        val editions = database.editionDao().getByRoot(root.id)
+        assertEquals("كل إصدار يقرأ الراوي عبر الفهرس", 3, editions.count { it.narratorName == "فلان الراوي" })
+        assertEquals("مجموع المدة يبقى كاملًا بعد التقسيم (3 ملفات × 1.8M)", 5_400_000L, editions.sumOf { it.totalDurationMs })
+
         val sira = database.editionDao().getByRootAndFolder(root.id, "السيرة النبوية/الجزء الثالث")!!
         assertNotNull(sira)
         assertEquals("فلان الراوي", sira.narratorName)
-        assertEquals(3_600_000L, sira.totalDurationMs)
+        assertEquals("كل كتاب صار ملفًا واحدًا", 1_800_000L, sira.totalDurationMs)
         val kitab = database.editionDao().getByRootAndFolder(root.id, "الأدب العربي/Book 3")!!
         assertNotNull(kitab)
         assertEquals("فلان الراوي", kitab.narratorName)

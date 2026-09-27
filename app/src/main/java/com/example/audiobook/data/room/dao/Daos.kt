@@ -69,6 +69,7 @@ interface BookDao : CrudDao<BookEntity> {
     @Query("SELECT * FROM books WHERE isDemo = 1") suspend fun getDemoBooks(): List<BookEntity>
     @Query("DELETE FROM books WHERE isDemo = 1") suspend fun deleteDemoBooks()
     @Query("SELECT COUNT(*) FROM books WHERE isDemo = 1") suspend fun countDemoBooks(): Int
+    @Query("SELECT COUNT(*) FROM books") suspend fun countAll(): Int
     @Query("SELECT COUNT(*) FROM books WHERE authorId IN (:demoAuthorIds)") suspend fun countBooksByDemoAuthors(demoAuthorIds: List<String>): Int
     @Query(
         "SELECT * FROM books WHERE isTitleUserConfirmed = 0 AND (" +
@@ -76,6 +77,19 @@ interface BookDao : CrudDao<BookEntity> {
             "EXISTS (SELECT 1 FROM editions e WHERE e.bookId = books.id AND e.sourceFolderPath LIKE '%demo%'))"
     )
     suspend fun getLegacyDemoBooks(demoAuthorIds: List<String>): List<BookEntity>
+
+    /**
+     * الكتب التي فقدت كل إصداراتها ولم يعد لها ملف ولا علاقة بمستخدم، فتُحذف
+     * في «إعادة بناء بنية المكتبة». الاستثناءات (demo، وعنوان أكّده المستخدم،
+     * والمفضّلة، والمجموعات) تمنع الحذف حتى لا تضيع بيانات المستخدم.
+     */
+    @Query(
+        "SELECT * FROM books b WHERE b.isDemo = 0 AND b.isTitleUserConfirmed = 0 AND " +
+            "NOT EXISTS (SELECT 1 FROM editions e WHERE e.bookId = b.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM favorite_books f WHERE f.bookId = b.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM collection_book_cross_ref c WHERE c.bookId = b.id)"
+    )
+    suspend fun getOrphanBooks(): List<BookEntity>
 }
 
 @Dao
@@ -106,6 +120,24 @@ interface EditionDao : CrudDao<EditionEntity> {
     suspend fun getByStructuralKey(rootId: UUID, authorId: UUID?, seriesId: UUID?, title: String): EditionEntity?
     @Query("SELECT * FROM editions WHERE libraryRootId = :rootId") suspend fun getByRoot(rootId: UUID): List<EditionEntity>
     @Query("SELECT COUNT(DISTINCT bookId) FROM editions WHERE libraryRootId IN (:rootIds)") suspend fun countDistinctBooksForRoots(rootIds: List<UUID>): Int
+
+    /**
+     * الإصدارات التي لم يتبقَّ لها أي ملف ولا أي أثر مستخدم — أي «قشر» فارغ تركه
+     * تغيّر نموذج التصنيف (كتابٌ مجمَّع سابق كُسِر إلى كتب لكل ملف فسحب ملفاته
+     * إلى الكتب الجديدة). تُحذف فقط إن كانت خالية من الملفات ومن التقدّم
+     * والعلامات، فلا تضيع بيانات استماعٍ او اشاراتٍ لمستخدم.
+     * و«إتمام الفصول» (وهو أثر مستخدم حقيقي؛ أما جدول `chapters` نفسه فيُشتق
+     * من الملفات ويُعاد بناؤه في الفحص التالي).
+     */
+    @Query(
+        "SELECT * FROM editions e WHERE " +
+            "NOT EXISTS (SELECT 1 FROM audio_files af WHERE af.editionId = e.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM listening_progress lp WHERE lp.editionId = e.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM bookmarks bm WHERE bm.editionId = e.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM listening_sessions ls WHERE ls.editionId = e.id) AND " +
+            "NOT EXISTS (SELECT 1 FROM chapter_completions cc WHERE cc.editionId = e.id)"
+    )
+    suspend fun getAbandonedShells(): List<EditionEntity>
 }
 
 @Dao

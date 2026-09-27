@@ -25,6 +25,7 @@ import com.example.audiobook.domain.usecases.ReclassifyLibrary
 import com.example.audiobook.domain.usecases.classificationPreviewFor
 import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.domain.usecases.scanLibraryNowFor
+import com.example.audiobook.domain.usecases.rebuildStructureFor
 import com.example.audiobook.presentation.settings.SettingsScreen
 import com.example.audiobook.presentation.settings.SettingsViewModel
 import com.example.audiobook.domain.model.AppThemeMode
@@ -66,7 +67,9 @@ class SettingsScreenAccessibilityTest {
             ReminderScheduler(context, appSettings),
             libraryManagementFor(database),
             database.libraryRootDao(),
+            database.bookDao(),
             scanLibraryNowFor(database, appSettings),
+            rebuildStructureFor(database, appSettings),
             ReclassifyLibrary(database, appSettings),
             classificationPreviewFor(database, appSettings),
             ReclassifyScheduler(context)
