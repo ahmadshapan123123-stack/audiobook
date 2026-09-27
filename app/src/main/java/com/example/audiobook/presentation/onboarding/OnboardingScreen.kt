@@ -1,160 +1,315 @@
 package com.example.audiobook.presentation.onboarding
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
-import com.example.audiobook.presentation.theme.AppSpacing
-import com.example.audiobook.presentation.theme.LocalAppAccent
+import com.example.audiobook.domain.usecases.ScanPhase
+import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewTree
 
+/**
+ * شاشات الإعداد (المرحلة 5): ترحيب ← اختيار مجلد الكتب ← معاينة التصنيف (قراءة
+ * فقط) ← تأكيد/تعديل ← استيراد فعلي. تنتهي بـ [OnboardingState.Done] فيستدعي
+ * [onFinish] لنقل ملكية العرض للواجهة الرئيسية.
+ */
 @Composable
 fun OnboardingScreen(
     onFinish: () -> Unit,
-    onAddFolder: () -> Unit
+    viewModel: OnboardingViewModel = hiltViewModel()
 ) {
-    val steps = listOf(
-        Triple(
-            stringResource(R.string.onboarding_step1_title),
-            stringResource(R.string.onboarding_step1_desc),
-            null
-        ),
-        Triple(
-            stringResource(R.string.onboarding_step2_title),
-            stringResource(R.string.onboarding_step2_desc),
-            null
-        ),
-        Triple(
-            stringResource(R.string.onboarding_step3_title),
-            stringResource(R.string.onboarding_step3_desc),
-            null
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val pickedUri by viewModel.pickedUri.collectAsStateWithLifecycle()
+
+    val folderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri -> if (uri != null) viewModel.pickFolder(uri) }
+
+    LaunchedEffect(state) {
+        if (state is OnboardingState.Done) onFinish()
+    }
+
+    when (val current = state) {
+        OnboardingState.Welcome -> WelcomeStep(
+            onNext = viewModel::next,
+            onSkip = viewModel::skip
         )
-    )
+        OnboardingState.PickFolder -> PickFolderStep(
+            pickedUri = pickedUri,
+            onChooseFolder = { folderLauncher.launch(null) },
+            onNext = viewModel::next,
+            onBack = viewModel::back
+        )
+        is OnboardingState.Previewing -> ProgressStep(
+            phase = current.phase, processed = current.processed, total = current.total
+        )
+        is OnboardingState.ShowPreview -> ConfirmStep(
+            tree = current.tree,
+            onEdit = viewModel::startEdit,
+            onImport = viewModel::confirmAndImport,
+            onBack = viewModel::back
+        )
+        is OnboardingState.Editing -> EditClassificationScreen(
+            tree = current.tree,
+            onDiscard = viewModel::cancelEdit,
+            onSave = viewModel::saveAndPreview,
+            onApplyEdit = viewModel::applyEdit
+        )
+        is OnboardingState.Importing -> ImportStep(
+            phase = current.phase, processed = current.processed, total = current.total,
+            onCancel = viewModel::cancel
+        )
+        OnboardingState.Done -> Unit // LaunchedEffect بدأ الفتح
+    }
+}
 
-    var currentStep by remember { mutableIntStateOf(0) }
-    val appAccent = LocalAppAccent.current
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+@Composable
+private fun WelcomeStep(onNext: () -> Unit, onSkip: () -> Unit) {
+    StepContainer {
         Text(
-            text = stringResource(R.string.onboarding_title),
+            text = stringResource(R.string.onboarding_welcome_title),
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.onboarding_subtitle),
+            text = stringResource(R.string.onboarding_welcome_body),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
-
-        Spacer(Modifier.height(48.dp))
-
-        // Step indicators
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            steps.indices.forEach { index ->
-                val isSelected = index == currentStep
-                androidx.compose.foundation.Canvas(
-                    modifier = Modifier
-                        .size(if (isSelected) 12.dp else 8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                ) {
-                    drawRect(
-                        color = if (isSelected) appAccent.accent
-                        else appAccent.accent.copy(alpha = 0.3f)
-                    )
-                }
-            }
+        Spacer(Modifier.height(40.dp))
+        TextButton(onClick = onSkip) {
+            Text(stringResource(R.string.onboarding_skip), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_next))
+        }
+    }
+}
 
+@Composable
+private fun PickFolderStep(
+    pickedUri: Uri?,
+    onChooseFolder: () -> Unit,
+    onNext: () -> Unit,
+    onBack: () -> Unit
+) {
+    StepContainer {
+        Text(
+            text = stringResource(R.string.onboarding_pick_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.onboarding_pick_body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
         Spacer(Modifier.height(32.dp))
-
-        // Step content
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.Center
-        ) {
+        OutlinedButton(onClick = onChooseFolder, modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                imageVector = Icons.Outlined.FolderOpen,
+                contentDescription = null
+            )
+            Spacer(Modifier.padding(4.dp))
+            Text(stringResource(R.string.onboarding_choose_folder))
+        }
+        Spacer(Modifier.height(16.dp))
+        if (pickedUri != null) {
             Text(
-                text = steps[currentStep].first,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+                text = stringResource(R.string.onboarding_selected_folder, pickedUri.lastPathSegment ?: pickedUri.toString()),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(12.dp))
+        } else {
             Text(
-                text = steps[currentStep].second,
-                style = MaterialTheme.typography.bodyLarge,
+                text = stringResource(R.string.onboarding_no_folder),
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
         }
-
-        // Navigation buttons
+        Spacer(Modifier.weight(1f))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (currentStep > 0) {
-                TextButton(
-                    onClick = { currentStep-- },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(stringResource(R.string.back))
-                }
+            TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.onboarding_back))
             }
-
-            if (currentStep < steps.lastIndex) {
-                TextButton(
-                    onClick = { currentStep++ },
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(appAccent.accent.copy(alpha = 0.12f))
-                ) {
-                    Text(stringResource(R.string.next), color = appAccent.accent)
-                }
-            } else {
-                TextButton(
-                    onClick = onFinish,
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(appAccent.accent)
-                ) {
-                    Text(stringResource(R.string.onboarding_start), color = appAccent.onAccent)
-                }
+            Button(onClick = onNext, enabled = pickedUri != null, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.onboarding_next))
             }
         }
+    }
+}
+
+@Composable
+private fun ConfirmStep(
+    tree: PreviewTree,
+    onEdit: () -> Unit,
+    onImport: () -> Unit,
+    onBack: () -> Unit
+) {
+    StepContainer(farStart = true) {
+        Text(
+            text = stringResource(R.string.onboarding_preview_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.onboarding_preview_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (tree.authors.isEmpty() && tree.unassignedBooks.isEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.onboarding_preview_empty),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else {
+            Spacer(Modifier.height(16.dp))
+            Column(
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
+            ) {
+                PreviewTreeList(tree = tree, initiallyExpanded = true)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(
+                R.string.onboarding_confirm_body,
+                tree.authors.size,
+                tree.authors.sumOf { it.series.size },
+                tree.authors.sumOf { it.books.size + it.series.sumOf { s -> s.books.size } } + tree.unassignedBooks.size
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onImport, enabled = tree.authors.isNotEmpty() || tree.unassignedBooks.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_confirm_import))
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_edit_manual))
+        }
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_back))
+        }
+    }
+}
+
+@Composable
+private fun ProgressStep(phase: ScanPhase, processed: Int, total: Int) {
+    StepContainer {
+        Text(
+            text = stringResource(R.string.onboarding_preview_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = phaseText(phase, processed, total),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun ImportStep(phase: ScanPhase, processed: Int, total: Int, onCancel: () -> Unit) {
+    StepContainer {
+        Text(
+            text = stringResource(R.string.onboarding_importing_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = phaseText(phase, processed, total),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = onCancel) {
+            Text(stringResource(R.string.onboarding_cancel_import), color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun phaseText(phase: ScanPhase, processed: Int, total: Int): String = when (phase) {
+    ScanPhase.DISCOVERING -> stringResource(R.string.scan_phase_discovering)
+    ScanPhase.PARSING -> stringResource(R.string.scan_phase_parsing, processed, total)
+    ScanPhase.CLASSIFYING -> stringResource(R.string.scan_phase_classifying)
+    ScanPhase.CREATING -> stringResource(R.string.scan_phase_creating, processed, total)
+    ScanPhase.DONE -> stringResource(R.string.scan_phase_classifying)
+}
+
+/** تخطيط أزرار/محتوى بسيط عبر الشاشة: `farStart` يجعل المحتوى متجهًا للأعلى (لا منتصف). */
+@Composable
+private fun StepContainer(
+    farStart: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = if (farStart) Arrangement.Top else Arrangement.Center
+    ) {
+        content()
     }
 }

@@ -95,6 +95,7 @@ import androidx.navigation.navArgument
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.background.scanworker.ScanScheduler
 import com.example.audiobook.data.preferences.AppSettings
+import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.dao.StatisticsDao
 import com.example.audiobook.domain.usecases.RecoverInterruptedSession
 import com.example.audiobook.notifications.AtherNotificationCenter
@@ -185,6 +186,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var appSettings: AppSettings
     @Inject lateinit var statisticsDao: StatisticsDao
     @Inject lateinit var notificationCenter: AtherNotificationCenter
+    @Inject lateinit var database: AppDatabase
     private val libraryRootsViewModel: LibraryRootsViewModel by viewModels()
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
     private val pendingNotificationRoute = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -217,17 +219,23 @@ class MainActivity : ComponentActivity() {
             val navController = rememberNavController()
             var showSplash by remember { mutableStateOf(true) }
             val hasOnboarded by appSettings.hasCompletedOnboarding.collectAsStateWithLifecycle()
+            val hasSkippedOnboarding by appSettings.hasSkippedOnboarding.collectAsStateWithLifecycle()
             val mode by appSettings.themeMode.collectAsStateWithLifecycle()
             val logoMode by appSettings.logoColor.collectAsStateWithLifecycle()
+            // بوابة الإعداد (المرحلة 5): تُعرض شاشات الإعداد لمن لم يُنهِها وللمستخدم
+            // الذي أنجزها لكن مكتبته فارغة (لا جذور ولا كتب) — إلا من تخطاها صراحةً
+            // (يُفتح على مكتبة فارغة بزر إضافة مجلد).
+            val libraryRoots by database.libraryRootDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+            val books by database.bookDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+            val showOnboarding = !hasSkippedOnboarding && (!hasOnboarded || (libraryRoots.isEmpty() && books.isEmpty()))
             AudiobookTheme(mode) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         if (showSplash) {
                             AtherSplash(onFinished = { showSplash = false }, themeMode = mode, logoColorMode = logoMode)
-                        } else if (!hasOnboarded) {
+                        } else if (showOnboarding) {
                             OnboardingScreen(
-                                onFinish = { appSettings.setHasCompletedOnboarding(true) },
-                                onAddFolder = { navController.navigate("library_roots") }
+                                onFinish = { appSettings.setHasCompletedOnboarding(true) }
                             )
                         } else {
                             AudiobookApp(

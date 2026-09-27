@@ -1,0 +1,297 @@
+package com.example.audiobook.domain.usecases
+
+import com.example.audiobook.domain.usecases.StrictFolderClassifier.ClassifiedBook
+import com.example.audiobook.domain.usecases.StrictFolderClassifier.InputFile
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * اختبارات StrictFolderClassifier (المرحلة 3) — مصنِّف صارم خالص بلا قاعدة بيانات.
+ *
+ * النموذج الصحيح (تصحيح العمق-2):
+ *  - العمق 1 = AUTHOR دائمًا؛ ملفاته المباشرة كتب لكل ملف بمؤلف المجلد وبلا سلسلة.
+ *  - العمق 2: ملفات مباشرة → BOOK (بلا سلسلة)؛ مجلدات فقط → SERIES.
+ *  - العمق ≥ 3: ملفات مباشرة → BOOK؛ مجلدات فقط → BOOK حاوية (تكرار للأحفاد).
+ */
+class StrictFolderClassifierTest {
+
+    private fun file(folder: String, name: String, size: Long = 100): InputFile =
+        InputFile(uri = "content://audio/$name", filename = name, folderPath = folder, sizeBytes = size, durationMs = 0)
+
+    private fun classify(vararg files: InputFile, rootName: String = "Library"): List<ClassifiedBook> =
+        StrictFolderClassifier.classify(files.toList(), rootName)
+
+    private fun bookByPath(books: List<ClassifiedBook>, folderPath: String): ClassifiedBook? =
+        books.firstOrNull { it.folderPath == folderPath }
+
+    // 1) مدخل فارغ → صفر كتب.
+
+    @Test
+    fun emptyInputProducesNoBooks() {
+        assertEquals(emptyList<ClassifiedBook>(), StrictFolderClassifier.classify(emptyList(), "Library"))
+    }
+
+    // 2) ملفات الجذر المباشرة → كتاب لكل ملف، بلا مؤلف ولا سلسلة، العنوان = اسم الملف.
+
+    @Test
+    fun rootDirectFilesBecomePerFileStandaloneUnclassifiedBooks() {
+        val books = classify(
+            file("", "01.mp3", size = 10),
+            file("", "Chapter Two.mp3", size = 20)
+        )
+        assertEquals(2, books.size)
+        books.forEach { book ->
+            assertNull("ملف جذر بلا مؤلف", book.authorName)
+            assertNull("ملف جذر بلا سلسلة", book.seriesName)
+            assertEquals("", book.folderPath)
+            assertEquals("لكل ملف جذر كتابه المستقل", 1, book.files.size)
+        }
+        assertEquals("01", books[0].bookTitle)
+        assertEquals("Chapter Two", books[1].bookTitle)
+        assertEquals(10L, books[0].files[0].sizeBytes)
+    }
+
+    // 3) جذر يحوي ثلاثة مجلدات مؤلفين → كتاب لكل ملف مباشر تحت كل مؤلف، بلا كتب جذر.
+
+    @Test
+    fun rootWithThreeAuthorsClassifiesAuthorBooksWithNoRootBooks() {
+        val books = classify(
+            file("أحمد خالد توفيق", "01.mp3"),
+            file("نبيل فاروق", "01.mp3"),
+            file("كريم قنديل", "01.mp3")
+        )
+        assertEquals(3, books.size)
+        assertEquals(
+            setOf("أحمد خالد توفيق", "نبيل فاروق", "كريم قنديل"),
+            books.map { it.folderPath }.toSet()
+        )
+        books.forEach { book ->
+            assertEquals("كتاب المؤلف المباشر يُنسب لمؤلفه", book.folderPath, book.authorName)
+            assertNull(book.seriesName)
+            assertEquals("عنوانه اسم الملف المباشر", "01", book.bookTitle)
+        }
+        assertTrue("لا كتب على الجذر مباشرة", books.none { it.folderPath.isEmpty() })
+    }
+
+    // 4) العمق 1 = AUTHOR حاوية دائمًا حتى للاسم الذي يبدو اسم كتاب؛ ملفاته كتب بمؤلفه.
+
+    @Test
+    fun depthOneFolderIsAlwaysAuthorContainerEvenForGenericBookNames() {
+        val books = classify(file("كتاب رئيسي", "01.mp3"))
+        assertEquals(1, books.size)
+        val main = books[0]
+        assertEquals("كتاب رئيسي", main.folderPath)
+        assertEquals("الكتاب المباشر لمؤلفٍ اسمه كالمجلد نفسه", "كتاب رئيسي", main.authorName)
+        assertEquals("عنوانه اسم الملف", "01", main.bookTitle)
+        assertNull(main.seriesName)
+    }
+
+    // 5) ملفات مباشرة في مجلد المؤلف → كتاب لكل ملف، كلها بمؤلف المجلد.
+
+    @Test
+    fun authorDirectFilesBecomePerFileStandaloneBooksAuthoredByAuthor() {
+        val books = classify(
+            file("Author", "01.mp3", size = 10),
+            file("Author", "02.mp3", size = 20)
+        )
+        assertEquals(2, books.size)
+        books.forEach { book ->
+            assertEquals("Author", book.authorName)
+            assertEquals("Author", book.folderPath)
+            assertNull(book.seriesName)
+            assertEquals(1, book.files.size)
+        }
+        assertEquals(setOf("01", "02"), books.map { it.bookTitle }.toSet())
+    }
+
+    // ── اختبار 1 المصحَّح: مؤلف يحوي مجلدين ذوي ملفات مباشرة → كتابان بلا سلسلتين ──
+
+    @Test
+    fun authorWithTwoAudioFoldersProducesTwoBooksNoSeries() {
+        val books = classify(
+            file("أحمد خالد توفيق/فانتازيا", "01.mp3"),
+            file("أحمد خالد توفيق/ما وراء الطبيعة", "01.mp3")
+        )
+        assertEquals(2, books.size)
+        assertEquals(setOf("فانتازيا", "ما وراء الطبيعة"), books.map { it.bookTitle }.toSet())
+        books.forEach { book ->
+            assertEquals("مجلد العمق-2 ذو ملفات مباشرة كتابٌ لا سلسلة", null, book.seriesName)
+            assertEquals("أحمد خالد توفيق", book.authorName)
+        }
+        assertTrue("لا سلسلة إطلاقًا", books.none { it.seriesName != null })
+    }
+
+    // ── اختبار 2 المصحَّح: كتابٌ له 3 ملفات عند العمق-2 → كتاب واحد باسم المجلد ──
+
+    @Test
+    fun bookWithThreeFilesAtDepthTwoIsOneBook() {
+        val books = classify(
+            file("أحمد خالد توفيق/سافاري", "01.mp3", size = 10),
+            file("أحمد خالد توفيق/سافاري", "02.mp3", size = 20),
+            file("أحمد خالد توفيق/سافاري", "03.mp3", size = 30)
+        )
+        assertEquals(1, books.size)
+        val safari = books[0]
+        assertEquals("أحمد خالد توفيق/سافاري", safari.folderPath)
+        assertEquals("سافاري", safari.bookTitle)
+        assertNull("بلا سلسلة", safari.seriesName)
+        assertEquals("أحمد خالد توفيق", safari.authorName)
+        assertEquals(3, safari.files.size)
+    }
+
+    // 8) الاسم العام عند العمق-2 ذو ملفات مباشرة → كتاب، لا سلسلة (بلا كشف أسماء).
+
+    @Test
+    fun genericNameAtDepthTwoIsBookNotSeries() {
+        val books = classify(file("كريم قنديل/book1", "01.mp3"))
+        assertEquals(1, books.size)
+        val book = books[0]
+        assertEquals("كريم قنديل", book.authorName)
+        assertNull("الاسم العام لا يجعله سلسلة", book.seriesName)
+        assertEquals("book1", book.bookTitle)
+    }
+
+    // ── اختبار D: نبيل فاروق/ملف المستقبل/01.mp3 → كتاب بلا سلسلة ──
+
+    @Test
+    fun authorWithSingleAudioFolderProducesOneBookNoSeries() {
+        val books = classify(file("نبيل فاروق/ملف المستقبل", "01.mp3"))
+        assertEquals(1, books.size)
+        val mustaqbal = books[0]
+        assertEquals("نبيل فاروق", mustaqbal.authorName)
+        assertNull(mustaqbal.seriesName)
+        assertEquals("ملف المستقبل", mustaqbal.bookTitle)
+    }
+
+    // ── اختبار B: مجلدٌ لمؤلف يحوي مجلدًا يحوي مجلدات → سلاسل وكتب عميقة ──
+
+    @Test
+    fun authorWithSubfolderOfSubfoldersClassifiesSeriesWithBooks() {
+        val books = classify(
+            file("أحمد خالد توفيق/paranormal/book1", "01.mp3"),
+            file("أحمد خالد توفيق/paranormal/book2", "02.mp3")
+        )
+        assertEquals(2, books.size)
+        books.forEach { book ->
+            assertEquals("أحمد خالد توفيق", book.authorName)
+            assertEquals("كتب عمق-3 تنتسب لسلسلة جدّها العمق-2", "paranormal", book.seriesName)
+            assertEquals(1, book.files.size)
+        }
+        assertEquals(setOf("book1", "book2"), books.map { it.bookTitle }.toSet())
+        assertNull("الحاوية العمق-2 بلا ملفات مباشرة لا كتاب لنفسها", bookByPath(books, "أحمد خالد توفيق/paranormal"))
+        assertNull("الحاوية العمق-1 لا كتاب لنفسها", bookByPath(books, "أحمد خالد توفيق"))
+    }
+
+    // ── اختبار A: مؤلف يحوي ملفًا مباشرًا ومجلدًا ذي ملفات → كتابان بلا سلسلتين ──
+
+    @Test
+    fun authorWithDirectFilesAndAudioSubfolderProducesBooksNoSeries() {
+        val books = classify(
+            file("أحمد خالد توفيق", "standalone.mp3"),
+            file("أحمد خالد توفيق/فانتازيا", "01.mp3")
+        )
+        assertEquals(2, books.size)
+        val standalone = bookByPath(books, "أحمد خالد توفيق")!!
+        val fantasia = bookByPath(books, "أحمد خالد توفيق/فانتازيا")!!
+        assertEquals("standalone", standalone.bookTitle)
+        assertEquals("أحمد خالد توفيق", standalone.authorName)
+        assertNull(standalone.seriesName)
+        assertEquals("فانتازيا", fantasia.bookTitle)
+        assertEquals("أحمد خالد توفيق", fantasia.authorName)
+        assertNull(fantasia.seriesName)
+        assertTrue("لا سلسلة إطلاقًا", books.none { it.seriesName != null })
+    }
+
+    // ── اختبار C: مؤلف مخلوط (ملف مباشر + مجلد ذي ملفات + مجلد سلسلة) ──
+
+    @Test
+    fun mixedAuthorFolderProducesBooksAndOneSeries() {
+        val books = classify(
+            file("أحمد خالد توفيق", "standalone.mp3"),
+            file("أحمد خالد توفيق/فانتازيا", "01.mp3"),
+            file("أحمد خالد توفيق/paranormal/book1", "01.mp3")
+        )
+        assertEquals(3, books.size)
+        assertEquals("سلسلة واحدة فقط (paranormal)", setOf("paranormal"), books.mapNotNull { it.seriesName }.toSet())
+        assertEquals(setOf("standalone"), bookByPath(books, "أحمد خالد توفيق")?.let { setOf(it.bookTitle) })
+        assertEquals("فانتازيا", bookByPath(books, "أحمد خالد توفيق/فانتازيا")?.bookTitle)
+        assertEquals("book1", bookByPath(books, "أحمد خالد توفيق/paranormal/book1")?.bookTitle)
+        books.forEach { assertEquals("كل الكتب بمؤلف أحمد", "أحمد خالد توفيق", it.authorName) }
+    }
+
+    // 14) كتاب تحت كتاب: العقدة العميقة الحاوية لأحفاد تحمل صوتًا تبقى كتابًا (ملفاتها فارغة).
+
+    @Test
+    fun nestedBookUnderBookProducesBothBooks() {
+        val books = classify(file("Author/Series/Book1/Nested", "01.mp3"))
+        assertEquals(2, books.size)
+        val book1 = bookByPath(books, "Author/Series/Book1")!!
+        val nested = bookByPath(books, "Author/Series/Book1/Nested")!!
+        assertEquals("Book1", book1.bookTitle)
+        assertTrue("عقدة عمق-3 حاوية بلا ملفات مباشرة: كتابٌ بملفات فارغة", book1.files.isEmpty())
+        assertEquals("Nested", nested.bookTitle)
+        assertEquals(1, nested.files.size)
+        listOf(book1, nested).forEach {
+            assertEquals("Author", it.authorName)
+            assertEquals("Series", it.seriesName)
+        }
+    }
+
+    // 15) كتابا شقيقان تحت السلسلة نفسها كيانان مستقلان — لا دمج.
+
+    @Test
+    fun siblingBooksUnderSameSeriesStaySeparate() {
+        val books = classify(
+            file("Author/SeriesX/book1", "01.mp3"),
+            file("Author/SeriesX/book2", "02.mp3")
+        )
+        assertEquals(2, books.size)
+        assertEquals(2, books.map { it.folderPath }.toSet().size)
+        books.forEach {
+            assertEquals("Author", it.authorName)
+            assertEquals("SeriesX", it.seriesName)
+        }
+        assertEquals(setOf("book1", "book2"), books.map { it.bookTitle }.toSet())
+    }
+
+    // 16) سلسلتان مختلفتان بنفس اسم كتابهما → كتابان منفصلان بلا أي اتحاد.
+
+    @Test
+    fun differentSeriesNeverMergeIntoOneBook() {
+        val books = classify(
+            file("Author/SeriesA/book", "01.mp3"),
+            file("Author/SeriesB/book", "02.mp3")
+        )
+        assertEquals(2, books.size)
+        assertEquals(setOf("SeriesA", "SeriesB"), books.map { it.seriesName }.toSet())
+        assertEquals(2, books.map { it.folderPath }.toSet().size)
+        books.forEach { assertEquals("Author", it.authorName) }
+    }
+
+    // 17) عدد الكتب يتبع المجلدات الحاملة الصوت فقط — الحاويات لا تُعدّ كتبًا.
+
+    @Test
+    fun containersAreNeverEmittedAsBooksWhenTheyHoldOnlySubfolders() {
+        val books = classify(
+            file("أحمد/سلسلة/كتاب1", "01.mp3"),
+            file("كريم/كتاب2", "02.mp3")
+        )
+        assertEquals(2, books.size)
+        assertEquals(
+            setOf("أحمد/سلسلة/كتاب1", "كريم/كتاب2"),
+            books.map { it.folderPath }.toSet()
+        )
+    }
+
+    // 18) ملف جذر بلا اسم نافع → عنوانه اسم الجذر (fallback).
+
+    @Test
+    fun rootLevelTitleFallsBackToRootNameWhenFilenameHasNoStem() {
+        val books = classify(file("", ".mp3"), rootName = "Library")
+        assertEquals(1, books.size)
+        assertEquals("Library", books[0].bookTitle)
+        assertNull(books[0].authorName)
+    }
+}

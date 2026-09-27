@@ -1,6 +1,8 @@
 package com.example.audiobook.domain.usecases
 
+import android.util.Log
 import com.example.audiobook.data.localfilesystem.AudioMetadata
+import com.example.audiobook.domain.config.StrictModeFlags
 
 /**
  * الإشارة 4+5 في النسخة المُحصّنة: نمط السلسلة + رقم الكتاب داخل السلسلة.
@@ -74,6 +76,32 @@ data class EditionSignals(
  */
 object EditionSignalExtractor {
 
+    /** الحد الأقصى المعقول لمدة ملف واحد (12 ساعة) — أي قيمة أعلى تُعد فاسدة. */
+    private const val MAX_FILE_DURATION_MS = 12L * 60 * 60 * 1000
+
+    private const val TAG = "EditionSignals"
+
+    /**
+     * مجموع مدد آمن: أي ملف بمدة خارج 0 < m ≤ 12 ساعة يُتجاهَل (صفر في المجموع)
+     * مع تسجيل تحذير؛ والمجموع نفسه محمي من الفيضان الطافي (Long) بالقفل على القيمة القصوى.
+     */
+    private fun safeDurationSum(metadataList: List<AudioMetadata>): Long {
+        var total = 0L
+        metadataList.forEach { meta ->
+            val d = meta.durationMs
+            when {
+                d <= 0L -> {}
+                d > MAX_FILE_DURATION_MS -> Log.w(TAG, "edition-signals: implausible file duration $d ms; treating as 0")
+                total > Long.MAX_VALUE - d -> {
+                    total = Long.MAX_VALUE
+                    Log.w(TAG, "edition-signals: duration total overflow clamped to Long.MAX_VALUE")
+                }
+                else -> total += d
+            }
+        }
+        return total
+    }
+
     fun withoutExtension(fileName: String): String = fileName.substringBeforeLast('.', fileName)
 
     /** الإشارة 4+5: اكتشاف نمط السلسلة ورقم الكتاب فيها (بدون افتراض ثابت). */
@@ -141,7 +169,11 @@ object EditionSignalExtractor {
         }
         val series = extractSeriesPart(folderName) ?: extractSeriesPart(firstStem)
         val narrator = narratorTag ?: extractNarratorFromName(folderName) ?: extractNarratorFromName(firstStem)
-        val albumHint = metadataList.mapNotNull { it.album?.takeIf { s -> s.isNotBlank() } }.firstOrNull()
+        val albumHint = if (StrictModeFlags.ENABLE_METADATA_HINTS) {
+            metadataList.mapNotNull { it.album?.takeIf { s -> s.isNotBlank() } }.firstOrNull()
+        } else {
+            null
+        }
         return EditionSignals(
             primaryFileName = firstStem,
             folderName = folderName,
@@ -149,7 +181,7 @@ object EditionSignalExtractor {
             seriesFolderName = seriesFolderName,
             seriesPart = series,
             embeddedTags = embedded,
-            totalDurationMs = metadataList.sumOf { it.durationMs },
+            totalDurationMs = safeDurationSum(metadataList),
             fileCount = metadataList.size,
             filesOrdered = detectFileOrder(fileNames),
             narrator = narrator,

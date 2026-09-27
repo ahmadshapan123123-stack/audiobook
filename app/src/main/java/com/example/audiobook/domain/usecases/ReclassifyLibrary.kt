@@ -41,7 +41,8 @@ class ReclassifyLibrary @Inject constructor(
             if (bookEditions.size > 1) return@forEach
 
             val context = FolderClassifier.contextForPath(edition.sourceFolderPath, root.displayName, autoSeries)
-            val targetAuthor = database.authorDao().getByName(context.authorName)
+            val authorName = context.authorName?.takeIf { it.isNotBlank() }
+            val targetAuthor = authorName?.let { database.authorDao().getByName(it) }
             val authorMatches = targetAuthor?.id == book.authorId
 
             val targetSeries = resolveSeries(targetAuthor?.id, context.seriesFolderName)
@@ -51,17 +52,23 @@ class ReclassifyLibrary @Inject constructor(
                 foldersToFix++
                 affectedBooks += book.id
                 if (!dryRun) {
-                    val author = targetAuthor
-                        ?: AuthorEntity(name = context.authorName, colorTheme = null)
-                            .also { database.authorDao().insert(it) }
-                    val seriesId = context.seriesFolderName?.takeIf { it.isNotBlank() }?.let { seriesName ->
-                        database.seriesDao().getByParent(author.id).firstOrNull { it.name == seriesName }
-                            ?: SeriesEntity(authorId = author.id, name = seriesName, colorTheme = null)
-                                .also { database.seriesDao().insert(it) }
-                    }?.id
+                    val author = authorName?.let { name ->
+                        targetAuthor
+                            ?: AuthorEntity(name = name, colorTheme = null)
+                                .also { database.authorDao().insert(it) }
+                    }
+                    val seriesId = if (author != null) {
+                        context.seriesFolderName?.takeIf { it.isNotBlank() }?.let { seriesName ->
+                            database.seriesDao().getByParent(author.id).firstOrNull { it.name == seriesName }
+                                ?: SeriesEntity(authorId = author.id, name = seriesName, colorTheme = null)
+                                    .also { database.seriesDao().insert(it) }
+                        }?.id
+                    } else {
+                        null
+                    }
                     database.bookDao().update(
                         book.copy(
-                            authorId = author.id,
+                            authorId = author?.id,
                             seriesId = seriesId,
                             orderInSeries = book.orderInSeries
                         )

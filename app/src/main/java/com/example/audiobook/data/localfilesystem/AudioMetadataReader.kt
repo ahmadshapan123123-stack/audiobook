@@ -60,71 +60,150 @@ class MediaAudioMetadataReader(private val context: Context) : AudioMetadataRead
     }
 }
 
+/**
+ * محلّل فصول M4B بتدفّق (صندوق-بصندوق عبر DataInputStream) بدل قراءة الملف كاملًا
+ * في الذاكرة. يقرأ رؤوس الصناديق المتدرّجة، يتخطّى المحتوى بقراءات مجزّأة، ولا
+ * يفكّك إلا الصناديق الضرورية (moov/udta/meta/ilst → chpl).
+ * حارس الحجم: أي تدفّق يتجاوز [MAX_PARSE_BYTES] لا يُفكّك ويُسجَّل تحذير — يمنع
+ * انفجار الذاكرة على ملفات M4B الضخمة أو المكتبات الكبيرة.
+ */
 private object M4bChapterParser {
     private const val TAG = "M4bChapterParser"
+    private const val MAX_PARSE_BYTES = 50_000_000L
     private val containers = setOf("moov", "udta", "meta", "ilst")
 
     fun parse(input: java.io.InputStream?): List<EmbeddedChapter> {
         if (input == null) return emptyList()
         return try {
-            val bytes = input.use { it.readBytes() }
-            findChpl(bytes, 0, bytes.size)
+            input.use { stream ->
+                val buffered = java.io.BufferedInputStream(stream, 64 * 1024)
+                if (buffered.available() > MAX_PARSE_BYTES) {
+                    Log.w(TAG, "M4B larger than $MAX_PARSE_BYTES bytes; skipping chapter parsing")
+                    emptyList()
+                } else {
+                    val bounded = BoundedBytes(buffered, MAX_PARSE_BYTES)
+                    val dis = java.io.DataInputStream(bounded)
+                    walk(dis, bounded, MAX_PARSE_BYTES)
+                }
+            }
         } catch (error: Exception) {
             Log.w(TAG, "Unable to parse embedded M4B chapters", error)
             emptyList()
         }
     }
 
-    private fun findChpl(bytes: ByteArray, start: Int, end: Int): List<EmbeddedChapter> {
-        var offset = start
-        while (offset + 8 <= end) {
-            val size = readUInt32(bytes, offset).toLong()
-            val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
-            val boxEnd = when {
-                size == 0L -> end.toLong()
-                size == 1L && offset + 16 <= end -> readUInt64(bytes, offset + 8) + offset
-                else -> offset + size
-            }.coerceAtMost(end.toLong()).toInt()
-            val header = if (size == 1L) 16 else 8
-            if (type == "chpl") return parseChpl(bytes, offset + header, boxEnd)
-            if (type in containers && offset + header < boxEnd) {
-                val nested = findChpl(bytes, offset + header, boxEnd)
-                if (nested.isNotEmpty()) return nested
+    /** يجوس صناديق ضمن [..end] ويدخل الحاويات المعروفة بحثًا عن chpl. */
+    private fun walk(dis: java.io.DataInputStream, reader: BoundedBytes, end: Long): List<EmbeddedChapter> {
+        while (reader.consumed + 8 <= end) {
+            if (reader.consumed + 8 > reader.limit) {
+                Log.w(TAG, "M4B exceeded $MAX_PARSE_BYTES bytes while scanning for chapters; giving up")
+                return emptyList()
             }
-            if (boxEnd <= offset) break
-            offset = boxEnd
+            val size = readUInt32(dis)
+            if (size <= 0L) return emptyList()
+            val type = readFourCC(dis)
+            var content = size - 8L
+            if (size == 1L) {
+                val large = readUInt64(dis)
+                content = large - 16L
+            }
+            if (content < 0L || reader.consumed + content > end) return emptyList()
+            val boxEnd = reader.consumed + content
+            when {
+                type == "chpl" -> return parseChpl(dis, reader, boxEnd)
+                type in containers -> {
+                    val nested = walk(dis, reader, boxEnd)
+                    if (nested.isNotEmpty()) return nested
+                    if (reader.consumed < boxEnd) skipFully(dis, reader, boxEnd - reader.consumed)
+                }
+                else -> skipFully(dis, reader, content)
+            }
         }
         return emptyList()
     }
 
-    private fun parseChpl(bytes: ByteArray, start: Int, end: Int): List<EmbeddedChapter> {
-        if (start + 5 > end) return emptyList()
-        val count = bytes[start + 4].toInt() and 0xff
-        var offset = start + 5
+    /** فكّ فصول chpl: 4 بايت (نسخة+أعلام) ثم 1 بايت العدد ثم سجلات (8 بايت زمن + اسم). */
+    private fun parseChpl(dis: java.io.DataInputStream, reader: BoundedBytes, boxEnd: Long): List<EmbeddedChapter> {
+        if (reader.consumed + 5 > boxEnd) return emptyList()
+        skipFully(dis, reader, 4L)
+        val count = readUInt8(dis)
         val result = mutableListOf<EmbeddedChapter>()
         repeat(count) {
-            if (offset + 9 > end) return@repeat
-            val startTicks = readUInt64(bytes, offset)
-            offset += 8
-            val titleLength = bytes[offset].toInt() and 0xff
-            offset++
-            if (offset + titleLength > end) return@repeat
-            val title = String(bytes, offset, titleLength, Charsets.UTF_8)
-            offset += titleLength
+            if (reader.consumed + 9 > boxEnd) return@repeat
+            val startTicks = readUInt64(dis)
+            val titleLength = readUInt8(dis)
+            if (reader.consumed + titleLength > boxEnd) return@repeat
+            val bytes = ByteArray(titleLength)
+            dis.readFully(bytes)
+            val title = String(bytes, Charsets.UTF_8)
             result += EmbeddedChapter(title.ifBlank { null }, startTicks / 10_000L)
         }
         return result
     }
 
-    private fun readUInt32(bytes: ByteArray, offset: Int): Int =
-        ((bytes[offset].toInt() and 0xff) shl 24) or
-            ((bytes[offset + 1].toInt() and 0xff) shl 16) or
-            ((bytes[offset + 2].toInt() and 0xff) shl 8) or
-            (bytes[offset + 3].toInt() and 0xff)
+    /** يستنفد المطلوب بقراءات مجزأة (DataInputStream قد يقرأ جزئيًا). */
+    private fun skipFully(dis: java.io.DataInputStream, reader: BoundedBytes, n: Long) {
+        var remaining = n
+        val chunk = ByteArray(64 * 1024)
+        while (remaining > 0L) {
+            val toRead = remaining.coerceAtMost(chunk.size.toLong()).toInt()
+            val read = dis.read(chunk, 0, toRead)
+            if (read < 0) break
+            remaining -= read
+        }
+    }
 
-    private fun readUInt64(bytes: ByteArray, offset: Int): Long {
+    private fun readUInt8(dis: java.io.DataInputStream): Int = dis.readUnsignedByte()
+
+    private fun readUInt32(dis: java.io.DataInputStream): Long {
+        val b0 = dis.readUnsignedByte().toLong()
+        val b1 = dis.readUnsignedByte().toLong()
+        val b2 = dis.readUnsignedByte().toLong()
+        val b3 = dis.readUnsignedByte().toLong()
+        return (b0 shl 24) or (b1 shl 16) or (b2 shl 8) or b3
+    }
+
+    private fun readUInt64(dis: java.io.DataInputStream): Long {
         var value = 0L
-        repeat(8) { value = (value shl 8) or (bytes[offset + it].toLong() and 0xff) }
+        repeat(8) { value = (value shl 8) or dis.readUnsignedByte().toLong() }
         return value
+    }
+
+    private fun readFourCC(dis: java.io.DataInputStream): String {
+        val bytes = ByteArray(4)
+        dis.readFully(bytes)
+        return String(bytes, Charsets.US_ASCII)
+    }
+
+    /** تدفّق عدّاد يوقف القراءة عند بلوغ الحد مهما وُصف حجم الصناديق. */
+    private class BoundedBytes(
+        private val input: java.io.InputStream,
+        val limit: Long
+    ) : java.io.InputStream() {
+        var consumed: Long = 0L; private set
+
+        override fun read(): Int {
+            if (consumed >= limit) return -1
+            val b = input.read()
+            if (b != -1) consumed++
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (consumed >= limit) return -1
+            val room = (limit - consumed).coerceAtMost(len.toLong()).toInt()
+            if (room <= 0) return -1
+            val n = input.read(b, off, room)
+            if (n > 0) consumed += n
+            return n
+        }
+
+        override fun skip(n: Long): Long {
+            val room = (limit - consumed).coerceAtMost(n)
+            if (room <= 0) return 0
+            val skipped = input.skip(room)
+            if (skipped > 0) consumed += skipped
+            return skipped
+        }
     }
 }

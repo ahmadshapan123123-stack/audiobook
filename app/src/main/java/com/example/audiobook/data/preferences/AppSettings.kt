@@ -89,6 +89,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _hasCompletedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false))
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
 
+    /** تخطَّى المستخدم شاشات الإعداد صراحةً: يلفظ المكتبة الفارغة بدلًا من إعادتها له
+     *  (قد يُظهر الإعداد مجددًا لاحقًا ما دامت المكتبة فارغة ولم يُتخطَّ). */
+    private val _hasSkippedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_SKIPPED_ONBOARDING, false))
+    val hasSkippedOnboarding: StateFlow<Boolean> = _hasSkippedOnboarding.asStateFlow()
+
     private val _hasSeededDemoData = MutableStateFlow(prefs.getBoolean(KEY_HAS_SEEDED_DEMO, false))
     val hasSeededDemoData: StateFlow<Boolean> = _hasSeededDemoData.asStateFlow()
 
@@ -173,6 +178,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         prefs.edit().putBoolean(KEY_HAS_COMPLETED_ONBOARDING, value).apply()
     }
 
+    fun setHasSkippedOnboarding(value: Boolean) {
+        _hasSkippedOnboarding.value = value
+        prefs.edit().putBoolean(KEY_HAS_SKIPPED_ONBOARDING, value).apply()
+    }
+
     fun setHasSeededDemoData(value: Boolean) {
         _hasSeededDemoData.value = value
         prefs.edit().putBoolean(KEY_HAS_SEEDED_DEMO, value).apply()
@@ -252,6 +262,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_INTELLIGENCE_LEVEL = "intelligence_level"
         const val KEY_AUTO_SERIES = "auto_series_classification"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
+        const val KEY_HAS_SKIPPED_ONBOARDING = "has_skipped_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"
 
         const val DEFAULT_SPEED = 1.0f

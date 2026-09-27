@@ -14,8 +14,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.example.audiobook.R
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.data.room.entity.LibraryRootEntity
+import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.LocalAppAccent
@@ -38,6 +41,7 @@ import com.example.audiobook.presentation.theme.rememberHeaderCollapsed
 @Composable
 fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}) {
     val roots by viewModel.roots.collectAsState()
+    val revokedRoots by viewModel.accessRevokedRoots.collectAsState()
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(viewModel::addRoot)
     }
@@ -58,12 +62,30 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}
         Button(onClick = { folderPicker.launch(null) }, modifier = Modifier.minTouchTarget()) {
             Text(stringResource(R.string.library_folder_add))
         }
+        if (revokedRoots.isNotEmpty()) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(R.string.library_folder_access_revoked_banner),
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
         roots.forEach { root ->
+            val reGrantPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                uri?.let { viewModel.reGrantAccess(root, it) }
+            }
             LibraryRootRow(
                 root = root,
+                accessRevoked = root.id in revokedRoots,
                 onPriorityChanged = { viewModel.setPriority(root, it) },
                 onEnabledChanged = { viewModel.setEnabled(root, it) },
-                onRefresh = { viewModel.refresh(root) }
+                onRefresh = { viewModel.refresh(root) },
+                onReGrant = { reGrantPicker.launch(android.net.Uri.parse(root.uri)) }
             )
         }
     }
@@ -73,9 +95,11 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}
 @Composable
 private fun LibraryRootRow(
     root: LibraryRootEntity,
+    accessRevoked: Boolean,
     onPriorityChanged: (Boolean) -> Unit,
     onEnabledChanged: (Boolean) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onReGrant: () -> Unit
 ) {
     val appAccent = LocalAppAccent.current
     val switchColors = SwitchDefaults.colors(
@@ -117,6 +141,18 @@ private fun LibraryRootRow(
         }
         TextButton(onClick = onRefresh, enabled = root.isEnabled, modifier = Modifier.minTouchTarget()) {
             Text(stringResource(R.string.library_folder_refresh))
+        }
+        // المرحلة 4: فحص فشل (إذن/استثناء) — زر استئناف صريح يعيد الجدولة
+        // (يستأنف من آخر checkpoint إن بقي، وإلا من البداية).
+        if (root.scanStatus == ScanStatus.ERROR && root.isEnabled) {
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.minTouchTarget()) {
+                Text(stringResource(R.string.library_folder_retry))
+            }
+        }
+        if (accessRevoked) {
+            Button(onClick = onReGrant, modifier = Modifier.minTouchTarget()) {
+                Text(stringResource(R.string.library_folder_access_repair))
+            }
         }
         HorizontalDivider()
     }

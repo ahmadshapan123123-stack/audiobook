@@ -11,6 +11,7 @@ import com.example.audiobook.data.localfilesystem.ScanFile
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.*
+import com.example.audiobook.domain.config.StrictModeFlags
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,20 @@ data class ScanReport(
 )
 
 /**
+ * نشرة تقدّم متدفّقة (المرحلة 4): تُنشر في نقاط الخطرية من الفحص على كلٍّ من
+ * مستمع onProgress الخاص بالمتصل وللناقل المشترك ScanProgressBus للواجهة.
+ */
+data class ScanProgress(
+    val phase: ScanPhase,
+    val processed: Int,
+    val total: Int,
+    val currentFolder: String
+)
+
+/** أطوار الفحص بترتيبها: اكتشاف الملفات ← قراءة الوسائط ← التصنيف ← إنشاء الكتب ← تم. */
+enum class ScanPhase { DISCOVERING, PARSING, CLASSIFYING, CREATING, DONE }
+
+/**
  * الفحص الحقيقي (R2): يستخرج الإشارات العشر فعليًا لكل مجلد، يحسب
  * Confidence Score حقيقيًا، يتخذ قرارات الدمج التلقائي تحت المستوى المختار
  * مع القيد الصارم، يسجل قرارات EditionMatchDecision، ويحترم User Override Wins.
@@ -42,25 +57,59 @@ class ScanRoot @Inject constructor(
     private val appSettings: AppSettings,
     private val editionMerge: EditionMerge
 ) {
-    suspend operator fun invoke(rootId: UUID): ScanReport = withContext(Dispatchers.IO) {
+    suspend operator fun invoke(
+        rootId: UUID,
+        onProgress: (ScanProgress) -> Unit = {}
+    ): ScanReport = withContext(Dispatchers.IO) {
         val root = database.libraryRootDao().getById(rootId) ?: error("LibraryRoot not found: $rootId")
         database.libraryRootDao().setScanStatus(root.id, ScanStatus.SCANNING)
+        val checkpointDao = database.scanCheckpointDao()
+        ScanProgressBus.begin()
+        var cancelled = false
         try {
             val existing = database.audioFileDao().getByRoot(root.id).associateBy { it.fileUri }
             val foundUris = mutableSetOf<String>()
             val report = MutableScanReport(root.id)
+            // الفحص الأول = لا ملف مُتتبَّع لهذا الجذر بعد (لا كتب) — فيُتخطى markMissingFiles
+            // كليًا، حتى لا يعلّم فحص أول/جزئي عن قائمة ناقصة شيئًا موجودًا على أنه مفقود.
+            val isFirstScan = existing.isEmpty()
+
             val files = fileSource.listAudioFiles(Uri.parse(root.uri))
+            publish(ScanProgress(ScanPhase.DISCOVERING, files.size, files.size, root.displayName), onProgress)
 
             val contexts = buildContextByPath(files, root.displayName)
-            val prepared = prepareFiles(root.id, files, existing, foundUris, report)
-            val signalsByFolder = resolveEditions(root, prepared, contexts, report)
-            markMissingFiles(root.id, existing, foundUris, report)
-            reconcileAutoMerges(root.id, signalsByFolder, report)
+            publish(ScanProgress(ScanPhase.CLASSIFYING, contexts.size, files.size, root.displayName), onProgress)
 
+            // قراءة metadata تدفقية — يُنشر كل 100 ملف — مع إعادة استخدام كاش الفحص السابق
+            // (نفس uri + نفس lastModified) بلا قراءة فعلية.
+            val prepared = prepareFiles(root.id, files, existing, foundUris, report) { parsed, total ->
+                publish(ScanProgress(ScanPhase.PARSING, parsed, total, ""), onProgress)
+            }
+
+            val resumeIndex = resumeIndexFor(root.id, checkpointDao, prepared, System.currentTimeMillis())
+            val signalsByFolder = resolveEditions(root, prepared, contexts, report, resumeIndex) { done, total, folderPath ->
+                publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+            }
+
+            cancelled = ScanProgressBus.isCancelRequested
+            if (!cancelled && !isFirstScan) {
+                markMissingFiles(root.id, existing, foundUris, report)
+            }
+            if (!cancelled && StrictModeFlags.ENABLE_AUTO_MERGE) {
+                reconcileAutoMerges(root.id, signalsByFolder, report)
+            }
+            // عند الإنجاز التام يُقطع checkpoint؛ أما عند الإيقاف فيبقى لاستئناف الفحص التالي.
+            if (!cancelled) checkpointDao.deleteForRoot(root.id)
+
+            ScanProgressBus.finish()
             database.libraryRootDao().markScanFinished(root.id, System.currentTimeMillis(), ScanStatus.IDLE)
-            Log.i(TAG, "scan-complete root=${root.id} files=${report.filesSeen} metadataReads=${report.metadataReads} cacheHits=${report.cacheHits} missing=${report.missingMarked} restored=${report.restored} created=${report.editionsCreated} refined=${report.editionsRefined} autoMerged=${report.editionsAutoMerged} deduped=${report.filesDeduped}")
+            publish(ScanProgress(ScanPhase.DONE, report.filesSeen, report.filesSeen, ""), onProgress)
+            Log.i(TAG, "scan-complete root=${root.id} files=${report.filesSeen} metadataReads=${report.metadataReads} cacheHits=${report.cacheHits} missing=${report.missingMarked} restored=${report.restored} created=${report.editionsCreated} refined=${report.editionsRefined} autoMerged=${report.editionsAutoMerged} deduped=${report.filesDeduped} cancelled=$cancelled")
             report.toReport()
         } catch (error: Throwable) {
+            // أي فشل في دفعة/مرحلة: تبقى الدفعات السابقة (معاملات منفصلة) ويبقى
+            // checkpoint (لم يُحذف) فيستأنف الفحص التالي من حيث توقف.
+            ScanProgressBus.finish()
             database.libraryRootDao().setScanStatus(root.id, ScanStatus.ERROR)
             throw error
         }
@@ -82,7 +131,8 @@ class ScanRoot @Inject constructor(
         files: List<ScanFile>,
         existing: Map<String, AudioFileEntity>,
         foundUris: MutableSet<String>,
-        report: MutableScanReport
+        report: MutableScanReport,
+        onParsed: (parsed: Int, total: Int) -> Unit = { _, _ -> }
     ): Map<String, PreparedFolder> {
         val byFolder = LinkedHashMap<String, MutableList<PreparedFile>>()
         files.forEachIndexed { index, file ->
@@ -104,7 +154,9 @@ class ScanRoot @Inject constructor(
                     PreparedFile(file, previous, metadata, metadata?.durationMs ?: previous?.durationMs ?: 0L, index)
                 )
             }
+            if ((index + 1) % PROGRESS_INTERVAL == 0) onParsed(index + 1, files.size)
         }
+        if (files.isNotEmpty()) onParsed(files.size, files.size)
         return byFolder.mapValues { (folderPath, files) ->
             PreparedFolder(folderPath, files, hasFreshRead = files.any { it.freshMetadata != null })
         }
@@ -120,7 +172,24 @@ class ScanRoot @Inject constructor(
     private fun buildContextByPath(files: List<ScanFile>, fallbackAuthor: String): Map<String, AuthorSeriesContext> {
         val autoSeries = appSettings.currentAutoSeriesClassification()
         val contexts = LinkedHashMap<String, AuthorSeriesContext>()
-        contexts.putAll(FolderClassifier.contextsByPath(FolderClassifier.classify(files, autoSeries), fallbackAuthor))
+        if (StrictModeFlags.USE_STRICT_CLASSIFIER) {
+            // التصنيف الصارم (المرحلة 3): سياقات بالعمق فقط — الجذر حاوية، العمق 1 مؤلف،
+            // العمق 2 سلسلة دائمًا، العمق ≥ 3 كتب تكراريًا. يحافظ على المسار القديم سليمًا دونه.
+            StrictFolderClassifier.classify(
+                files.map {
+                    StrictFolderClassifier.InputFile(
+                        uri = it.uri.toString(),
+                        filename = it.fileName,
+                        folderPath = it.folderPath,
+                        sizeBytes = it.size,
+                        durationMs = 0L
+                    )
+                },
+                fallbackAuthor
+            ).forEach { contexts[it.folderPath] = AuthorSeriesContext(it.authorName, it.seriesName) }
+        } else {
+            contexts.putAll(FolderClassifier.contextsByPath(FolderClassifier.classify(files, autoSeries), fallbackAuthor))
+        }
         files.forEach { file ->
             contexts.getOrPut(file.folderPath) { pathContext(file.folderPath, fallbackAuthor, autoSeries) }
         }
@@ -129,65 +198,93 @@ class ScanRoot @Inject constructor(
 
     /** احتياطي: اشتقاق المؤلف/السلسلة من مسار المجلد مباشرة (قاعدة العمق نفسها). */
     private fun pathContext(path: String, fallbackAuthor: String, autoSeries: Boolean = appSettings.currentAutoSeriesClassification()): AuthorSeriesContext =
-        FolderClassifier.contextForPath(path, fallbackAuthor, autoSeries)
+        if (path.isEmpty()) AuthorSeriesContext(null, null, isRoot = true)
+        else FolderClassifier.contextForPath(path, fallbackAuthor, autoSeries)
 
-    /** pass 2: بناء الإشارات العشر لكل مجلد ثم حل الإصدار وكتابة الملفات. */
-    private suspend fun resolveEditions(root: LibraryRootEntity, byFolder: Map<String, PreparedFolder>, contexts: Map<String, AuthorSeriesContext>, report: MutableScanReport): Map<String, EditionSignals> {
+    /**
+     * pass 2 (تدفقي — المرحلة 4): بناء الإشارات ثم حلّ الإصدار وكتابة الملفات.
+     * تعمل بمجاميع من 50 مجلدًا لكل withTransaction: أي فشل في دفعة يترك الدفعات
+     * السابقة متمسكة (معلَّمة تباعًا). وقبل كل دفعة يُحدث checkpoint (أول مجلد فيها)
+     * فإذا أُوقف الفحص استأنف التالي من تلك الدفعة تحديدًا. يُنشر CREATING بعد كل
+     * كتاب، ويتوقف تعاونيًا بلطف عند طلب الإلغاء (يُترك checkpoint قائمًا).
+     */
+    private suspend fun resolveEditions(
+        root: LibraryRootEntity,
+        byFolder: Map<String, PreparedFolder>,
+        contexts: Map<String, AuthorSeriesContext>,
+        report: MutableScanReport,
+        resumeIndex: Int,
+        onCreated: (done: Int, total: Int, folderPath: String) -> Unit
+    ): Map<String, EditionSignals> {
         val result = LinkedHashMap<String, EditionSignals>()
-        byFolder.forEach { (folderPath, folder) ->
-            val context = contexts[folderPath] ?: pathContext(folderPath, root.displayName)
-            val signals = signalsFor(root, folder, context)
-            val edition = resolveEdition(root, folderPath, signals, context,
-                onCreated = { report.editionsCreated++ },
-                onRefined = { report.editionsRefined++ }
-            ) ?: return@forEach
-            val importedChapters = mutableListOf<ChapterEntity>()
-            var runningOffsetMs = 0L
-            folder.files.forEach { file ->
-                val uri = file.scanFile.uri.toString()
-                if (file.previous == null && database.audioFileDao()
-                        .getByEditionNameSize(edition.id, file.scanFile.fileName, file.scanFile.size) != null
-                ) {
-                    report.filesDeduped++
-                    return@forEach
-                }
-                val entity = AudioFileEntity(
-                    id = file.previous?.id ?: UUID.randomUUID(),
-                    editionId = edition.id,
-                    fileUri = uri,
-                    relativePath = file.scanFile.relativePath,
-                    fileName = file.scanFile.fileName,
-                    orderIndex = file.orderIndex,
-                    durationMs = file.durationMs,
-                    fileSizeBytes = file.scanFile.size,
-                    lastModified = file.scanFile.lastModified,
-                    contentFingerprint = "${file.scanFile.size}:${file.scanFile.lastModified}:$uri",
-                    mimeType = file.freshMetadata?.mimeType ?: file.previous?.mimeType ?: "application/octet-stream",
-                    fileStatus = FileStatus.AVAILABLE
-                )
-                if (file.previous == null) {
-                    database.audioFileDao().insert(entity)
-                    file.freshMetadata?.embeddedChapters?.forEachIndexed { index, chapter ->
-                        importedChapters += ChapterEntity(
+        val orderedFolders = byFolder.entries.toList()
+        val totalFolders = orderedFolders.size
+        val checkpointDao = database.scanCheckpointDao()
+        var done = 0
+
+        orderedFolders.drop(resumeIndex).chunked(BATCH_SIZE).forEach { batch ->
+            // توقف تعاوني (زر إلغاء/إيقاف): نُنهي ولا نرمي استثناء؛ checkpoint يبقى للاستئناف.
+            if (ScanProgressBus.isCancelRequested) return result
+            checkpointDao.upsert(ScanCheckpointEntity(root.id, batch.first().key, System.currentTimeMillis()))
+            database.withTransaction {
+                batch.forEach { (folderPath, folder) ->
+                    val context = contexts[folderPath] ?: pathContext(folderPath, root.displayName)
+                    val signals = signalsFor(root, folder, context)
+                    val edition = resolveEdition(root, folderPath, signals, context,
+                        onCreated = { report.editionsCreated++ },
+                        onRefined = { report.editionsRefined++ }
+                    ) ?: return@forEach
+                    val importedChapters = mutableListOf<ChapterEntity>()
+                    var runningOffsetMs = 0L
+                    folder.files.forEach { file ->
+                        val uri = file.scanFile.uri.toString()
+                        if (file.previous == null && database.audioFileDao()
+                                .getByEditionNameSize(edition.id, file.scanFile.fileName, file.scanFile.size) != null
+                        ) {
+                            report.filesDeduped++
+                            return@forEach
+                        }
+                        val entity = AudioFileEntity(
+                            id = file.previous?.id ?: UUID.randomUUID(),
                             editionId = edition.id,
-                            title = chapter.title,
-                            startPositionMs = runningOffsetMs + chapter.startPositionMs,
-                            orderIndex = index,
-                            createdFrom = ChapterCreatedFrom.IMPORTED
+                            fileUri = uri,
+                            relativePath = file.scanFile.relativePath,
+                            fileName = file.scanFile.fileName,
+                            orderIndex = file.orderIndex,
+                            durationMs = file.durationMs,
+                            fileSizeBytes = file.scanFile.size,
+                            lastModified = file.scanFile.lastModified,
+                            contentFingerprint = "${file.scanFile.size}:${file.scanFile.lastModified}:$uri",
+                            mimeType = file.freshMetadata?.mimeType ?: file.previous?.mimeType ?: "application/octet-stream",
+                            fileStatus = FileStatus.AVAILABLE
                         )
+                        if (file.previous == null) {
+                            database.audioFileDao().insert(entity)
+                            file.freshMetadata?.embeddedChapters?.forEachIndexed { index, chapter ->
+                                importedChapters += ChapterEntity(
+                                    editionId = edition.id,
+                                    title = chapter.title,
+                                    startPositionMs = runningOffsetMs + chapter.startPositionMs,
+                                    orderIndex = index,
+                                    createdFrom = ChapterCreatedFrom.IMPORTED
+                                )
+                            }
+                        } else {
+                            if (file.previous.fileStatus == FileStatus.MISSING) report.restored++
+                            database.audioFileDao().update(entity)
+                        }
+                        runningOffsetMs += file.durationMs
                     }
-                } else {
-                    if (file.previous.fileStatus == FileStatus.MISSING) report.restored++
-                    database.audioFileDao().update(entity)
+                    if (importedChapters.isNotEmpty()) {
+                        database.chapterDao().deleteImported(edition.id)
+                        importedChapters.forEach { database.chapterDao().insert(it) }
+                        report.importedChapters += importedChapters.size
+                    }
+                    result[folderPath] = signals
+                    done++
+                    onCreated(done, totalFolders, folderPath)
                 }
-                runningOffsetMs += file.durationMs
             }
-            if (importedChapters.isNotEmpty()) {
-                database.chapterDao().deleteImported(edition.id)
-                importedChapters.forEach { database.chapterDao().insert(it) }
-                report.importedChapters += importedChapters.size
-            }
-            result[folderPath] = signals
         }
         return result
     }
@@ -267,19 +364,26 @@ class ScanRoot @Inject constructor(
      */
     private suspend fun createEdition(root: LibraryRootEntity, folderPath: String, signals: EditionSignals, context: AuthorSeriesContext): EditionEntity = database.withTransaction {
         database.editionDao().getByRootAndFolder(root.id, folderPath) ?: run {
-            val authorName = context.authorName.takeIf { it.isNotBlank() } ?: root.displayName
-            val author = database.authorDao().getByName(authorName)
-                ?: AuthorEntity(name = authorName, colorTheme = null).also { database.authorDao().insert(it) }
-            val title = signals.resolvedTitle()?.takeIf { it.isNotBlank() } ?: root.displayName
+            // المؤلف فارغ = كتاب مستقل غير مُصنَّف (authorId=null) — لا يُنسب اسم الجذر كمؤلف أبدًا.
+            val authorName = context.authorName?.takeIf { it.isNotBlank() }
+            val author = authorName?.let { name ->
+                database.authorDao().getByName(name)
+                    ?: AuthorEntity(name = name, colorTheme = null).also { database.authorDao().insert(it) }
+            }
+            val embeddedTitle = if (StrictModeFlags.ENABLE_EMBEDDED_TITLE_OVERRIDE) signals.resolvedTitle() else null
+            val title = (embeddedTitle ?: signals.structuralTitle())
+                .takeIf { it.isNotBlank() }
+                ?: signals.primaryFileName.takeIf { it.isNotBlank() }
+                ?: root.displayName
             val autoSeries = appSettings.currentAutoSeriesClassification()
             // السلسلة من مجلد الحاوية؛ وإن لم يحسم المجلد سلسلة، يُؤخذ تلميح الألبوم
-            // من الـMetadata (ميزة اختيارية) — فقط عند الإنشاء، ولا يتجاوز قرار المجلد
-            // ولا قرار المستخدم ولا يعمل ضمن التصنيف المحافظ.
+            // من الـMetadata (ميزة اختيارية تُدار بعلم ENABLE_METADATA_HINTS) — فقط عند
+            // الإنشاء، ولا يتجاوز قرار المجلد ولا قرار المستخدم ولا يعمل ضمن التصنيف المحافظ.
             val seriesFolder = context.seriesFolderName?.takeIf { it.isNotBlank() }
-                ?: if (autoSeries) signals.seriesAlbumHint?.takeIf { it.isNotBlank() } else null
+                ?: if (StrictModeFlags.ENABLE_METADATA_HINTS && autoSeries) signals.seriesAlbumHint?.takeIf { it.isNotBlank() } else null
             val seriesId: UUID?
             val orderInSeries: Int?
-            if (seriesFolder != null) {
+            if (author != null && seriesFolder != null) {
                 val series = database.seriesDao().getByParent(author.id)
                     .firstOrNull { it.name == seriesFolder }
                     ?: SeriesEntity(authorId = author.id, name = seriesFolder, colorTheme = null)
@@ -292,7 +396,7 @@ class ScanRoot @Inject constructor(
             }
             val book = BookEntity(
                 title = title,
-                authorId = author.id,
+                authorId = author?.id,
                 seriesId = seriesId,
                 orderInSeries = orderInSeries,
                 genre = signals.embeddedTags?.genre,
@@ -324,7 +428,7 @@ class ScanRoot @Inject constructor(
                     rootId = root.id,
                     folderPath = folderPath,
                     detectedTitle = title,
-                    authorName = authorName,
+                    authorName = authorName.orEmpty(),
                     seriesName = seriesFolder,
                     discoveredAt = System.currentTimeMillis(),
                     status = DiscoveryStatus.PENDING
@@ -358,7 +462,9 @@ class ScanRoot @Inject constructor(
                     val candidateSignals = signalsByFolder[candidate.sourceFolderPath]
                     if (subjectSignals == null || candidateSignals == null) continue
                     val boost = EditionIntelligence.confirmationBoost(subjectSignals, candidateSignals, priorConfirmations(subject.id, candidate.id))
-                    if (EditionIntelligence.mergeDecision(subjectSignals, candidateSignals, level, boost)) {
+                    if (StrictModeFlags.ENABLE_AUTO_MERGE &&
+                        EditionIntelligence.mergeDecision(subjectSignals, candidateSignals, level, boost)
+                    ) {
                         editionMerge.merge(subject.id, candidate.id, userInitiated = false)
                         report.editionsAutoMerged++
                     }
@@ -396,6 +502,35 @@ class ScanRoot @Inject constructor(
         }
     }
 
+    /** ينشر نشرة تقدّم على الطرفين: مستمع المتصل الفوري + الناقل المشترك للواجهة. */
+    private fun publish(progress: ScanProgress, onProgress: (ScanProgress) -> Unit) {
+        onProgress(progress)
+        ScanProgressBus.publish(progress)
+    }
+
+    /**
+     * تحديد نقطة الاستئناف: checkpoint حديث (< 24 ساعة) يعيد الفحص من مجلده؛
+     * ومنقضي/مفقود المجلد يُحذف ويبدأ فحص كامل من أول الدفعات.
+     */
+    private suspend fun resumeIndexFor(
+        rootId: UUID,
+        checkpointDao: com.example.audiobook.data.room.dao.ScanCheckpointDao,
+        prepared: Map<String, PreparedFolder>,
+        now: Long
+    ): Int {
+        val checkpoint = checkpointDao.getForRoot(rootId) ?: return 0
+        if (now - checkpoint.scannedAt > CHECKPOINT_TTL_MS) {
+            checkpointDao.deleteForRoot(rootId)
+            return 0
+        }
+        val index = prepared.keys.toList().indexOf(checkpoint.lastProcessedFolderPath)
+        if (index < 0) {
+            checkpointDao.deleteForRoot(rootId)
+            return 0
+        }
+        return index
+    }
+
     private class MutableScanReport(val rootId: UUID) {
         var filesSeen = 0
         var metadataReads = 0
@@ -412,6 +547,9 @@ class ScanRoot @Inject constructor(
 
     companion object {
         private const val TAG = "ScanRoot"
+        private const val BATCH_SIZE = 50
+        private const val PROGRESS_INTERVAL = 100
+        private const val CHECKPOINT_TTL_MS = 24L * 60L * 60L * 1000L
     }
 }
 

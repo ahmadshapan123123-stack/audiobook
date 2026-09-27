@@ -67,6 +67,7 @@ class ApplyDiscoveryDecision @Inject constructor(
         val edition = database.editionDao().getByRootAndFolder(item.rootId, item.folderPath) ?: return
         val book = database.bookDao().getById(edition.bookId) ?: return
         val authorId = book.authorId
+            ?: run { database.pendingDiscoveryDao().markResolved(item.id); return }
         val series = database.seriesDao().getByParent(authorId).firstOrNull { it.name == target }
             ?: SeriesEntity(authorId = authorId, name = target, colorTheme = null)
                 .also { database.seriesDao().insert(it) }

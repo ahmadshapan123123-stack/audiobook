@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.media3.common.Player
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -154,8 +155,8 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
             })
-            .setCustomLayout(SleepTimerCommands.customButtons())
-            .setMediaButtonPreferences(SleepTimerCommands.customButtons())
+            .setCustomLayout(customLockScreenLayout())
+            .setMediaButtonPreferences(customLockScreenLayout())
             .build()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -206,7 +207,7 @@ class PlaybackService : MediaSessionService() {
         currentChapterStart = -1L
         val edition = runCatching { editionDao.getById(editionId) }.getOrNull()
         val book = edition?.let { runCatching { bookDao.getById(it.bookId) }.getOrNull() }
-        val author = book?.let { runCatching { authorDao.getById(it.authorId) }.getOrNull() }
+        val author = book?.authorId?.let { id -> runCatching { authorDao.getById(id) }.getOrNull() }
         val series = book?.seriesId?.let { runCatching { seriesDao.getById(it) }.getOrNull() }
         provider.contentTitle = book?.title ?: ""
         provider.contentAuthor = author?.name ?: ""
@@ -249,10 +250,11 @@ class PlaybackService : MediaSessionService() {
     private fun chapterLabel(chapter: ChapterEntity?, index: Int): String =
         chapter?.title?.takeIf { it.isNotBlank() } ?: "الفصل ${index + 1}"
 
-    /** مراقبة مؤقت النوم: عدّاد حي في إشعار مستقل، يُزال عند التوقف/الإلغاء. */
+    /** مراقبة مؤقت النوم: عدّاد حي في إشعار مستقل، يُزال عند التوقف/الإلغاء، + تحديث حيّ لشاشة القفل. */
     private fun observeSleepTimer() {
         scope.launch {
             sleepTimer.uiState.collect { state ->
+                refreshLockScreenLayout()
                 when (state.phase) {
                     SleepTimerPhase.RUNNING,
                     SleepTimerPhase.WARNING_WINDOW,
@@ -261,6 +263,31 @@ class PlaybackService : MediaSessionService() {
                     SleepTimerPhase.STOPPED -> notificationCenter.cancelSleepTimer()
                 }
             }
+        }
+    }
+
+    /**
+     * الأزرار الديناميكية لشاشة القفل/الإشعار: أثناء فعالية مؤقت النوم أو نافذة التحذير/الخبو
+     * تُعطى أزرار المؤقّت الأولوية (تمديد +15/+30/+60 + إلغاء) ليصل المستخدم إليها فورًا،
+     * وإلا تظهر أزرار التشغيل الاعتيادية (±15 + الفصول). يُعاد تطبيقها حيًّا عند كل تغيّر طور.
+     */
+    private fun customLockScreenLayout(): List<CommandButton> {
+        val phase = sleepTimer.uiState.value.phase
+        val timerPriority = phase == SleepTimerPhase.RUNNING ||
+            phase == SleepTimerPhase.WARNING_WINDOW ||
+            phase == SleepTimerPhase.FADING_OUT
+        return if (timerPriority) SleepTimerCommands.customButtons()
+        else PlaybackSessionCommands.notificationButtons()
+    }
+
+    /** إعادة تطبيق الأزرار الحيّة على الجلسة الدّوّارة دون إيقاف التشغيل. */
+    private fun refreshLockScreenLayout() {
+        val session = mediaSession ?: return
+        try {
+            session.setCustomLayout(customLockScreenLayout())
+            session.setMediaButtonPreferences(customLockScreenLayout())
+        } catch (_: IllegalStateException) {
+            // الجلسة قيد البناء/التحرير — تتجاهل المكالمة، وسيُطبَّق الـ layout لاحقًا عند baseline.
         }
     }
 

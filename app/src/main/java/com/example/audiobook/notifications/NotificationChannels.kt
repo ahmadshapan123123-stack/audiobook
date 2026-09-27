@@ -17,6 +17,7 @@ object NotificationChannels {
     const val SAVED_MOMENT = "saved_moment"
     const val REMINDERS = "reminders"
     const val ACHIEVEMENTS = "achievements"
+    const val SCAN = "scan_progress"
 
     const val ID_PLAYBACK = 1001
     const val ID_SLEEP_TIMER = 1002
@@ -24,6 +25,7 @@ object NotificationChannels {
     const val ID_BOOK_COMPLETED = 1004
     const val ID_DAILY_REMINDER = 1005
     const val ID_RESUME_REMINDER = 1006
+    const val ID_SCAN = 1007
 
     fun createAll(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -34,7 +36,8 @@ object NotificationChannels {
             channel(context, SLEEP_TIMER, R.string.channel_sleep_timer_name, R.string.channel_sleep_timer_desc, NotificationManager.IMPORTANCE_LOW),
             channel(context, SAVED_MOMENT, R.string.channel_saved_moment_name, R.string.channel_saved_moment_desc, NotificationManager.IMPORTANCE_DEFAULT),
             channel(context, REMINDERS, R.string.channel_reminders_name, R.string.channel_reminders_desc, NotificationManager.IMPORTANCE_DEFAULT),
-            channel(context, ACHIEVEMENTS, R.string.channel_achievements_name, R.string.channel_achievements_desc, NotificationManager.IMPORTANCE_LOW)
+            channel(context, ACHIEVEMENTS, R.string.channel_achievements_name, R.string.channel_achievements_desc, NotificationManager.IMPORTANCE_LOW),
+            channel(context, SCAN, R.string.channel_scan_name, R.string.channel_scan_desc, NotificationManager.IMPORTANCE_LOW)
         ))
     }
 

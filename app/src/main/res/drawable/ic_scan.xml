@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    أيقونة فحص المكتبة (أمامية/إشعار المرحلة 4): عدسة فحص (بحث) بيضاء — نفس
+    لغز أيقونة أثير المصغّرة، صورة ظلية يُلونها النظام حسب السياق.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M10.5,3.5 A7,7 0 1 0 10.5,17.5 A7,7 0 1 0 10.5,3.5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M15.8,15.8 L20.5,20.5" />
+</vector>

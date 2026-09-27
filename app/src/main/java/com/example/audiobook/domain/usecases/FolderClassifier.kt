@@ -1,6 +1,7 @@
 package com.example.audiobook.domain.usecases
 
 import com.example.audiobook.data.localfilesystem.ScanFile
+import com.example.audiobook.domain.config.StrictModeFlags
 
 /**
  * تصنيف هرمية المجلدات المكتشفة أثناء الفحص (نقٍّ خالص قابل للاختبار).
@@ -44,10 +45,15 @@ import com.example.audiobook.data.localfilesystem.ScanFile
  */
 enum class FolderKind { AUTHOR, SERIES, BOOK, EMPTY }
 
-/** سياق كتاب/إصدار مُستخرَج من بنية المجلد (دون لمس قاعدة البيانات). */
+/**
+ * سياق كتاب/إصدار مُستخرَج من بنية المجلد (دون لمس قاعدة البيانات).
+ * `authorName = null` تعني كتابًا مستقلًا غير مُصنَّف (لا مؤلف) — لا يُنسب
+ * اسم الجذر أبدًا كمؤلف. `isRoot` تشير إلى سياق مجلد الجذر نفسه (folderPath=="").
+ */
 data class AuthorSeriesContext(
-    val authorName: String,
-    val seriesFolderName: String?
+    val authorName: String?,
+    val seriesFolderName: String?,
+    val isRoot: Boolean = false
 )
 
 /**
@@ -149,8 +155,18 @@ object FolderClassifier {
                 .mapNotNull { nodes[it] }
                 .sortedWith(NODE_ORDER)
             val directFiles = filesByPath[path].orEmpty()
-            val producesSyntheticBook =
+            val containerHasDirectFiles =
                 (role == FolderKind.AUTHOR || role == FolderKind.SERIES) && directFiles.isNotEmpty()
+            // كتاب اصطناعي داخل حاوية مؤلف/سلسلة تُحوي ملفات مباشرة — يُدار بعلم
+            // ENABLE_SYNTHETIC_BOOKS: عند إيقافه (flag=false) تعود الحاوية كتابًا عاديًا
+            // يحمل ملفاته المباشرة فتظل وظيفيًا (لا تُفقد ملفات ولا تُحذف مسارات)
+            // وقابلة للتفعيل بالكامل عند قلب العلم.
+            val producesSyntheticBook = containerHasDirectFiles && StrictModeFlags.ENABLE_SYNTHETIC_BOOKS
+            val effectiveRole = when (role) {
+                FolderKind.AUTHOR, FolderKind.SERIES ->
+                    if (containerHasDirectFiles && !producesSyntheticBook) FolderKind.BOOK else role
+                else -> role
+            }
             val children = if (producesSyntheticBook) {
                 (realChildren + FolderNode(
                     path = path,
@@ -168,7 +184,7 @@ object FolderClassifier {
                 path = path,
                 name = path.substringAfterLast('/'),
                 depth = depthOf(path),
-                kind = role,
+                kind = effectiveRole,
                 directFiles = if (producesSyntheticBook) emptyList() else directFiles,
                 children = children,
                 synthetic = false
@@ -201,12 +217,18 @@ object FolderClassifier {
         subfolders: Int,
         filesInSubfolders: Int,
         autoSeries: Boolean
-    ): FolderKind = when {
+    ): FolderKind {
+        // التصنيف الصارم للمجلد المخلوط (قاعدة A) ميزة اختيارية بعلم
+        // USE_STRICT_CLASSIFIER: عند إيقافه تُعامَل الحاوية كتابًا عاديًا بملفاتها
+        // المباشرة دون إعادة هيكلة شجرتها (وتبقى المكتبة قابلة للاستخدام وظيفيًا).
+        if (!StrictModeFlags.USE_STRICT_CLASSIFIER) return FolderKind.BOOK
+        return when {
         isSeriesName(name) -> if (autoSeries) FolderKind.SERIES else FolderKind.BOOK          // C
         subfolders >= 2 && filesInSubfolders >= 3 -> containerRole(depth, parentKind, name, autoSeries)  // A
         depth == 1 -> if (isGenericBookName(name)) FolderKind.BOOK else FolderKind.AUTHOR
         !isGenericBookName(name) -> if (autoSeries) FolderKind.SERIES else FolderKind.BOOK     // D (عمق ≥ 2)
         else -> FolderKind.BOOK                                                                // A-else: SPLIT
+        }
     }
 
     /** قاعدة B + C للحاوية الخالصة: العمق 1 → AUTHOR، وإلا SERIES، و»سلسلة X» تضبط دائمًا. */
@@ -243,7 +265,7 @@ object FolderClassifier {
                 val segments = node.path.split('/').filter(String::isNotBlank)
                 val author = authorName
                     ?: if (segments.size >= 2) segments[0]
-                    else fallbackAuthor
+                    else null
                 contexts[node.path] = AuthorSeriesContext(author, seriesName)
             }
             val childAuthor = if (node.kind == FolderKind.AUTHOR) node.name else authorName
@@ -257,8 +279,8 @@ object FolderClassifier {
     /**
      * اشتقاق سياق (المؤلف/السلسلة) لمجلد من مساره مباشرة — يُستخدم عندما لا
      * تتوفر قائمة الملفات (إعادة التصنيف بلا فحص). يعادل [contextsByPath]
-     * في حظيرة العمق لأنفس المسارات:
-     *  - المؤلف = المقطع الأول (عمق ≥ 2) أو الاسم الاحتياطي.
+     * في حظيرة العمق لنفس المسارات، بلا أي احتياطي لاسم الجذر:
+     *  - المؤلف = المقطع الأول ولا يُنسب اسم الجذر كمؤلف إطلاقًا (عمق 1 = مؤلف).
      *  - السلسلة = المقطع قبل الأخير للعمق ≥ 3؛ ولعمق 2 = المقطع الأخير فقط
      *    إذا كان اسمًا غير عام (اختصار قاعدة F — «فانتازيا» سلسلة، ولا سلسلة
      *    لـ«كريم قنديل/book1»).
@@ -267,7 +289,7 @@ object FolderClassifier {
      */
     fun contextForPath(path: String, fallbackAuthor: String, autoSeries: Boolean = true): AuthorSeriesContext {
         val segments = path.split('/').filter(String::isNotBlank)
-        val author = if (segments.size >= 2) segments[0] else fallbackAuthor
+        val author = if (segments.size >= 2) segments[0] else null
         val series = when {
             !autoSeries -> null
             segments.size == 2 -> if (!isGenericBookName(segments[1])) segments[1] else null

@@ -166,6 +166,8 @@
     <string name="bd_edition_delete">حذف</string>
     <string name="bd_edition_split">إنشاء نسخة</string>
     <string name="bd_edition_file_format">%1$s · %2$s</string>
+    <string name="bd_duration_warning">المدة تبدو غير منطقية (أكثر من 24 ساعة)</string>
+    <string name="bd_duration_warning_desc">تحذير مدة غير منطقية</string>
     <string name="bd_edition_authoritative_note">القرارات اليدوية محفوظة ولا يكتب عليها الفحص لاحقًا.</string>
     <string name="bd_content_chapters_header">الفصول (%1$d)</string>
     <string name="bd_content_marks_header">الإشارات والملاحظات (%1$d)</string>
@@ -265,6 +267,8 @@
     <string name="library_folder_refresh">تحديث</string>
     <string name="library_folder_priority_toggle">مفتاح الأولوية لـ %1$s</string>
     <string name="library_folder_enabled_toggle">مفتاح التمكين لـ %1$s</string>
+    <string name="library_folder_access_revoked_banner">فُقد الوصول لبعض مجلدات المكتبة (غالبًا بعد إعادة التثبيت أو تحديث النظام). اختر المجلد من جديد لكل صفّ تظهر فيه أزرار الإصلاح.</string>
+    <string name="library_folder_access_repair">إعادة منح الوصول</string>
     <string name="bookmarks_title">الإشارات والملاحظات</string>
     <string name="bookmark_row_label">عند %1$s · %2$s</string>
 <!-- ===== صفحات التفاصيل (سلسلة/مؤلف/مجموعة) ===== -->
@@ -717,6 +721,19 @@
     <string name="settings_scanning">جارٍ فحص المكتبة…</string>
     <string name="settings_scan_result">تم فحص %1$d ملفًا، وجدت %2$d كتابًا</string>
     <string name="settings_scan_failed">تعذّر إكمال الفحص. حاول مرة أخرى.</string>
+
+    <!-- ===== المرحلة 4: فحص تدفقي + إشعار الفحص الأمامي ===== -->
+    <string name="scan_phase_discovering">اكتشاف الملفات…</string>
+    <string name="scan_phase_parsing">قراءة تفاصيل الملفات (%1$d/%2$d)…</string>
+    <string name="scan_phase_classifying">تصنيف المجلدات…</string>
+    <string name="scan_phase_creating">بناء الكتب (%1$d/%2$d)…</string>
+    <string name="library_scan_progress">جارٍ فحص المكتبة…</string>
+    <string name="library_folder_retry">إعادة المحاولة</string>
+    <string name="notif_scan_title">فحص المكتبة</string>
+    <string name="notif_scan_text">جارٍ فحص مجلد “%1$s”…</string>
+    <string name="channel_scan_name">فحص المكتبة</string>
+    <string name="channel_scan_desc">إشعار تقدم فحص المكتبة الصوتية.</string>
+
     <string name="settings_reclassify">إعادة تصنيف المكتبة</string>
     <string name="settings_reclassify_desc">تصحيح المؤلفين والسلاسل من بنية المجلدات دون إعادة فحص الملفات.</string>
     <string name="settings_reclassifying">جارٍ إعادة التصنيف…</string>
@@ -805,6 +822,52 @@
     <string name="bulk_action_confirm_favorite">تحديد %1$d كتابًا كمفضلة؟</string>
     <string name="bulk_done">تم تنفيذ العملية — تراجع</string>
 
+    <!-- ===== المرحلة 5: الإعداد مع معاينة التصنيف واعتماده ===== -->
+    <string name="onboarding_welcome_title">مرحبًا بك في أثير</string>
+    <string name="onboarding_welcome_body">مكتبة كتب صوتية ذكية تنظّم مجلداتك تلقائيًا، وتكتشف المؤلفين والسلاسل، وتسمح بالاستماع مع تقدم ذكي وإشارات مرجعية.</string>
+    <string name="onboarding_next">التالي</string>
+    <string name="onboarding_skip">تخطي</string>
+    <string name="onboarding_pick_title">أضف مجلد الكتب الصوتية</string>
+    <string name="onboarding_pick_body">اختر المجلد الذي يحتوي كتبك الصوتية ليفحصه أثير ويصنّفه. يمكنك إضافة المزيد من المجلدات لاحقًا من الإعدادات.</string>
+    <string name="onboarding_choose_folder">اختيار مجلد</string>
+    <string name="onboarding_selected_folder">المجلد المختار: %1$s</string>
+    <string name="onboarding_store_access_denied">تعذّر تحصيل إذن الوصول للمجلد. حاول مرة أخرى.</string>
+    <string name="onboarding_no_folder">لم تختَر مجلدًا بعد.</string>
+    <string name="onboarding_preview_title">معاينة التصنيف</string>
+    <string name="onboarding_preview_body">هكذا سيُصنَّف أثير كتبك (قراءة فقط). تخطَّ أي مجلد لا تريد إضافته، أو عدّل التصنيف كما تشاء.</string>
+    <string name="onboarding_preview_empty">لم يُعثر على ملفات صوتية في هذا المجلد. اختر مجلدًا آخر.</string>
+    <string name="onboarding_confirm_title">هل هذا صحيح؟</string>
+    <string name="onboarding_confirm_body">سيتم إنشاء %1$d مؤلف، %2$d سلسلة، %3$d كتاب.</string>
+    <string name="onboarding_confirm_import">تأكيد وبدء الاستيراد</string>
+    <string name="onboarding_edit_manual">تعديل التصنيف يدويًا</string>
+    <string name="onboarding_cancel_import">إلغاء</string>
+    <string name="onboarding_importing_title">جارٍ الاستيراد…</string>
+    <string name="onboarding_back">رجوع</string>
+    <string name="preview_unassigned">غير مصنّف</string>
+    <string name="preview_author">مؤلف</string>
+    <string name="preview_series">سلسلة</string>
+    <string name="preview_book_files">%1$d ملفًا</string>
+    <string name="preview_total_files">إجمالي %1$d ملفًا</string>
+    <string name="edit_screen_title">تعديل التصنيف</string>
+    <string name="edit_save">حفظ التعديلات</string>
+    <string name="edit_discard">إلغاء التعديلات</string>
+    <string name="edit_rename_author">إعادة تسمية المؤلف</string>
+    <string name="edit_rename_series">إعادة تسمية السلسلة</string>
+    <string name="edit_rename_book">إعادة تسمية الكتاب</string>
+    <string name="edit_move_author">تغيير المؤلف</string>
+    <string name="edit_move_series">تغيير السلسلة</string>
+    <string name="edit_remove_series">إزالة من السلسلة</string>
+    <string name="edit_skip_folder">تخطي هذا المجلد</string>
+    <string name="edit_merge_authors">دمج المؤلفين</string>
+    <string name="edit_split_author">تقسيم المؤلف</string>
+    <string name="edit_new_name_hint">الاسم الجديد</string>
+    <string name="edit_skip_confirm">تخطي مجلد \"%1$s\"؟ لن تُستورد كتبه.</string>
+    <string name="edit_merge_dialog_title">دمج \"%1$s\" مع مؤلف</string>
+    <string name="edit_merge_confirm">هل تريد نقل كتب \"%1$s\" إلى \"%2$s\" وحذف الأول؟</string>
+    <string name="edit_split_dialog_title">تقسيم \"%1$s\"</string>
+    <string name="edit_split_hint">اسم المؤلف الجديد (ستنتقل الكتب المختارة)</string>
+
     <!-- ===== تراجع ===== -->
     <string name="move_book_undo">تم النقل — تراجع</string>
+    <string name="move_book_series_requires_author">لا يمكن إنشاء سلسلة لكتاب غير مصنّف — امنح الكتاب مؤلفًا أولًا</string>
 </resources>

@@ -13,7 +13,7 @@ data class EntityBookRow(
     val bookId: UUID,
     val seriesId: UUID?,
     val seriesName: String?,
-    val authorId: UUID,
+    val authorId: UUID?,
     val authorName: String,
     val title: String,
     val editionId: UUID?,
@@ -51,11 +51,11 @@ internal fun buildEntityBookRows(
             seriesId = book.seriesId,
             seriesName = book.seriesId?.let { seriesById[it]?.name },
             authorId = book.authorId,
-            authorName = authorById[book.authorId]?.name ?: "",
+            authorName = book.authorId?.let { authorById[it]?.name } ?: "",
             title = book.title,
             editionId = edition?.id,
             coverColor = parseColor(
-                seriesById[book.seriesId]?.colorTheme ?: authorById[book.authorId]?.colorTheme,
+                seriesById[book.seriesId]?.colorTheme ?: book.authorId?.let { authorById[it]?.colorTheme },
                 0xFF356B68
             ),
             progressFraction = fraction,

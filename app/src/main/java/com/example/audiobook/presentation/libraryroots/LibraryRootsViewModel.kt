@@ -11,9 +11,11 @@ import com.example.audiobook.data.room.entity.LibraryRootEntity
 import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.background.scanworker.ScanScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -26,6 +28,20 @@ class LibraryRootsViewModel @Inject constructor(
 ) : AndroidViewModel(application) {
     val roots: StateFlow<List<LibraryRootEntity>> = rootDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // بعد إعادة التثبيت/مسح البيانات يختفي إذن SAF المُخزَّن رغم بقاء الجذر في قاعدة
+    // البيانات — قائمة الجذور التي فُقد إذنها تُحسب دفاعيًّا (runCatching) حتى لا
+    // تتعطل الواجهة في أي بيئة اختبار بدون Context حقيقي.
+    val accessRevokedRoots: StateFlow<Set<UUID>> = rootDao.observeAll()
+        .map { stored ->
+            stored.filter { root -> root.isEnabled && !hasPersistedAccess(root.uri) }.map { it.id }.toSet()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private fun hasPersistedAccess(uriString: String): Boolean = runCatching {
+        val uri = Uri.parse(uriString)
+        StorageAccess.hasPersistedPermission(getApplication<Application>().contentResolver, uri)
+    }.getOrDefault(true)
 
     fun addRoot(uri: Uri) {
         viewModelScope.launch {
@@ -63,5 +79,19 @@ class LibraryRootsViewModel @Inject constructor(
     fun refresh(root: LibraryRootEntity) {
         if (root.isPriority) scanScheduler.schedulePriorityScan(root)
         else viewModelScope.launch { scanScheduler.scheduleBackgroundScans() }
+    }
+
+    /**
+     * إعادة منح إذن SAF لجذر فُقد إذنه (بعد إعادة التثبيت): يختار المستخدم المجلد
+     * مجددًا من منتقي SAF، يُحدَّث uri الجذر ثم يُعاد الفحص فورًا.
+     */
+    fun reGrantAccess(root: LibraryRootEntity, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                StorageAccess.persistReadWritePermission(getApplication<Application>().contentResolver, uri)
+            }
+            repository.update(root.copy(uri = uri.toString()))
+            refresh(root)
+        }
     }
 }

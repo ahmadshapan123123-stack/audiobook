@@ -126,7 +126,103 @@ private val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
-val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+/**
+ * Migration 7→8: سماح الكتب بمؤلف "غير مُصنَّف" (authorId=null) — الملفات المباشرة
+ * في جذر المكتبة لم تعد تتحول إلى مؤلف باسم الجذر؛ تصبح كتابًا مستقلًا بلا مؤلف.
+ * النموذج الصارم: عمق1=مؤلف، عمق2=سلسلة، عمق3فحص=كتاب، والجذر حاوية فقط.
+ * نعيد بناء جدول books كاملًا لأن SQLite لا يستطيع تعديل قيد NOT NULL، مع
+ * نسخ كل البيانات كما هي (المؤلفون القائمون يبقون) — فحوصات لاحقة تعيد التصنيف.
+ */
+private val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `books_new` (" +
+                "`id` TEXT NOT NULL, " +
+                "`title` TEXT NOT NULL, " +
+                "`authorId` TEXT, " +
+                "`seriesId` TEXT, " +
+                "`orderInSeries` INTEGER, " +
+                "`genre` TEXT, " +
+                "`coverImagePath` TEXT, " +
+                "`coverSource` TEXT NOT NULL, " +
+                "`isCoverUserSelected` INTEGER NOT NULL, " +
+                "`isTitleUserConfirmed` INTEGER NOT NULL, " +
+                "`defaultEditionId` TEXT, " +
+                "`remoteId` TEXT, " +
+                "`syncStatus` TEXT NOT NULL, " +
+                "`isDemo` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`id`), " +
+                "FOREIGN KEY(`authorId`) REFERENCES `authors`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT, " +
+                "FOREIGN KEY(`seriesId`) REFERENCES `series`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)"
+        )
+        db.execSQL(
+            "INSERT INTO books_new (id, title, authorId, seriesId, orderInSeries, genre, coverImagePath, coverSource, isCoverUserSelected, isTitleUserConfirmed, defaultEditionId, remoteId, syncStatus, isDemo) " +
+                "SELECT id, title, authorId, seriesId, orderInSeries, genre, coverImagePath, coverSource, isCoverUserSelected, isTitleUserConfirmed, defaultEditionId, remoteId, syncStatus, isDemo FROM books"
+        )
+        db.execSQL("DROP TABLE books")
+        db.execSQL("ALTER TABLE books_new RENAME TO books")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_authorId` ON `books` (`authorId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_seriesId` ON `books` (`seriesId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_defaultEditionId` ON `books` (`defaultEditionId`)")
+    }
+}
+
+/**
+ * Migration 8→9 (المرحلة 4 — فحص المكتبات الكبيرة):
+ *  1) جدول scan_checkpoints: نقطة استئناف الفحص (جذر واحد لكل سجل). إضافة فقط.
+ *  2) تعزيز دفاعي لعامود audio_files.lastModified: يتأكد أنه موجود (آلية الكاش
+ *     التزايدي تعتمد عليه)، ويضيفه إن غاب في قاعدة خارجية قديمة — بأمان عبر
+ *     PRAGMA table_info (ALTER без IF NOT EXISTS في SQLite).
+ */
+private val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `scan_checkpoints` (" +
+                "`rootId` TEXT NOT NULL, " +
+                "`lastProcessedFolderPath` TEXT NOT NULL, " +
+                "`scannedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`rootId`))"
+        )
+        val hasLastModified = db.query("PRAGMA table_info(audio_files)").use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == "lastModified") {
+                    found = true
+                    break
+                }
+            }
+            found
+        }
+        if (!hasLastModified) {
+            db.execSQL("ALTER TABLE audio_files ADD COLUMN lastModified INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+}
+
+/**
+ * Migration 9→10 (المرحلة 5 — معاينة/اعتماد التصنيف أثناء الإعداد):
+ * جدول onboarding_edits يحفظ تعديلات التصنيف المعتمدة من المستخدم (تُطبَّق عند
+ * الاستيراد الفعلي وتُفرَّغ بعده). مفتاح فريد (rootId, path, editType) — إضافة فقط.
+ */
+private val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `onboarding_edits` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`rootId` TEXT NOT NULL, " +
+                "`path` TEXT NOT NULL, " +
+                "`editType` TEXT NOT NULL, " +
+                "`newValue` TEXT, " +
+                "`createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_onboarding_edits_rootId_path_editType` " +
+                "ON `onboarding_edits` (`rootId`, `path`, `editType`)"
+        )
+    }
+}
+
+val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 
 @Database(
 	entities = [
@@ -134,9 +230,10 @@ val DATABASE_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, M
 		EditionEntity::class, AudioFileEntity::class, ChapterEntity::class, BookmarkEntity::class,
 		ListeningProgressEntity::class, CollectionEntity::class, CollectionBookCrossRef::class,
 		FavoriteBook::class, ListeningSessionEntity::class, EditionMatchDecisionEntity::class,
-        ChapterCompletionEntity::class, PendingDiscoveryEntity::class
+        ChapterCompletionEntity::class, PendingDiscoveryEntity::class, ScanCheckpointEntity::class,
+        OnboardingEditEntity::class
 	],
-	version = 7,
+	version = 10,
 	exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
@@ -159,4 +256,6 @@ abstract class AppDatabase : RoomDatabase() {
 	abstract fun audioFileAggregateDao(): AudioFileAggregateDao
     abstract fun chapterCompletionDao(): ChapterCompletionDao
     abstract fun pendingDiscoveryDao(): PendingDiscoveryDao
+    abstract fun scanCheckpointDao(): ScanCheckpointDao
+    abstract fun onboardingEditDao(): OnboardingEditDao
 }

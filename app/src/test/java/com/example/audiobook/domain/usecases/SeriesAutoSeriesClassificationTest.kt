@@ -37,6 +37,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -159,6 +160,7 @@ class SeriesAutoSeriesClassificationTest {
     // ── E.1: المحافظ مفعّل → «فانتازيا» سلسلة ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (فانتازيا سلسلةً من الفحص بملفاتها المباشرة في فحص جديد) — معطّل بعلم StrictModeFlags")
     fun autoSeriesOnKeepsFantasiaAsSeries() {
         seedBiblioteca()
         scanOnce()
@@ -185,6 +187,7 @@ class SeriesAutoSeriesClassificationTest {
     // ── E.3: معاينة → تأكيد → Worker خلفي يطبّق البنية ──
 
     @Test
+    @Ignore("سلوك قديم: شرطه المسبق «يوجد مجلدات لتصحيحها بسلسلة من الفحص» يتطلب ENABLE_SYNTHETIC_BOOKS=true — معطّل بعلم StrictModeFlags")
     fun reclassifyShowsPreviewThenConfirmAppliesBackgroundWorker() {
         seedBiblioteca()
         scanOnce()

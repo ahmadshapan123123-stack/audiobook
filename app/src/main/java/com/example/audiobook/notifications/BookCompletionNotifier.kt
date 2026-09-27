@@ -26,7 +26,7 @@ class BookCompletionNotifier @Inject constructor(
         val book = database.bookDao().getById(edition.bookId) ?: return
         val now = System.currentTimeMillis()
         if (now - appSettings.lastBookCompletionNotifiedAt(book.id) < BOOK_COMPLETION_THROTTLE_MS) return
-        val author = database.authorDao().getById(book.authorId)
+        val author = book.authorId?.let { database.authorDao().getById(it) }
         appSettings.markBookCompletionNotified(book.id)
         notificationCenter.showBookCompleted(book.title, author?.name)
     }

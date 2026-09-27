@@ -39,11 +39,11 @@ internal object HomeMapper {
                 seriesId = book.seriesId,
                 editionId = edition?.id,
                 title = book.title,
-                authorName = authorById[book.authorId]?.name ?: "",
+                authorName = book.authorId?.let { authorById[it]?.name } ?: "",
                 seriesName = book.seriesId?.let { seriesById[it]?.name },
                 coverColor = parseColor(
                     book.seriesId?.let { seriesById[it]?.colorTheme }
-                        ?: authorById[book.authorId]?.colorTheme,
+                        ?: book.authorId?.let { authorById[it]?.colorTheme },
                     0xFF356B68
                 ),
                 genre = book.genre,

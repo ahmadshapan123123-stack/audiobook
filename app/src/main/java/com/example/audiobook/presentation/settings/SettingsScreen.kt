@@ -61,6 +61,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
+import com.example.audiobook.domain.config.StrictModeFlags
 import com.example.audiobook.domain.usecases.ClassificationPreviewLine
 import com.example.audiobook.domain.usecases.IntelligenceLevel
 import com.example.audiobook.presentation.theme.AppSpacing
@@ -310,13 +311,15 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_auto_series),
-                        subtitle = stringResource(R.string.settings_auto_series_desc),
-                        checked = autoSeriesClassification,
-                        onCheckedChange = { viewModel.setAutoSeriesClassification(it) }
-                    )
-                    SettingsDivider()
+                    if (StrictModeFlags.ENABLE_AUTO_SERIES_TOGGLE) {
+                        SettingsSwitchRow(
+                            title = stringResource(R.string.settings_auto_series),
+                            subtitle = stringResource(R.string.settings_auto_series_desc),
+                            checked = autoSeriesClassification,
+                            onCheckedChange = { viewModel.setAutoSeriesClassification(it) }
+                        )
+                        SettingsDivider()
+                    }
                     SettingsActionRow(
                         title = stringResource(R.string.settings_scan_now),
                         subtitle = if (isScanning) {
@@ -334,16 +337,18 @@ fun SettingsScreen(
                         }
                     )
                     SettingsDivider()
-                    SettingsActionRow(
-                        title = stringResource(R.string.settings_reclassify),
-                        subtitle = if (isReclassifying) {
-                            stringResource(R.string.settings_reclassifying)
-                        } else {
-                            stringResource(R.string.settings_reclassify_desc)
-                        },
-                        onClick = { viewModel.requestReclassify() }
-                    )
-                    SettingsDivider()
+                    if (StrictModeFlags.ENABLE_RECLASSIFY) {
+                        SettingsActionRow(
+                            title = stringResource(R.string.settings_reclassify),
+                            subtitle = if (isReclassifying) {
+                                stringResource(R.string.settings_reclassifying)
+                            } else {
+                                stringResource(R.string.settings_reclassify_desc)
+                            },
+                            onClick = { viewModel.requestReclassify() }
+                        )
+                        SettingsDivider()
+                    }
                     SettingsActionRow(
                         title = stringResource(R.string.settings_classification_preview),
                         subtitle = if (isPreviewingClassification) {

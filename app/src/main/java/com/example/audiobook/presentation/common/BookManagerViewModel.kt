@@ -55,7 +55,7 @@ data class BookManagerCatalog(
 data class BookOptionsContext(
     val bookId: UUID,
     val title: String,
-    val authorId: UUID,
+    val authorId: UUID?,
     val authorName: String,
     val seriesId: UUID?,
     val seriesName: String?,
@@ -194,9 +194,14 @@ class BookManagerViewModel @Inject constructor(
             val trimmed = name.trim()
             if (trimmed.isBlank()) return@launch
             val book = bookDao.getById(bookId) ?: return@launch
+            val targetAuthorId = book.authorId
+                ?: run {
+                    _messages.value = OpMessage(R.string.move_book_series_requires_author)
+                    return@launch
+                }
             val created = com.example.audiobook.data.room.entity.SeriesEntity(
                 id = UUID.randomUUID(),
-                authorId = book.authorId,
+                authorId = targetAuthorId,
                 name = trimmed,
                 colorTheme = null
             )
@@ -338,9 +343,14 @@ class BookManagerViewModel @Inject constructor(
             val trimmed = name.trim()
             if (trimmed.isBlank() || bookIds.isEmpty()) return@launch
             val firstBook = bookDao.getById(bookIds.first()) ?: return@launch
+            val targetAuthorId = firstBook.authorId
+                ?: run {
+                    _messages.value = OpMessage(R.string.move_book_series_requires_author)
+                    return@launch
+                }
             val created = com.example.audiobook.data.room.entity.SeriesEntity(
                 id = UUID.randomUUID(),
-                authorId = firstBook.authorId,
+                authorId = targetAuthorId,
                 name = trimmed,
                 colorTheme = null
             )
@@ -423,7 +433,7 @@ class BookManagerViewModel @Inject constructor(
     companion object {
         /** ما يعرض في قائمة الدمج لاختيار الأهداف. */
         fun mergeTargets(catalog: BookManagerCatalog, excludeBookId: UUID): List<Pair<UUID, String>> {
-            val authorName = { id: UUID -> catalog.authors.firstOrNull { it.id == id }?.name.orEmpty() }
+            val authorName = { id: UUID? -> id?.let { catalog.authors.firstOrNull { a -> a.id == it }?.name }.orEmpty() }
             return catalog.allBooks
                 .filter { it.id != excludeBookId }
                 .map { it.id to if (authorName(it.authorId).isNotBlank()) "${it.title} — ${authorName(it.authorId)}" else it.title }

@@ -361,3 +361,20 @@ interface PendingDiscoveryDao {
     @Query("UPDATE pending_discoveries SET status = 'RESOLVED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun resolveAllForRoot(rootId: UUID)
     @Query("UPDATE pending_discoveries SET status = 'IGNORED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun ignoreAllForRoot(rootId: UUID)
 }
+
+@Dao
+interface ScanCheckpointDao {
+    @Query("SELECT * FROM scan_checkpoints WHERE rootId = :rootId") suspend fun getForRoot(rootId: UUID): ScanCheckpointEntity?
+    /** REPLACE: يبقى سجل واحد لكل جذر (آخر نقطة استئناف). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(entity: ScanCheckpointEntity)
+    @Query("DELETE FROM scan_checkpoints WHERE rootId = :rootId") suspend fun deleteForRoot(rootId: UUID)
+}
+
+@Dao
+interface OnboardingEditDao {
+    /** REPLACE على (rootId, path, editType): يبقى أحدث قيمة لكل تعديل. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(entity: OnboardingEditEntity)
+    @Query("SELECT * FROM onboarding_edits WHERE rootId = :rootId ORDER BY createdAt") suspend fun getForRoot(rootId: String): List<OnboardingEditEntity>
+    @Query("DELETE FROM onboarding_edits WHERE rootId = :rootId") suspend fun deleteForRoot(rootId: String)
+    @Query("DELETE FROM onboarding_edits") suspend fun deleteAll()
+}

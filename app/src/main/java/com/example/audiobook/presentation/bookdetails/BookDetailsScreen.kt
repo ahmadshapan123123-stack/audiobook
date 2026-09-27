@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -322,6 +323,21 @@ private fun EditionManagement(editions: List<EditionEntity>, defaultId: UUID?, v
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (edition.totalDurationMs > MAX_SANE_EDITION_DURATION_MS) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Warning,
+                                    contentDescription = stringResource(R.string.bd_duration_warning_desc),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.bd_duration_warning),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                     if (defaultId == edition.id) {
                         AssistChip(onClick = {}, label = { Text(stringResource(R.string.bd_edition_default_yes)) }, modifier = Modifier.minTouchTarget())
@@ -359,3 +375,6 @@ private fun formatDuration(ms: Long): String {
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
     else "%02d:%02d".format(minutes, seconds)
 }
+
+/** مدة إصدار تتجاوزها تُصار إلى مؤشر تحذير (فاحص سلامة المدة في EditionSignals يمنع تجمّعها أصلًا). */
+private const val MAX_SANE_EDITION_DURATION_MS = 24L * 60 * 60 * 1000

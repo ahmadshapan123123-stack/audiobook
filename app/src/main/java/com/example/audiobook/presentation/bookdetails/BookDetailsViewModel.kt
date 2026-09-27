@@ -23,6 +23,7 @@ import com.example.audiobook.domain.usecases.CoverPolicy
 import com.example.audiobook.domain.usecases.EditionManagementState
 import com.example.audiobook.domain.usecases.EditionMerge
 import com.example.audiobook.domain.usecases.LibraryManagement
+import com.example.audiobook.presentation.common.DisplayLabels
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -117,7 +118,7 @@ class BookDetailsViewModel @Inject constructor(
         val progress = values[7] as ListeningProgressEntity?
         BookDetailsUiState(
             book = book,
-            authorName = book?.let { authors.firstOrNull { a -> a.id == it.authorId }?.name } ?: "",
+            authorName = if (book == null) "" else authors.firstOrNull { a -> a.id == book.authorId }?.name ?: DisplayLabels.UNASSIGNED_AUTHOR,
             authorId = book?.authorId,
             seriesName = book?.seriesId?.let { sid -> series.firstOrNull { it.id == sid }?.name },
             editions = editions,

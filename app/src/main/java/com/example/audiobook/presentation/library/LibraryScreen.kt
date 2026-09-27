@@ -88,6 +88,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
+import com.example.audiobook.domain.usecases.ScanPhase
+import com.example.audiobook.domain.usecases.ScanProgress
 import com.example.audiobook.presentation.common.BookManagerViewModel
 import com.example.audiobook.presentation.common.ConfirmDeleteDialog
 import com.example.audiobook.presentation.common.MoveBookDialog
@@ -97,6 +99,7 @@ import com.example.audiobook.presentation.theme.AtherCoverBlock
 import com.example.audiobook.presentation.theme.bottomContentPadding
 import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
+import kotlinx.coroutines.flow.StateFlow
 
 private enum class LibrarySection(val labelRes: Int) {
     ALL_BOOKS(R.string.section_all),
@@ -329,6 +332,11 @@ fun LibraryScreen(
                 }
             }
         }
+        ScanProgressBanner(
+            progress = viewModel.scanProgress,
+            active = viewModel.scanActive,
+            onCancel = viewModel::cancelScan
+        )
         LazyVerticalGrid(
             columns = GridCells.Fixed(if (layout == LibraryLayout.GRID) 2 else 1),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
@@ -732,6 +740,68 @@ private fun DemoBadge() {
             stringResource(R.string.library_demo_badge),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = AppSpacing.xs, vertical = AppSpacing.xxs)
+        )
+    }
+}
+
+/** نص وصف طور الفحص الحالي وفق المحتوى المرسل في نشرة التقدّم. */
+@Composable
+private fun phaseLabel(progress: ScanProgress?): String = when (progress?.phase) {
+    ScanPhase.DISCOVERING -> stringResource(R.string.scan_phase_discovering)
+    ScanPhase.PARSING -> stringResource(R.string.scan_phase_parsing, progress.processed, progress.total)
+    ScanPhase.CLASSIFYING -> stringResource(R.string.scan_phase_classifying)
+    ScanPhase.CREATING -> if (progress.currentFolder.isBlank()) {
+        stringResource(R.string.scan_phase_creating, progress.processed, progress.total)
+    } else {
+        stringResource(R.string.scan_phase_creating, progress.processed, progress.total) + " · " + progress.currentFolder
+    }
+    ScanPhase.DONE -> stringResource(R.string.library_scan_progress)
+    null -> stringResource(R.string.library_scan_progress)
+}
+
+/**
+ * شريط تقدّم الفحص (المرحلة 4): يظهر أثناء فحص نشط فعليًا فوق الشبكة. يعرض
+ * الطور بالعربية مع النسبة، وزر إلغاء يرسل إشارة توقف تعاوني (يُكمل الفحصَ
+ * تحرّره ويتوقف عند بداية الدفعة التالية ويترك checkpoint للاستئناف).
+ */
+@Composable
+private fun ScanProgressBanner(
+    progress: StateFlow<ScanProgress?>,
+    active: StateFlow<Boolean>,
+    onCancel: () -> Unit
+) {
+    val current by progress.collectAsStateWithLifecycle()
+    val isActive by active.collectAsStateWithLifecycle()
+    if (!isActive) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = phaseLabel(current),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.btn_cancel))
+            }
+        }
+        LinearProgressIndicator(
+            progress = {
+                val total = current?.total ?: 1
+                val fraction = if (total > 0) (current?.processed ?: 0).toFloat() / total else 0f
+                fraction.coerceIn(0f, 1f)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
         )
     }
 }

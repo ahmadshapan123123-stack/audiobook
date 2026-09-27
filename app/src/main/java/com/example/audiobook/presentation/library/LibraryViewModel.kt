@@ -23,6 +23,9 @@ import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.ProgressStatus
 import com.example.audiobook.data.room.entity.SeriesEntity
 import com.example.audiobook.domain.usecases.ArabicSearchNormalizer
+import com.example.audiobook.domain.usecases.ScanProgress
+import com.example.audiobook.domain.usecases.ScanProgressBus
+import com.example.audiobook.presentation.common.DisplayLabels
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -116,7 +119,7 @@ class LibraryViewModel @Inject constructor(
         val series = values[7] as List<SeriesEntity>
         val audioFiles = values[8] as List<AudioFileEntity>
         val q = values[9] as LibraryQuery
-        val authorName = { id: UUID -> authors.firstOrNull { it.id == id }?.name ?: "" }
+        val authorName = { id: UUID? -> id?.let { authors.firstOrNull { a -> a.id == it }?.name } ?: DisplayLabels.UNASSIGNED_AUTHOR }
         val favoriteIds = favorites.mapTo(HashSet()) { it.bookId }
         val progressById = progressList.associateBy { it.editionId }
         val byAddedIndex = books.withIndex().associate { it.value.id to it.index }
@@ -174,6 +177,13 @@ class LibraryViewModel @Inject constructor(
             seriesNames = series.mapNotNull { it.name }.distinct().sorted()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
+
+    // المرحلة 4: تقدّم الفحص مكشوف عبر الناقل المشترك (دون تغيير البناء، فالبناة
+    // تُنشأ يدويًا في الاختبارات). cancelScan يعطي إشارة توقف تعاوني للفحص.
+    val scanProgress: StateFlow<ScanProgress?> = ScanProgressBus.state
+    val scanActive: StateFlow<Boolean> = ScanProgressBus.active
+
+    fun cancelScan() = ScanProgressBus.requestCancel()
 
     fun updateQuery(query: LibraryQuery) {
         this.query.value = query

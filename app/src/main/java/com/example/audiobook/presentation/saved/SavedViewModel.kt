@@ -124,7 +124,7 @@ class SavedViewModel @Inject constructor(
 
         fun coverColor(book: BookEntity): Long {
             val theme = book.seriesId?.let { seriesById[it]?.colorTheme }
-                ?: authorById[book.authorId]?.colorTheme
+                ?: book.authorId?.let { authorById[it]?.colorTheme }
             return parseColor(theme, 0xFF356B68)
         }
 
@@ -145,7 +145,7 @@ class SavedViewModel @Inject constructor(
                 editionId = b.editionId,
                 bookId = book.id,
                 bookTitle = book.title,
-                authorName = authorById[book.authorId]?.name ?: "",
+                authorName = book.authorId?.let { authorById[it]?.name } ?: "",
                 seriesName = book.seriesId?.let { seriesById[it]?.name },
                 coverColor = coverColor(book),
                 positionMs = b.positionMs,
@@ -194,7 +194,7 @@ class SavedViewModel @Inject constructor(
                     editionId = chapter.editionId,
                     bookId = book.id,
                     bookTitle = book.title,
-                    authorName = authorById[book.authorId]?.name ?: "",
+                    authorName = book.authorId?.let { authorById[it]?.name } ?: "",
                     seriesName = book.seriesId?.let { seriesById[it]?.name },
                     coverColor = coverColor(book),
                     title = chapter.title,

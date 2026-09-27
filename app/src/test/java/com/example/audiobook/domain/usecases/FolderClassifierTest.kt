@@ -5,6 +5,7 @@ import com.example.audiobook.data.localfilesystem.ScanFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -40,6 +41,7 @@ class FolderClassifierTest {
     // ── VERIFY: البنية المرجعية للعميل ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (كتب اصطناعية داخل حاويات المؤلف/السلسلة) — معطّل بعلم StrictModeFlags")
     fun verifyReferenceHierarchyClassifiesAuthorsSeriesAndBooks() {
         val roots = rootsOf(
             "أحمد خالد توفيق/فانتازيا/01.mp3",
@@ -110,6 +112,7 @@ class FolderClassifierTest {
     // ── A: حاوية عمق 1 تستوفي الشرط (مجلدان فرعيان + 3 ملفات) = AUTHOR + كتاب اصطناعي ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (حاوية عمق 1 تصنّف AUTHOR مع كتابها الاصطناعي) — معطّل بعلم StrictModeFlags")
     fun depthOneMixedContainerWithEnoughSubfoldersAndFilesBecomesAuthorWithSyntheticBook() {
         val roots = rootsOf(
             "Variety/01.mp3",
@@ -145,7 +148,7 @@ class FolderClassifierTest {
         assertNull("لا كتاب اصطناعي داخل كتاب المجموعة", findNode(main.children, "كتاب رئيسي"))
 
         val contexts = FolderClassifier.contextsByPath(roots, fallback)
-        assertEquals(fallback, contexts.getValue("كتاب رئيسي").authorName)
+        assertNull("كتاب المجموعة (SPLIT) بلا مؤلف — الجذر حاوية فقط", contexts.getValue("كتاب رئيسي").authorName)
         assertNull(contexts.getValue("كتاب رئيسي").seriesFolderName)
         assertEquals("كتاب رئيسي", contexts.getValue("كتاب رئيسي/جزء فرعي").authorName)
         assertNull(contexts.getValue("كتاب رئيسي/جزء فرعي").seriesFolderName)
@@ -154,6 +157,7 @@ class FolderClassifierTest {
     // ── D: عمق ≥ 2 مخلوط باسم غير عام لم يستوفِ شرط الحاوية → SERIES + كتاب شقيق + كتب أحفاده ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (سلسلة عمق 2 بملفات مباشرة + كتابها الشقيق الاصطناعي) — معطّل بعلم StrictModeFlags")
     fun depthTwoMixedNonGenericNameBecomesSeriesWithSiblingAndSubfolderBooks() {
         val roots = rootsOf(
             "أحمد خالد توفيق/paranormal/direct.mp3",
@@ -177,6 +181,7 @@ class FolderClassifierTest {
     // ── B: حاوية عمق 1 خالصة = AUTHOR؛ عمق 2 = مسلسلة؛ «سلسلة X» تتغلب على AUTHOR ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (أبناء المؤلف المباشرون بملفات يحملون دور SERIES — يتقلّصون إلى BOOK تحت العلم) — معطّل بعلم StrictModeFlags")
     fun pureContainerRolesFollowDepthAndSeriesHint() {
         val roots = rootsOf(
             "أحمد خالد توفيق/فانتازيا/01.mp3",
@@ -194,6 +199,7 @@ class FolderClassifierTest {
     // ── C: اسم يبدأ بـ «سلسلة/Series» حتى في العمق 1 → SERIES ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (سلسلة على ملفات مباشرة بكتابها الاصطناعي) — معطّل بعلم StrictModeFlags")
     fun seriesHintForcesSeriesEvenAtDepthOneAndOnFiles() {
         val roots = rootsOf(
             "سلسلة أفلام النار/01.mp3",
@@ -209,6 +215,7 @@ class FolderClassifierTest {
     // ── F: ابن المؤلف المباشر — اسم غير عام → سلسلة، اسم عام → كتاب ──
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (ابنُ المؤلف ذو الاسم غير العام والملفات مباشرة يصنّف SERIES) — معطّل بعلم StrictModeFlags")
     fun directChildOfAuthorIsSeriesUnlessGenericBookName() {
         val roots = rootsOf(
             "نبيل فاروق/ملف المستقبل/01.mp3",
@@ -268,7 +275,7 @@ class FolderClassifierTest {
             AuthorSeriesContext("أحمد خالد توفيق", "paranormal"),
             FolderClassifier.contextForPath("أحمد خالد توفيق/paranormal/book1", fallback)
         )
-        assertEquals(AuthorSeriesContext(fallback, null), FolderClassifier.contextForPath("Book", fallback))
+        assertEquals("الكتاب العميق-1 بلا مؤلف (الجذر حاوية فقط، لا يُنسب اسم الجذر)", AuthorSeriesContext(null, null), FolderClassifier.contextForPath("Book", fallback))
     }
 
     // ── Bug 5: إيقاف التصنيف التلقائي للسلاسل (autoSeries = false) ──
@@ -277,6 +284,7 @@ class FolderClassifierTest {
         FolderClassifier.classify(files(*relative), autoSeries)
 
     @Test
+    @Ignore("سلوك قديم: يتطلب ENABLE_SYNTHETIC_BOOKS=true (مجلد عمق 2 بملفات مباشرة يبقى SERIES بكتابه الاصطناعي) — معطّل بعلم StrictModeFlags")
     fun autoSeriesOnKeepsDepthTwoFolderAsSeries() {
         val roots = classify(true, "أحمد خالد توفيق/فانتازيا/01.mp3")
         assertEquals(FolderKind.SERIES, findNode(roots, "أحمد خالد توفيق/فانتازيا")!!.kind)
@@ -353,7 +361,57 @@ class FolderClassifierTest {
     fun containersWithoutDirectAudioRemainHierarchyAndEmptyInputIsEmpty() {
         val roots = rootsOf("أحمد خالد توفيق/فانتازيا/01.mp3")
         assertEquals("أحمد حاوية بلا صوت مباشر تبقى AUTHOR", FolderKind.AUTHOR, findNode(roots, "أحمد خالد توفيق")!!.kind)
-        assertTrue("فانتازيا سلسلة في حفيدها المباشر", findNode(roots, "أحمد خالد توفيق/فانتازيا")!!.kind == FolderKind.SERIES)
+        assertEquals(
+            "فانتازيا بملفات مباشرة تتقلّص تحت ENABLE_SYNTHETIC_BOOKS=false إلى كتاب (لا سلسلة ولا كتاب اصطناعي)",
+            FolderKind.BOOK, findNode(roots, "أحمد خالد توفيق/فانتازيا")!!.kind
+        )
         assertEquals(0, FolderClassifier.classify(emptyList()).size)
+    }
+
+    // ── StrictModeFlags (ENABLE_SYNTHETIC_BOOKS=false): عقد المصنِّف الصارمة ──
+
+    @Test
+    fun strictFlagsKeepPureContainerRolesAndCollapseDirectFileContainersToBook() {
+        val roots = rootsOf(
+            "أحمد خالد توفيق/فانتازيا/01.mp3",
+            "روائع/سلسلة ذهبية/01.mp3",
+            "Variety/01.mp3",
+            "Variety/Series A/01.mp3",
+            "Variety/Series B/01.mp3",
+            "كريم قنديل/book1/01.mp3"
+        )
+
+        fun assertNoSynthetic(nodes: List<FolderNode>) {
+            nodes.forEach { node ->
+                assertTrue("لا كتب اصطناعية تحت العلم المعطّل: ${node.path}", !node.synthetic)
+                assertNoSynthetic(node.children)
+            }
+        }
+        assertNoSynthetic(roots)
+
+        assertEquals("حاوية خالصة عمق 1 = AUTHOR", FolderKind.AUTHOR, findNode(roots, "أحمد خالد توفيق")!!.kind)
+        assertEquals("حاوية خالصة عمق 1 = AUTHOR", FolderKind.AUTHOR, findNode(roots, "روائع")!!.kind)
+        assertEquals("حاوية خالصة عمق 1 = AUTHOR", FolderKind.AUTHOR, findNode(roots, "كريم قنديل")!!.kind)
+        assertEquals(
+            "مجلد بعمق 2 وملفات مباشرة (كان سلسلة اصطناعية) يتقلّص إلى BOOK",
+            FolderKind.BOOK, findNode(roots, "أحمد خالد توفيق/فانتازيا")!!.kind
+        )
+        assertEquals(
+            "مجلد بعمق 2 وملفات مباشرة (تلميح «سلسلة») يتقلّص إلى BOOK",
+            FolderKind.BOOK, findNode(roots, "روائع/سلسلة ذهبية")!!.kind
+        )
+        assertEquals(
+            "حاوية مخلوطة عمقها 1 بملفات مباشرة تنهار إلى كتاب عادي بملفاتها (لا AUTHOR)",
+            FolderKind.BOOK, findNode(roots, "Variety")!!.kind
+        )
+        assertEquals(FolderKind.BOOK, findNode(roots, "Variety/Series A")!!.kind)
+        assertEquals(FolderKind.BOOK, findNode(roots, "Variety/Series B")!!.kind)
+        assertEquals("الاسم العام لابن المؤلف = كتاب", FolderKind.BOOK, findNode(roots, "كريم قنديل/book1")!!.kind)
+
+        val books = FolderClassifier.flattenBookNodes(roots)
+        assertEquals(
+            "كل مجلد يحوي ملفات يبقى ناتجًا ككتاب عادي — لا تُفقد أي ملفات (variety, series a, series b, فانتازيا, سلسلة ذهبية, book1)",
+            6, books.size
+        )
     }
 }

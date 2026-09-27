@@ -65,7 +65,8 @@ data class SeriesEntity(
 data class BookEntity(
     @androidx.room.PrimaryKey val id: UUID = UUID.randomUUID(),
     val title: String,
-    val authorId: UUID,
+    /** null = كتاب مستقل غير مُصنَّف (مثل ملف مباشر في جذر المكتبة) — يعرضه الواجهة «غير مصنف». */
+    val authorId: UUID?,
     val seriesId: UUID?,
     val orderInSeries: Int?,
     val genre: String?,
@@ -154,6 +155,19 @@ data class ChapterCompletionEntity(
     @androidx.room.PrimaryKey val chapterId: UUID,
     val editionId: UUID,
     val completedAtMs: Long
+)
+
+/**
+ * نقطة استئناف الفحص (المرحلة 4): تسجل آخر دفعة مجلدات بدأت معالجتها (rootId +
+ * أول مجلد في الدفعة). تُكتب قبل كل دفعة؛ إن أُوقف الفحص/انقطع تُبقى للتعافي —
+ * الفحص التالي يستأنف من مجلدها إذا كان checkpoint حديثًا (< 24 ساعة) ويُحذف
+ * عند الإنجاز التام. بلا FK للجذور (مخزن معرّف بشكل مستقل ويُحذف صراحة).
+ */
+@Entity(tableName = "scan_checkpoints")
+data class ScanCheckpointEntity(
+    @androidx.room.PrimaryKey val rootId: UUID,
+    val lastProcessedFolderPath: String,
+    val scannedAt: Long
 )
 
 @Entity(
@@ -274,4 +288,23 @@ data class PendingDiscoveryEntity(
     val seriesName: String?,
     val discoveredAt: Long,
     val status: DiscoveryStatus
+)
+
+/**
+ * تعديل تصنيف تم اعتماده في المعاينة (المرحلة 5) — يُخزَّن ليُطبَّق حين ينفَّذ
+ * الاستيراد الفعلي (ScanRoot غير مُعدَّل: تسبق إنشاء شجرة القاعدة لتصنيف المستخدم)،
+ * ويُفرَّغ السجل بعد استيراد ناجح. rootId هنا هو uri المجلد المختار (قبل تكوين
+ * LibraryRoot في القاعدة).
+ */
+@Entity(
+    tableName = "onboarding_edits",
+    indices = [Index(value = ["rootId", "path", "editType"], unique = true)]
+)
+data class OnboardingEditEntity(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val rootId: String,
+    val path: String,
+    val editType: String,
+    val newValue: String?,
+    val createdAt: Long
 )
