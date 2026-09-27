@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
+import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.domain.usecases.ScanPhase
 import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewTree
 
@@ -50,6 +53,7 @@ fun OnboardingScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pickedUri by viewModel.pickedUri.collectAsStateWithLifecycle()
+    val previewInFlight by viewModel.previewInFlight.collectAsStateWithLifecycle()
 
     val folderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -66,6 +70,7 @@ fun OnboardingScreen(
         )
         OnboardingState.PickFolder -> PickFolderStep(
             pickedUri = pickedUri,
+            isPreviewing = previewInFlight,
             onChooseFolder = { folderLauncher.launch(null) },
             onNext = viewModel::next,
             onBack = viewModel::back
@@ -123,6 +128,7 @@ private fun WelcomeStep(onNext: () -> Unit, onSkip: () -> Unit) {
 @Composable
 private fun PickFolderStep(
     pickedUri: Uri?,
+    isPreviewing: Boolean,
     onChooseFolder: () -> Unit,
     onNext: () -> Unit,
     onBack: () -> Unit
@@ -153,7 +159,7 @@ private fun PickFolderStep(
         Spacer(Modifier.height(16.dp))
         if (pickedUri != null) {
             Text(
-                text = stringResource(R.string.onboarding_selected_folder, pickedUri.lastPathSegment ?: pickedUri.toString()),
+                text = stringResource(R.string.onboarding_selected_folder, StorageAccess.displayNameOf(pickedUri)),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
@@ -174,8 +180,22 @@ private fun PickFolderStep(
             TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.onboarding_back))
             }
-            Button(onClick = onNext, enabled = pickedUri != null, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.onboarding_next))
+            Button(
+                onClick = onNext,
+                enabled = pickedUri != null && !isPreviewing,
+                modifier = Modifier.weight(1f)
+            ) {
+                // المؤشّر يظهر في الإطار بين الضغطة وانتقال الحالة إلى Previewing،
+                // ويمنع ضغطتين متتاليتين تُطلقان traversing SAF مزدوجًا للمكتبة كلها.
+                if (isPreviewing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(stringResource(R.string.onboarding_next))
+                }
             }
         }
     }

@@ -31,10 +31,12 @@ import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewTree
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** حالات آلة الإعداد (المرحلة 5): ترحيب → اختيار مجلد → معاينة → اعتماد/تعديل → استيراد → تم. */
 sealed interface OnboardingState {
@@ -67,6 +69,10 @@ class OnboardingViewModel @Inject constructor(
 
     private val _pickedUri = MutableStateFlow<Uri?>(null)
     val pickedUri: StateFlow<Uri?> = _pickedUri.asStateFlow()
+
+    /** معاينة جارية: يمنع ضغطتين متتاليتين على «التالي» (فحص SAF مزدوج على المكتبة كلها). */
+    private val _previewInFlight = MutableStateFlow(false)
+    val previewInFlight: StateFlow<Boolean> = _previewInFlight.asStateFlow()
 
     /** شجرة المعاينة الأصلية (قبل أي تعديل) — أساس كل تحويلات التعديل. */
     private var originalTree: PreviewTree? = null
@@ -107,27 +113,35 @@ class OnboardingViewModel @Inject constructor(
 
     fun startPreview() {
         val uri = _pickedUri.value ?: return
+        if (_previewInFlight.value) return
+        _previewInFlight.value = true
         _state.value = OnboardingState.Previewing(ScanPhase.CLASSIFYING, 0, 0)
         viewModelScope.launch {
             try {
-                val rootName = displayNameOf(uri)
-                val files = fileSource.listAudioFiles(uri)
-                val input = files.map {
-                    StrictFolderClassifier.InputFile(
-                        uri = it.uri.toString(),
-                        filename = it.fileName,
-                        folderPath = it.folderPath,
-                        sizeBytes = it.size,
-                        durationMs = 0L
-                    )
+                // جذر I/O خشن: listAudioFiles يتنقّل في شجرة SAF عبر ContentProvider
+                // على الـmain thread كان يجمّد الواجهة ويُطلق ANR على المكتبات الكبيرة.
+                val tree = withContext(Dispatchers.IO) {
+                    val rootName = StorageAccess.displayNameOf(uri)
+                    val files = fileSource.listAudioFiles(uri)
+                    val input = files.map {
+                        StrictFolderClassifier.InputFile(
+                            uri = it.uri.toString(),
+                            filename = it.fileName,
+                            folderPath = it.folderPath,
+                            sizeBytes = it.size,
+                            durationMs = 0L
+                        )
+                    }
+                    StrictFolderClassifier.preview(input, rootName)
                 }
-                val tree = StrictFolderClassifier.preview(input, rootName)
                 originalTree = tree
                 edits.clear()
                 _state.value = OnboardingState.ShowPreview(tree)
             } catch (error: Throwable) {
                 // فشل القراءة (إذن سُحبت / URI تالف): نعود لاختيار المجلد.
                 _state.value = OnboardingState.PickFolder
+            } finally {
+                _previewInFlight.value = false
             }
         }
     }
@@ -169,7 +183,7 @@ class OnboardingViewModel @Inject constructor(
                 // 1) الجذر — يلزم أولًا لأن PendingDiscovery تحمل FK إليه.
                 val root = LibraryRootEntity(
                     uri = uri.toString(),
-                    displayName = displayNameOf(uri),
+                    displayName = StorageAccess.displayNameOf(uri),
                     isPriority = true,
                     isEnabled = true,
                     lastScanAt = null,
@@ -227,9 +241,6 @@ class OnboardingViewModel @Inject constructor(
         val base = originalTree ?: return null
         return if (edits.isEmpty()) base else applyEditsToTree(base, edits)
     }
-
-    private fun displayNameOf(uri: Uri): String =
-        uri.lastPathSegment?.substringAfterLast(':') ?: uri.toString()
 
     /**
      * إنشاء شجرة قاعدة البيانات من شجرة المعاينة المعتمَدَة (داخل معاملة واحدة):

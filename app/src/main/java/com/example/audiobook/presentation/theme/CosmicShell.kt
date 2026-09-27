@@ -46,15 +46,26 @@ class CosmicHeaderState {
     var collapsed by mutableStateOf(false)
     var onBack by mutableStateOf<(() -> Unit)?>(null)
 
+    /**
+     * المسار (routeBase) للشاشة التي كتبت [title] آخر مرة. الـShell يرسم الشريط
+     * الزجاجي فقط حين يساوي هذا المسار المسار الحالي — فبقي عنوان شاشة أخرى
+     * (مثل «الإعدادات») لا يظهر فوق المكتبة التي لا تكتب عنوانًا لنفسها.
+     */
+    var ownerRoute by mutableStateOf<String?>(null)
+
     fun reset() {
         title = ""
         subtitle = null
         collapsed = false
         onBack = null
+        ownerRoute = null
     }
 }
 
 val LocalCosmicHeader = staticCompositionLocalOf { CosmicHeaderState() }
+
+/** المسار النشط، تكتبه الشاشات التي تستدعي [CosmicScreenHeader] لتتحدّث مع [CosmicHeaderState]. */
+val LocalCurrentRoute = staticCompositionLocalOf<String?> { null }
 
 /** ارتفاع الشريط الزجاجي العلوي (CosmicTopBar) أسفل شريط الحالة — المصدر الوحيد
  *  لحساب الإزاحة العلوية التي تحجزها الشاشات كي لا يتداخل محتواها مع الشريط المنهار. */
@@ -163,11 +174,13 @@ fun CosmicScreenHeader(
     compact: Boolean = false
 ) {
     val header = LocalCosmicHeader.current
+    val route = LocalCurrentRoute.current
     SideEffect {
         header.title = title
         header.subtitle = subtitle
         header.collapsed = collapsed
         header.onBack = onBack
+        header.ownerRoute = route
     }
     if (onBack != null) {
         Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {

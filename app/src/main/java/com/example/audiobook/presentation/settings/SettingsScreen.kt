@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,6 +81,9 @@ private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 private val SLEEP_DURATIONS = listOf(5, 10, 15, 30, 45, 60)
 private const val DATABASE_FILE_NAME = "audiobook.db"
 
+/** سقف أسطر شجرة المعاينة المعروضة (حماية OOM؛ ما زاد يُعدّ في سطر بديل). */
+private const val PREVIEW_MAX_LINES = 500
+
 private fun checkPostNotifications(context: Context): Boolean =
     Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
         context,
@@ -128,6 +133,7 @@ fun SettingsScreen(
     val resumeReminder by viewModel.resumeReminderEnabled.collectAsStateWithLifecycle()
     val hasDemoData by viewModel.hasSeededDemoData.collectAsStateWithLifecycle()
     val hasLibraryRoots by viewModel.hasLibraryRoots.collectAsStateWithLifecycle()
+    val noRootsPrompt by viewModel.noRootsPrompt.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
@@ -140,7 +146,6 @@ fun SettingsScreen(
     val isPreviewingClassification by viewModel.isPreviewingClassification.collectAsStateWithLifecycle()
     val classificationPreview by viewModel.classificationPreview.collectAsStateWithLifecycle()
     var showDailyTimePicker by remember { mutableStateOf(false) }
-    var showNoRootsDialog by remember { mutableStateOf(false) }
     var showRemoveDemoDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     val context = LocalContext.current
@@ -327,14 +332,7 @@ fun SettingsScreen(
                         } else {
                             stringResource(R.string.settings_scan_now_desc)
                         },
-                        onClick = {
-                            viewModel.refreshRootsCount()
-                            if (hasLibraryRoots) {
-                                viewModel.scanNow()
-                            } else {
-                                showNoRootsDialog = true
-                            }
-                        }
+                        onClick = { viewModel.scanNow() }
                     )
                     SettingsDivider()
                     if (StrictModeFlags.ENABLE_RECLASSIFY) {
@@ -356,14 +354,7 @@ fun SettingsScreen(
                         } else {
                             stringResource(R.string.settings_classification_preview_desc)
                         },
-                        onClick = {
-                            viewModel.refreshRootsCount()
-                            if (hasLibraryRoots) {
-                                viewModel.requestClassificationPreview()
-                            } else {
-                                showNoRootsDialog = true
-                            }
-                        }
+                        onClick = { viewModel.requestClassificationPreview() }
                     )
                 }
             }
@@ -574,17 +565,17 @@ fun SettingsScreen(
         }
     }
 
-    if (showNoRootsDialog) {
+    if (noRootsPrompt) {
         AlertDialog(
-            onDismissRequest = { showNoRootsDialog = false },
+            onDismissRequest = { viewModel.consumeNoRootsPrompt() },
             confirmButton = {
                 TextButton(onClick = {
-                    showNoRootsDialog = false
+                    viewModel.consumeNoRootsPrompt()
                     onOpenLibraryRoots?.invoke()
                 }) { Text(stringResource(R.string.settings_add_folder)) }
             },
             dismissButton = {
-                TextButton(onClick = { showNoRootsDialog = false }) { Text(stringResource(R.string.cancel)) }
+                TextButton(onClick = { viewModel.consumeNoRootsPrompt() }) { Text(stringResource(R.string.cancel)) }
             },
             title = { Text(stringResource(R.string.settings_no_roots_title)) },
             text = { Text(stringResource(R.string.settings_no_roots_desc)) }
@@ -677,13 +668,28 @@ fun SettingsScreen(
                     val lines = previews.flatMap { perRoot ->
                         listOf(ClassificationPreviewLine(0, perRoot.displayName)) + perRoot.lines
                     }
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        lines.forEach { line ->
+                    // Column غير كسول داخل AlertDialog كان يركّب سطرًا لكل عقدة بلا
+                    // virtualisation (OOM على المكتبات الكبيرة). LazyColumn + heightIn
+                    // (LazyColumn يحتاج حدًّا رأسيًا محدودًا) + سقف على عدد الأسطر.
+                    val shown = lines.take(PREVIEW_MAX_LINES)
+                    Column(modifier = Modifier.heightIn(max = 400.dp)) {
+                        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                            items(shown.size) { index ->
+                                val line = shown[index]
+                                Text(
+                                    text = line.text,
+                                    modifier = Modifier.padding(start = (line.indent * 16).dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        if (lines.size > shown.size) {
                             Text(
-                                text = line.text,
-                                modifier = Modifier.padding(start = (line.indent * 16).dp),
+                                text = stringResource(R.string.settings_classification_preview_truncated, lines.size - shown.size),
+                                modifier = Modifier.padding(top = AppSpacing.xs),
                                 style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

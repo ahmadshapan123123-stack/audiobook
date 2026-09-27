@@ -5,6 +5,8 @@ import com.example.audiobook.data.localfilesystem.LibraryFileSource
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.repository.LibraryRootRepository
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** سطر واحد في معاينة شجرة التصنيف: مستوى الإزاحة + النص (بلا أي لمس لقاعدة البيانات). */
 data class ClassificationPreviewLine(
@@ -31,10 +33,10 @@ class LibraryClassificationPreview @Inject constructor(
     private val libraryRoots: LibraryRootRepository,
     private val appSettings: AppSettings
 ) {
-    suspend fun invoke(): List<ClassificationPreviewPerRoot> {
+    suspend fun invoke(): List<ClassificationPreviewPerRoot> = withContext(Dispatchers.IO) {
         val autoSeries = appSettings.currentAutoSeriesClassification()
         val roots = libraryRoots.getEnabledBackgroundRoots() + libraryRoots.getEnabledPriorityRoots()
-        return roots.map { root ->
+        roots.map { root ->
             val files = fileSource.listAudioFiles(Uri.parse(root.uri))
             ClassificationPreviewPerRoot(
                 displayName = root.displayName,

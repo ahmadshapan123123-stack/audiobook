@@ -60,6 +60,14 @@ class SettingsViewModel @Inject constructor(
     private val _hasLibraryRoots = MutableStateFlow(false)
     val hasLibraryRoots: StateFlow<Boolean> = _hasLibraryRoots.asStateFlow()
 
+    /**
+     * «لا توجد مجلدات» (غير true = لا شيء يُعرض). يملؤه ViewModel بعد استشارة القاعدة
+     * مباشرةً (`countAll()` suspend) بدل الوثوق بقيمة `hasLibraryRoots` القديمة في
+     * Composable — القراءة القديمة كانت تبقى كما لو لم تُستدعَ `refreshRootsCount()` أصلًا.
+     */
+    private val _noRootsPrompt = MutableStateFlow(false)
+    val noRootsPrompt: StateFlow<Boolean> = _noRootsPrompt.asStateFlow()
+
     private val _isRemovingDemoData = MutableStateFlow(false)
     val isRemovingDemoData: StateFlow<Boolean> = _isRemovingDemoData.asStateFlow()
 
@@ -135,10 +143,17 @@ class SettingsViewModel @Inject constructor(
         _demoCleanupResult.value = null
     }
 
-    /** الفحص الفوري لكل المجلدات الممكّنة (وليس جدولة خلفية). */
+    /**
+     * الفحص الفوري لكل المجلدات الممكّنة (وليس جدولة خلفية).
+     * قرار «هل يوجد جذر؟» يُتخذ هنا على قيمة مقروءة من القاعدة الآن، لا من Composable.
+     */
     fun scanNow() {
         if (_isScanning.value) return
         viewModelScope.launch {
+            if (!hasRootsNow()) {
+                _noRootsPrompt.value = true
+                return@launch
+            }
             _isScanning.value = true
             runCatching { scanLibraryNow() }
                 .onSuccess { result ->
@@ -158,14 +173,29 @@ class SettingsViewModel @Inject constructor(
         _scanFailed.value = false
     }
 
+    fun consumeNoRootsPrompt() {
+        _noRootsPrompt.value = false
+    }
+
     /** يبني شجرة التصنيف المعاينة للمجلدات الممكّنة (بلا كتابة أي شيء). */
     fun requestClassificationPreview() {
         if (_isPreviewingClassification.value) return
         viewModelScope.launch {
+            if (!hasRootsNow()) {
+                _noRootsPrompt.value = true
+                return@launch
+            }
             _isPreviewingClassification.value = true
             _classificationPreview.value = runCatching { libraryClassificationPreview.invoke() }.getOrNull()
             _isPreviewingClassification.value = false
         }
+    }
+
+    /** استشارة القاعدة مباشرةً + تحديث [_hasLibraryRoots] ليبقى العدّاد متسقًا. */
+    private suspend fun hasRootsNow(): Boolean {
+        val count = libraryRootDao.countAll()
+        _hasLibraryRoots.value = count > 0
+        return count > 0
     }
 
     fun consumeClassificationPreview() {

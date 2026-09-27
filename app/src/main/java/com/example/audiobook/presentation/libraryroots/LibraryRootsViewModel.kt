@@ -48,7 +48,7 @@ class LibraryRootsViewModel @Inject constructor(
             StorageAccess.persistReadWritePermission(getApplication<Application>().contentResolver, uri)
             val root = LibraryRootEntity(
                     uri = uri.toString(),
-                    displayName = uri.lastPathSegment?.substringAfterLast(':') ?: uri.toString(),
+                    displayName = StorageAccess.displayNameOf(uri),
                     isPriority = roots.value.none { it.isPriority },
                     isEnabled = true,
                     lastScanAt = null,

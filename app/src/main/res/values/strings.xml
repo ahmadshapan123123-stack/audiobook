@@ -747,6 +747,7 @@
     <string name="settings_classification_preview_loading">جارٍ قراءة المجلدات…</string>
     <string name="settings_classification_preview_empty">لا توجد مجلدات ممكّنة للفحص حاليًا.</string>
     <string name="settings_classification_preview_close">إغلاق</string>
+    <string name="settings_classification_preview_truncated">… و%1$d سطرًا آخر لم يُعرض (حماية الذاكرة).</string>
 
     <!-- ===== قائمة خيارات الكتاب (ضغطة مطوّلة) ===== -->
     <string name="book_options_title">خيارات الكتاب</string>

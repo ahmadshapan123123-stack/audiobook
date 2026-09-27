@@ -131,6 +131,7 @@ import com.example.audiobook.presentation.theme.LocalAppAccent
 import com.example.audiobook.presentation.theme.LocalBottomBarInset
 import com.example.audiobook.presentation.theme.LocalCosmicHeader
 import com.example.audiobook.presentation.theme.LocalCosmicHeaderInset
+import com.example.audiobook.presentation.theme.LocalCurrentRoute
 import com.example.audiobook.presentation.theme.cosmicGlassStyle
 import com.example.audiobook.presentation.theme.minTouchTarget
 import com.example.audiobook.presentation.theme.navBarGlassStyle
@@ -350,8 +351,13 @@ class MainActivity : ComponentActivity() {
         // الشريط العلوي المثبّت + الإزاحة التي يحجزها: نفس الشرط بالضبط (العنوان
         // المنهار في مسار غير الرئيسية/الإعدادات). نُصدر إزاحة متحرّكة بسلاسة عبر
         // LocalCosmicHeaderInset لتحتفظ كل الشاشات بمحتواها أسفل الشريط دون تداخل.
+        // `ownerRoute` شرط أساسي: CosmicHeaderState كائن واحد يعيش عبر كل المسارات،
+        // فشاشة لا تكتب عنوانًا (المكتبة) كانت ترث عنوان سابقها (الإعدادات) —
+        // والرسم مشروط بأن تكون الكتابة من المسار الحالي نفسه.
         val showCosmicTopBar =
-            header.title.isNotBlank() && header.collapsed && currentRouteBase != "home" && currentRouteBase != "settings"
+            header.title.isNotBlank() && header.collapsed &&
+                header.ownerRoute == currentRouteBase &&
+                currentRouteBase != "home" && currentRouteBase != "settings"
         val topChromeInset = if (showCosmicTopBar) CosmicTopBarContentHeight else 0.dp
         val animatedTopChromeInset by animateDpAsState(
             targetValue = topChromeInset,
@@ -362,6 +368,7 @@ class MainActivity : ComponentActivity() {
         CompositionLocalProvider(
             LocalCosmicHeader provides header,
             LocalCosmicHeaderInset provides animatedTopChromeInset,
+            LocalCurrentRoute provides currentRouteBase,
             LocalBottomBarInset provides bottomBarInset
         ) {
             Box(modifier = Modifier.fillMaxSize().haze(hazeState)) {

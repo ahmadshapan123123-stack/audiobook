@@ -2,6 +2,7 @@ package com.example.audiobook.data.localfilesystem
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.WorkerThread
 import androidx.documentfile.provider.DocumentFile
 import javax.inject.Inject
 
@@ -15,10 +16,16 @@ data class ScanFile(
 )
 
 interface LibraryFileSource {
+    /**
+     * يتنقّل في شجرة SAF كاملة عبر ContentProvider ويبني القائمة في الذاكرة —
+     * عملية I/O حاجبة يجب أن تُستدعى على خيط خلفي (Dispatchers.IO) حصرًا.
+     */
+    @WorkerThread
     fun listAudioFiles(rootUri: Uri): List<ScanFile>
 }
 
 class DocumentTreeFileSource @Inject constructor(private val context: Context) : LibraryFileSource {
+    @WorkerThread
     override fun listAudioFiles(rootUri: Uri): List<ScanFile> {
         val root = DocumentFile.fromTreeUri(context, rootUri) ?: return emptyList()
         val result = mutableListOf<ScanFile>()
