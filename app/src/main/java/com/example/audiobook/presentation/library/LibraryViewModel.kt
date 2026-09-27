@@ -55,7 +55,9 @@ data class LibraryUiState(
     val query: LibraryQuery = LibraryQuery(),
     val collections: List<CollectionEntity> = emptyList(),
     val collectionMembers: Map<String, Set<UUID>> = emptyMap(),
-    val seriesNames: List<String> = emptyList()
+    val seriesNames: List<String> = emptyList(),
+    /** الأنواع الموجودة فعليًا في المكتبة (بدل نوع واحد مثبّت في الواجهة). */
+    val genreNames: List<String> = emptyList()
 ) {
     val filtered: List<LibraryBookUi>
         get() {
@@ -174,7 +176,10 @@ class LibraryViewModel @Inject constructor(
             query = q,
             collections = collections,
             collectionMembers = collectionMembers,
-            seriesNames = series.mapNotNull { it.name }.distinct().sorted()
+            seriesNames = series.mapNotNull { it.name }.distinct().sorted(),
+            genreNames = mapped.mapNotNull { it.book.genre?.trim()?.takeIf { g -> g.isNotEmpty() } }
+                .distinct()
+                .sorted()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
@@ -208,6 +213,14 @@ class LibraryViewModel @Inject constructor(
     fun updateSeries(series: String?) {
         this.query.value = this.query.value.copy(series = series)
     }
+
+    /** إعادة تعيين كل أبعاد التصفية (يبقى نص البحث كما هو) — يُستدعى من ورقة التصفية. */
+    fun resetFilters() {
+        this.query.value = this.query.value.clearedFilters()
+    }
+
+    /** عدد الفلاتر النشطة حاليًا، لعرضه كشارة على زر التصفية. */
+    val activeFilterCount: Int get() = query.value.activeFilterCount
 
     fun toggleFavorite(bookId: UUID) {
         viewModelScope.launch {
@@ -249,5 +262,10 @@ class LibraryViewModel @Inject constructor(
     private fun parseColor(hex: String?, default: Long): Long {
         if (hex == null) return default
         return runCatching { Color.parseColor(hex).toLong() }.getOrDefault(default)
+    }
+
+    companion object {
+        /** أقصى عدد كتب في قسم «أضيفت حديثًا» (بدل الرقم السحري داخل الـUI). */
+        const val RECENTLY_ADDED_LIMIT = 6
     }
 }

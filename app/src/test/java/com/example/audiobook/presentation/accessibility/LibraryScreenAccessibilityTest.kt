@@ -1,4 +1,4 @@
-package com.example.audiobook.presentation.accessibility
+﻿package com.example.audiobook.presentation.accessibility
 
 import android.content.Context
 import android.content.res.Configuration
@@ -247,10 +247,43 @@ class LibraryScreenAccessibilityTest {
         assertTrue("الإحصائيات height < 48dp", stats.bottom - stats.top >= 48.dp)
         assertTrue("مجلدات المكتبة height < 48dp", roots.bottom - roots.top >= 48.dp)
 
-        val sectionChip = composeRule.onNodeWithText("كل الكتب").getUnclippedBoundsInRoot()
-        val statusChip = composeRule.onNodeWithText("الكل").getUnclippedBoundsInRoot()
-        assertTrue("chip كل الكتب height < 48dp", sectionChip.bottom - sectionChip.top >= 48.dp)
-        assertTrue("chip الكل height < 48dp", statusChip.bottom - statusChip.top >= 48.dp)
+        // بدل صفّ الرقائق المحذوف: زر التصفية في الرأس، ثم خياراتها داخل الورقة.
+        val filterButton = composeRule.onNodeWithContentDescription("تصفية وترتيب المكتبة").getUnclippedBoundsInRoot()
+        assertTrue("زر التصفية width < 48dp", filterButton.right - filterButton.left >= 48.dp)
+        assertTrue("زر التصفية height < 48dp", filterButton.bottom - filterButton.top >= 48.dp)
+
+        composeRule.onNodeWithContentDescription("تصفية وترتيب المكتبة").performClick()
+        composeRule.waitForIdle()
+
+        val sectionOption = composeRule.onNodeWithText("كل الكتب").getUnclippedBoundsInRoot()
+        assertTrue("خيار كل الكتب height < 48dp", sectionOption.bottom - sectionOption.top >= 48.dp)
+
+        // التصفية تُطبَّق مباشرةً: نمرّر إلى الخيار قبل النقر، وإلّا وقع النقر خارج
+        // حدود الورقةُ فأغلقها onDismissRequest بدل أن يختار الخيار.
+        val sheetOptions = composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("لم أبدأ")))
+        sheetOptions.performScrollToNode(hasText("لم أبدأ"))
+        composeRule.waitForIdle()
+        val statusOption = composeRule.onNodeWithText("لم أبدأ").getUnclippedBoundsInRoot()
+        assertTrue("خيار لم أبدأ height < 48dp", statusOption.bottom - statusOption.top >= 48.dp)
+
+        composeRule.onNodeWithText("لم أبدأ").performClick()
+        composeRule.waitForIdle()
+        sheetOptions.performScrollToNode(hasText("الإنجاز"))
+        composeRule.waitForIdle()
+        val sortOption = composeRule.onNodeWithText("الإنجاز").getUnclippedBoundsInRoot()
+        assertTrue("خيار الإنجاز height < 48dp", sortOption.bottom - sortOption.top >= 48.dp)
+
+        composeRule.onNodeWithText("تطبيق").performClick()
+        composeRule.waitForIdle()
+
+        val clearButton = composeRule.onNodeWithContentDescription("مسح كل الفلاتر").getUnclippedBoundsInRoot()
+        assertTrue("زر المسح width < 48dp", clearButton.right - clearButton.left >= 48.dp)
+        assertTrue("زر المسح height < 48dp", clearButton.bottom - clearButton.top >= 48.dp)
+        composeRule.onNodeWithText("1").assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("مسح كل الفلاتر").performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("مسح كل الفلاتر").assertCountEquals(0)
     }
 
     @Test

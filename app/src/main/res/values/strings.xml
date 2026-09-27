@@ -47,12 +47,26 @@
     <string name="filter_status_in_progress">قيد الاستماع</string>
     <string name="filter_status_finished">مكتملة</string>
     <string name="filter_status_not_started">لم أبدأ</string>
-    <string name="filter_genre_novel">رواية</string>
     <string name="filter_series_all">كل السلاسل</string>
+    <string name="filter_genre_all">كل الأنواع</string>
     <string name="sort_name">الاسم</string>
     <string name="sort_added">الأحدث</string>
     <string name="sort_last_played">آخر استماع</string>
     <string name="sort_progress">الإنجاز</string>
+
+    <!-- ===== ورقة التصفية والترتيب ===== -->
+    <string name="filter_sheet_title">تصفية وترتيب</string>
+    <string name="filter_sheet_section">القسم</string>
+    <string name="filter_sheet_status">الحالة</string>
+    <string name="filter_sheet_sort">الترتيب</string>
+    <string name="filter_sheet_series">السلسلة</string>
+    <string name="filter_sheet_genre">النوع</string>
+    <string name="filter_action_open">تصفية وترتيب المكتبة</string>
+    <string name="filter_action_clear">مسح كل الفلاتر</string>
+    <string name="filter_action_reset">إعادة تعيين</string>
+    <string name="filter_action_apply">تطبيق</string>
+    <string name="filter_active_count">%1$d فلتر نشط</string>
+    <string name="filter_active_count_one">فلتر واحد نشط</string>
 
     <!-- ===== العرض ===== -->
     <string name="view_grid">عرض شبكي</string>

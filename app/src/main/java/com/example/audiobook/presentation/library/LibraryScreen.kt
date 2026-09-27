@@ -1,4 +1,4 @@
-package com.example.audiobook.presentation.library
+﻿package com.example.audiobook.presentation.library
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -53,7 +54,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,7 +101,7 @@ import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
 import kotlinx.coroutines.flow.StateFlow
 
-private enum class LibrarySection(val labelRes: Int) {
+internal enum class LibrarySection(val labelRes: Int) {
     ALL_BOOKS(R.string.section_all),
     CURRENTLY_LISTENING(R.string.section_current),
     FINISHED(R.string.section_finished),
@@ -143,8 +143,7 @@ fun LibraryScreen(
     var selectedSection by remember(initial) { mutableStateOf(initial) }
     var layout by remember { mutableStateOf(LibraryLayout.GRID) }
     var searchQuery by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf(LibraryStatusFilter.ALL) }
-    var genre by remember { mutableStateOf<String?>(null) }
+    var showFilterSheet by remember { mutableStateOf(false) }
     var selectedCollection by remember { mutableStateOf<String?>(null) }
     val activeCollection = selectedCollection ?: uiState.collections.firstOrNull()?.name ?: ""
     var showCollectionDialog by remember { mutableStateOf(false) }
@@ -190,9 +189,11 @@ fun LibraryScreen(
             .firstOrNull { it.name == activeCollection }
             ?.let { c -> uiState.books.filter { b -> b.book.id in (uiState.collectionMembers[c.name] ?: emptySet()) } }
             ?: emptyList()
-        LibrarySection.RECENTLY_ADDED -> uiState.books.sortedByDescending { it.addedOrder }.take(6)
+        LibrarySection.RECENTLY_ADDED -> uiState.books.sortedByDescending { it.addedOrder }.take(LibraryViewModel.RECENTLY_ADDED_LIMIT)
     }
     val searching = searchQuery.isNotBlank()
+    // الفلاتر النشطة = أبعاد الاستعلام غير الافتراضية + القسم غير «كل الكتب».
+    val activeFilterCount = uiState.query.activeFilterCount + if (selectedSection != LibrarySection.ALL_BOOKS) 1 else 0
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = AppSpacing.lg)) {
         // ── الرأس المثبّت: عند التمرير ينكمش إلى شريط زجاجي رفيع (المكتبة + بحث + قائمة)،
@@ -271,6 +272,47 @@ fun LibraryScreen(
                     IconButton(onClick = { searchOpen = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                         Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.library_search_action))
                     }
+                    // ── مسح سريع: يظهر فقط عند وجود فلاتر نشطة، بجوار زر التصفية ──
+                    if (activeFilterCount > 0) {
+                        IconButton(
+                            onClick = {
+                                selectedSection = LibrarySection.ALL_BOOKS
+                                viewModel.resetFilters()
+                            },
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = stringResource(R.string.filter_action_clear),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // ── زر التصفية + شارة عدد الفلاتر النشطة ──
+                    Box {
+                        IconButton(onClick = { showFilterSheet = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                            Icon(Icons.Outlined.Tune, contentDescription = stringResource(R.string.filter_action_open))
+                        }
+                        if (activeFilterCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 5.dp, end = 5.dp)
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = activeFilterCount.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                             Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
@@ -346,52 +388,12 @@ fun LibraryScreen(
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                val scroll1 = rememberScrollState()
-                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(scroll1), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    LibrarySection.entries.forEach { section ->
-                        FilterChip(selected = section == selectedSection, onClick = { selectedSection = section }, label = { Text(stringResource(section.labelRes), maxLines = 1) }, modifier = Modifier.minTouchTarget())
-                    }
-                }
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(pluralStringResource(R.plurals.book_count, sectionBooks.size, sectionBooks.size), style = MaterialTheme.typography.titleMedium)
                     Row {
                         IconButton(onClick = { layout = LibraryLayout.GRID }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(Icons.Outlined.GridView, contentDescription = stringResource(R.string.view_grid)) }
                         IconButton(onClick = { layout = LibraryLayout.LIST }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) { Icon(Icons.Outlined.List, contentDescription = stringResource(R.string.view_list)) }
                     }
-                }
-            }
-            if (!searching) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            FilterChip(selected = uiState.query.status == LibraryStatusFilter.ALL, onClick = { status = LibraryStatusFilter.ALL; viewModel.updateStatus(LibraryStatusFilter.ALL) }, label = { Text(stringResource(R.string.filter_status_all)) }, modifier = Modifier.minTouchTarget())
-                            FilterChip(selected = uiState.query.status == LibraryStatusFilter.IN_PROGRESS, onClick = { status = LibraryStatusFilter.IN_PROGRESS; viewModel.updateStatus(LibraryStatusFilter.IN_PROGRESS) }, label = { Text(stringResource(R.string.filter_status_in_progress)) }, modifier = Modifier.minTouchTarget())
-                            FilterChip(selected = uiState.query.status == LibraryStatusFilter.FINISHED, onClick = { status = LibraryStatusFilter.FINISHED; viewModel.updateStatus(LibraryStatusFilter.FINISHED) }, label = { Text(stringResource(R.string.filter_status_finished)) }, modifier = Modifier.minTouchTarget())
-                            FilterChip(selected = uiState.query.status == LibraryStatusFilter.NOT_STARTED, onClick = { status = LibraryStatusFilter.NOT_STARTED; viewModel.updateStatus(LibraryStatusFilter.NOT_STARTED) }, label = { Text(stringResource(R.string.filter_status_not_started)) }, modifier = Modifier.minTouchTarget())
-                            FilterChip(selected = genre == "رواية", onClick = { genre = if (genre == "رواية") null else "رواية"; viewModel.updateGenre(genre) }, label = { Text(stringResource(R.string.filter_genre_novel)) }, modifier = Modifier.minTouchTarget())
-                        }
-                        Spacer(Modifier.height(AppSpacing.xs))
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            AssistChip(onClick = { viewModel.updateSort(LibrarySort.NAME) }, label = { Text(stringResource(R.string.sort_name)) }, modifier = Modifier.minTouchTarget())
-                            AssistChip(onClick = { viewModel.updateSort(LibrarySort.ADDED_DATE) }, label = { Text(stringResource(R.string.sort_added)) }, modifier = Modifier.minTouchTarget())
-                            AssistChip(onClick = { viewModel.updateSort(LibrarySort.LAST_PLAYED) }, label = { Text(stringResource(R.string.sort_last_played)) }, modifier = Modifier.minTouchTarget())
-                            AssistChip(onClick = { viewModel.updateSort(LibrarySort.PROGRESS) }, label = { Text(stringResource(R.string.sort_progress)) }, modifier = Modifier.minTouchTarget())
-                        }
-                        Spacer(Modifier.height(AppSpacing.xs))
-                    }
-                }
-            }
-            if (!searching && uiState.seriesNames.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                        FilterChip(selected = uiState.query.series == null, onClick = { viewModel.updateSeries(null) }, label = { Text(stringResource(R.string.filter_series_all)) }, modifier = Modifier.minTouchTarget())
-                        uiState.seriesNames.forEach { name ->
-                            FilterChip(selected = uiState.query.series == name, onClick = { viewModel.updateSeries(name) }, label = { Text(name, maxLines = 1) }, modifier = Modifier.minTouchTarget())
-                        }
-                    }
-                    Spacer(Modifier.height(AppSpacing.xxs))
                 }
             }
             if (!searching && selectedSection == LibrarySection.COLLECTIONS && uiState.collections.isNotEmpty()) {
@@ -549,6 +551,26 @@ fun LibraryScreen(
                     Text(stringResource(R.string.collection_cancel))
                 }
             }
+        )
+    }
+    // ── ورقة التصفية والترتيب (تستبدل صفوف الرقائق القديمة) ──
+    if (showFilterSheet) {
+        LibraryFilterSheet(
+            section = selectedSection,
+            query = uiState.query,
+            seriesNames = uiState.seriesNames,
+            genreNames = uiState.genreNames,
+            activeCount = activeFilterCount,
+            onSectionChange = { selectedSection = it },
+            onStatusChange = viewModel::updateStatus,
+            onSortChange = viewModel::updateSort,
+            onSeriesChange = viewModel::updateSeries,
+            onGenreChange = viewModel::updateGenre,
+            onReset = {
+                selectedSection = LibrarySection.ALL_BOOKS
+                viewModel.resetFilters()
+            },
+            onDismiss = { showFilterSheet = false }
         )
     }
 }
