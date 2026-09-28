@@ -23,14 +23,27 @@ enum class ScanJob {
      * الخدمة، أي بلا تغطية foreground على أثقل جزء من الاستيراد.
      * الدفعة المعلّقة نفسها في [PendingOnboardingImport]؛ الجذر في [ScanRequest.rootId].
      */
-    ONBOARDING_IMPORT
+    ONBOARDING_IMPORT,
+
+    /**
+     * PREVIEW — معاينة تصنيف الاستهلال داخل الخدمة الأمامية.
+     *
+     * المعاينة قراءة فقط (لا قاعدة): تجوس SAF وتصنّف وتعيد `PreviewTree`
+     * عبر `PreviewResultBus`، بتقدّم حي على `ScanProgressBus`. كانت تعمل
+     * في `viewModelScope` بلا حماية وبحالة مجمّدة (0/0) والتقاط صامت
+     * لكل فشل — فخرجت المعاينة على المكتبات الكبيرة بلا أثر.
+     * الـuri في [ScanRequest.rootUri] (لا جذر قاعدة بعد).
+     */
+    PREVIEW
 }
 
 /** طلب تنفيذ دفعة فحوص واحدة محمية بخدمة أمامية واحدة. */
 data class ScanRequest(
     val job: ScanJob,
     /** مطلوب لـ [ScanJob.SINGLE_ROOT] فقط. */
-    val rootId: String? = null
+    val rootId: String? = null,
+    /** مطلوب لـ [ScanJob.PREVIEW] فقط: uri مجلد المعاينة (بلا جذر قاعدة). */
+    val rootUri: String? = null
 )
 
 /** حصيلة [ScanForegroundService] كما تنتقل للواجهة. */

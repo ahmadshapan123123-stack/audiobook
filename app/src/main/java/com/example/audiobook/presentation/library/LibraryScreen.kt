@@ -799,6 +799,12 @@ private fun ScanLocationLine(progress: ScanProgress?): String? {
                 else -> null
             }
         }
+        // DISCOVERING-LIVE: المجموع مجهول أثناء الجوس — يُعرض المجلد الجاري
+        // مع العدّاد بدل إخفاء السطر (كان spinner فارغًا).
+        ScanPhase.DISCOVERING -> {
+            val folder = progress.currentFolder.middleTruncated()
+            if (folder.isNotBlank()) folder else null
+        }
         else -> null
     }
 }
@@ -848,15 +854,24 @@ private fun ScanProgressBanner(
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        LinearProgressIndicator(
-            progress = {
-                val total = current?.total ?: 1
-                val fraction = if (total > 0) (current?.processed ?: 0).toFloat() / total else 0f
-                fraction.coerceIn(0f, 1f)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-        )
+        // DISCOVERING-LIVE: المجموع مجهول أثناء الجوس (total == 0) —
+        // شريط غير محدد بدل شريط فارغ.
+        val bannerTotal = current?.total ?: 0
+        if (bannerTotal > 0) {
+            LinearProgressIndicator(
+                progress = {
+                    ((current?.processed ?: 0).toFloat() / bannerTotal).coerceIn(0f, 1f)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+            )
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+            )
+        }
     }
 }

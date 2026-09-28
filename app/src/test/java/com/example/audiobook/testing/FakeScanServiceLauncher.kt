@@ -62,6 +62,10 @@ class FakeScanServiceLauncher(
                         ScanOutcome.Completed(outcome = result.scan, rebuildResult = result)
                     )
                 }
+
+                // PREVIEW: المزيف لا يحاكي المعاينة (لا اختبار معاينة عبره) —
+                // الفرع لإرضاء exhaustiveness فقط.
+                ScanJob.PREVIEW -> Unit
             }
         }
     }

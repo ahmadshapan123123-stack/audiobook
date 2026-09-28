@@ -759,7 +759,9 @@
     <string name="settings_scan_failed">تعذّر إكمال الفحص. حاول مرة أخرى.</string>
 
     <!-- ===== المرحلة 4: فحص تدفقي + إشعار الفحص الأمامي ===== -->
-    <string name="scan_phase_discovering">اكتشاف الملفات…</string>
+    <string name="scan_phase_discovering">جاري قراءة المجلدات...</string>
+    <string name="scan_discovering_files">%1$d ملف</string>
+    <string name="scan_discovering_reading">جاري القراءة...</string>
     <!-- GAP 2: مرحلة التوجيه قبل الفحص (استيراد الاستهلال داخل الخدمة الأمامية). -->
     <string name="scan_phase_importing">تجهيز المكتبة… %1$d / %2$d كتاب</string>
     <string name="scan_phase_parsing">قراءة تفاصيل الملفات (%1$d/%2$d)…</string>

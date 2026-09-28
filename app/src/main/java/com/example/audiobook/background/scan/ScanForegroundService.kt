@@ -4,12 +4,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.example.audiobook.data.room.AppDatabase
+import com.example.audiobook.domain.usecases.PreviewResultBus
 import com.example.audiobook.domain.usecases.RebuildLibraryStructure
 import com.example.audiobook.domain.usecases.RebuildStructureResult
 import com.example.audiobook.domain.usecases.ScanAlreadyRunningException
@@ -130,6 +132,9 @@ class ScanForegroundService : Service() {
         // الحماية أولاً: startForeground قبل أي عمل ثقيل.
         if (job?.isActive == true) {
             Log.w(TAG, "start-while-running job=${request.job}; ignoring duplicate start")
+            // FIX 1: المعاينة تنتظر نتيجتها على PreviewResultBus — رفض صامت
+            // كان سيعلّق شاشتها إلى الأبد. الفحص له قناته (Rejected) فلا يلزم.
+            if (request.job == ScanJob.PREVIEW) PreviewResultBus.publishFailed("scan-busy")
             return START_NOT_STICKY
         }
         // STAGE 3A — ساعة المهمة تُضبط هنا (لا داخل الكوروتين) فيحمل حتى
@@ -227,9 +232,17 @@ class ScanForegroundService : Service() {
     }
 
     private suspend fun runRequest(request: ScanRequest) {
+        // FIX 1 — المعاينة قراءة فقط: لا حصيلة فحص ولا إشعار ختامي ولا
+        // ScanServiceNotifier (قناتها PreviewResultBus حصرًا)، فتخرج مبكرًا
+        // قبل try/when الفحص حتى لا تمسّ أي مسار استيراد/فحص.
+        if (request.job == ScanJob.PREVIEW) {
+            runPreview(request)
+            return
+        }
         val outcome = try {
             when (request.job) {
                 ScanJob.FULL_SCAN -> ScanOutcome.Completed(scanLibraryNow())
+                ScanJob.PREVIEW -> ScanOutcome.Failed("preview-handled-earlier")
                 ScanJob.REBUILD -> {
                     // إعادة البناء: تنظيف القشور ثم فحص كامل، بنفس تغطية الحماية.
                     val result: RebuildStructureResult = rebuildLibraryStructure()
@@ -300,6 +313,59 @@ class ScanForegroundService : Service() {
 
         ScanServiceNotifier.notify(outcome)
         finishScan(outcome)
+    }
+
+    /**
+     * FIX 1 — تنفيذ المعاينة: جوس وتصنيف قراءةً فقط عبر
+     * [com.example.audiobook.domain.usecases.ScanRoot.preview]، التقدّم يُعاد
+     * نشره على الناقل (للشاشة) والإشعار (للخلفية) مباشرةً — لا عبر مراقب
+     * `active` لأنه مخصّص للفحص. النتيجة (شجرة/فشل/إلغاء) على
+     * PreviewResultBus. بلا ScanServiceNotifier وبلا إشعار «انتهى الفحص».
+     */
+    private suspend fun runPreview(request: ScanRequest) {
+        val uriString = request.rootUri
+        if (uriString.isNullOrBlank()) {
+            PreviewResultBus.publishFailed("preview-missing-uri")
+            finishPreview()
+            return
+        }
+        try {
+            val tree = scanRoot.preview(
+                rootUri = Uri.parse(uriString),
+                isCancelled = ScanProgressBus::isCancelRequested
+            ) { progress ->
+                ScanProgressBus.publish(progress)
+                val label = progress.currentFolder
+                    .substringAfterLast('/')
+                    .ifBlank { progress.currentFolder }
+                ScanNotification.update(
+                    context = this,
+                    folderLabel = label,
+                    current = progress.processed,
+                    total = progress.total,
+                    indeterminate = progress.total <= 0,
+                    currentFile = progress.currentFile,
+                    startedAtMs = scanStartedAtMs.takeIf { it > 0 },
+                    etaText = computeEta(progress.processed, progress.total)
+                )
+            }
+            PreviewResultBus.publishReady(tree)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            Log.i(TAG, "preview-cancelled")
+            PreviewResultBus.publishCancelled()
+            throw cancelled
+        } catch (error: Throwable) {
+            Log.e(TAG, "preview failed", error)
+            PreviewResultBus.publishFailed(error.message ?: error::class.java.simpleName)
+        } finally {
+            finishPreview()
+        }
+    }
+
+    /** ختام المعاينة: إسقاط الإشعار وإيقاف الخدمة — بلا رسالة ختامية. */
+    private fun finishPreview() {
+        ScanNotification.cancel(this)
+        stopSelf()
     }
 
     /**

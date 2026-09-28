@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -23,11 +24,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -64,39 +68,53 @@ fun OnboardingScreen(
         if (state is OnboardingState.Done) onFinish()
     }
 
-    when (val current = state) {
-        OnboardingState.Welcome -> WelcomeStep(
-            onNext = viewModel::next,
-            onSkip = viewModel::skip
+    // FIX 9 — رسائل فشل المعاينة (كانت تُبتلَع صامتةً).
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val current = state) {
+            OnboardingState.Welcome -> WelcomeStep(
+                onNext = viewModel::next,
+                onSkip = viewModel::skip
+            )
+            OnboardingState.PickFolder -> PickFolderStep(
+                pickedUri = pickedUri,
+                isPreviewing = previewInFlight,
+                onChooseFolder = { folderLauncher.launch(null) },
+                onNext = viewModel::next,
+                onBack = viewModel::back
+            )
+            is OnboardingState.Previewing -> ProgressStep(
+                phase = current.phase, processed = current.processed, total = current.total,
+                folder = current.folder, file = current.file,
+                onCancel = viewModel::cancel
+            )
+            is OnboardingState.ShowPreview -> ConfirmStep(
+                tree = current.tree,
+                onEdit = viewModel::startEdit,
+                onImport = viewModel::confirmAndImport,
+                onBack = viewModel::back
+            )
+            is OnboardingState.Editing -> EditClassificationScreen(
+                tree = current.tree,
+                onDiscard = viewModel::cancelEdit,
+                onSave = viewModel::saveAndPreview,
+                onApplyEdit = viewModel::applyEdit
+            )
+            is OnboardingState.Importing -> ImportStep(
+                phase = current.phase, processed = current.processed, total = current.total,
+                folder = current.folder, file = current.file,
+                onCancel = viewModel::cancel
+            )
+            OnboardingState.Done -> Unit // LaunchedEffect بدأ الفتح
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
-        OnboardingState.PickFolder -> PickFolderStep(
-            pickedUri = pickedUri,
-            isPreviewing = previewInFlight,
-            onChooseFolder = { folderLauncher.launch(null) },
-            onNext = viewModel::next,
-            onBack = viewModel::back
-        )
-        is OnboardingState.Previewing -> ProgressStep(
-            phase = current.phase, processed = current.processed, total = current.total
-        )
-        is OnboardingState.ShowPreview -> ConfirmStep(
-            tree = current.tree,
-            onEdit = viewModel::startEdit,
-            onImport = viewModel::confirmAndImport,
-            onBack = viewModel::back
-        )
-        is OnboardingState.Editing -> EditClassificationScreen(
-            tree = current.tree,
-            onDiscard = viewModel::cancelEdit,
-            onSave = viewModel::saveAndPreview,
-            onApplyEdit = viewModel::applyEdit
-        )
-        is OnboardingState.Importing -> ImportStep(
-            phase = current.phase, processed = current.processed, total = current.total,
-            folder = current.folder, file = current.file,
-            onCancel = viewModel::cancel
-        )
-        OnboardingState.Done -> Unit // LaunchedEffect بدأ الفتح
     }
 }
 
@@ -265,7 +283,14 @@ private fun ConfirmStep(
 }
 
 @Composable
-private fun ProgressStep(phase: ScanPhase, processed: Int, total: Int) {
+private fun ProgressStep(
+    phase: ScanPhase,
+    processed: Int,
+    total: Int,
+    folder: String,
+    file: String,
+    onCancel: () -> Unit
+) {
     StepContainer {
         Text(
             text = stringResource(R.string.onboarding_preview_title),
@@ -280,8 +305,64 @@ private fun ProgressStep(phase: ScanPhase, processed: Int, total: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        // FIX 5 — نفس واجهة الاستيراد: المجلد والملف الجاريان (مقلّصان)،
+        // شريط X/Y محدد عند توفر المجموع، وزر إلغاء (FIX 6).
+        //
+        // DISCOVERING-LIVE: أثناء الجوس (total == 0) كان السطران مخفيين
+        // فيظهر spinner فارغ يطابق المعطوب. الآن سطر المجلد دائم الظهور
+        // في هذا الطور مع عدّاد الملفات المكتشفة وشريط غير محدد.
+        val isDiscovering = phase == ScanPhase.DISCOVERING
+        if (folder.isNotBlank() || file.isNotBlank() || isDiscovering) {
+            Spacer(Modifier.height(8.dp))
+            if (folder.isNotBlank()) {
+                Text(
+                    text = folder.middleTruncated(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            } else if (isDiscovering) {
+                Text(
+                    text = stringResource(R.string.scan_discovering_reading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+            if (file.isNotBlank()) {
+                Text(
+                    text = file.middleTruncated(32),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+            if (isDiscovering) {
+                Text(
+                    text = stringResource(R.string.scan_discovering_files, processed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+        }
         Spacer(Modifier.height(24.dp))
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (total > 0) {
+            LinearProgressIndicator(
+                progress = { (processed.toFloat() / total).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        Spacer(Modifier.height(16.dp))
+        TextButton(onClick = onCancel) {
+            Text(stringResource(R.string.onboarding_cancel_import), color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

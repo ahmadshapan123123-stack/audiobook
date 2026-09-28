@@ -14,6 +14,7 @@ import com.example.audiobook.data.room.entity.*
 import com.example.audiobook.domain.config.StrictModeFlags
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -111,9 +112,23 @@ class ScanRoot @Inject constructor(
             // STAGE 1B — الاكتشاف متدفق: `streamAudioFiles` يسلّم ملفًا ملفًا
             // والفحص يجمّع في قائمة واحدة يملكها (`discovered`)، بدل قائمتين
             // (واحدة في المصدر وواحدة هنا). يتوقف الجوس مبكرًا عند الإلغاء.
+            //
+            // DISCOVERING-LIVE: الجوس نفسه صامتٌ لولا هذا — أول نشرة كانت
+            // بعد اكتمال الشجرة كلها، فتجمّدت الواجهة دقائق على spinner فارغ
+            // يطابق المعطوب. الآن تُنشر نشرة كل 100ms بأحدث مجلد وعدّ الملفات
+            // (المجموع مجهول أثناء الجوس = 0 → شريط غير محدد).
             var discovered: MutableList<ScanFile>? = mutableListOf()
+            var lastDiscoverEmitMs = 0L
             fileSource.streamAudioFiles(Uri.parse(root.uri), ScanProgressBus::isCancelRequested) { file ->
                 discovered!! += file
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastDiscoverEmitMs >= DISCOVER_PROGRESS_THROTTLE_MS) {
+                    lastDiscoverEmitMs = nowMs
+                    publish(
+                        ScanProgress(ScanPhase.DISCOVERING, discovered!!.size, 0, file.folderPath),
+                        onProgress
+                    )
+                }
             }
             val discoveredCount = discovered!!.size
             publish(ScanProgress(ScanPhase.DISCOVERING, discoveredCount, discoveredCount, root.displayName), onProgress)
@@ -204,6 +219,61 @@ class ScanRoot @Inject constructor(
             database.libraryRootDao().setScanStatus(root.id, ScanStatus.ERROR)
             throw error
         }
+    }
+
+    /**
+     * FIX 2 — معاينة تصنيف مجلد بلا أي كتابة في القاعدة.
+     *
+     * نفس خط أنابيب الفحص (جوس متدفق ← مدخلات مصنّف ← `preview`) لكن:
+     * - بلا metadata (الشجرة تحتاج أسماء/مسارات/أحجامًا فقط؛ قراءتها كانت
+     *   ستضيف دقائق بلا أي فائدة للمعاينة).
+     * - بلا حارس `ScanProgressBus` (المعاينة لا تحجز الفحص ولا تُحجَز به —
+     *   الخدمة تمنع التزامن أصلًا) وبلا أي استدعاء DAO.
+     * - التقدّم عبر [onProgress] فقط؛ الخدمة هي من تعيد نشره على الناقل
+     *   والإشعار. الإلغاء عبر [isCancelled] (الجوس يتوقف مبكرًا) مع رمي
+     *   `CancellationException` بعد كل طور.
+     */
+    suspend fun preview(
+        rootUri: Uri,
+        rootName: String = rootUri.lastPathSegment?.substringAfterLast(':').orEmpty(),
+        isCancelled: () -> Boolean = { false },
+        onProgress: (ScanProgress) -> Unit = {}
+    ): StrictFolderClassifier.PreviewTree = withContext(Dispatchers.IO) {
+        // DISCOVERING-LIVE (مثل مسار الفحص): الجوس الصامت كان يجمّد شاشة
+        // المعاينة دقائق على spinner فارغ — نشرة كل 100ms بأحدث مجلد وعدّاد.
+        val discovered = mutableListOf<ScanFile>()
+        var lastEmitMs = 0L
+        fileSource.streamAudioFiles(rootUri, isCancelled) { file ->
+            discovered += file
+            val nowMs = System.currentTimeMillis()
+            if (nowMs - lastEmitMs >= DISCOVER_PROGRESS_THROTTLE_MS) {
+                lastEmitMs = nowMs
+                onProgress(ScanProgress(ScanPhase.DISCOVERING, discovered.size, 0, file.folderPath))
+            }
+        }
+        if (isCancelled()) throw CancellationException("preview-cancelled")
+        val total = discovered.size
+        onProgress(ScanProgress(ScanPhase.DISCOVERING, total, total, ""))
+
+        val input = ArrayList<StrictFolderClassifier.InputFile>(total)
+        discovered.forEachIndexed { index, file ->
+            input += StrictFolderClassifier.InputFile(
+                uri = file.uri.toString(),
+                filename = file.fileName,
+                folderPath = file.folderPath,
+                sizeBytes = file.size,
+                durationMs = 0L
+            )
+            if ((index + 1) % PROGRESS_INTERVAL == 0 || index + 1 == total) {
+                onProgress(ScanProgress(ScanPhase.PARSING, index + 1, total, file.folderPath, file.fileName))
+            }
+        }
+        if (isCancelled()) throw CancellationException("preview-cancelled")
+        onProgress(ScanProgress(ScanPhase.CLASSIFYING, total, total, ""))
+        val tree = StrictFolderClassifier.preview(input, rootName)
+        if (isCancelled()) throw CancellationException("preview-cancelled")
+        onProgress(ScanProgress(ScanPhase.DONE, total, total, ""))
+        tree
     }
 
     // الأنواع التالية `internal` لا `private`: اختبار الأداء في نفس الوحدة يقيس
@@ -1061,6 +1131,12 @@ class ScanRoot @Inject constructor(
         private const val TAG = "ScanRoot"
         private const val BATCH_SIZE = 50
         private const val PROGRESS_INTERVAL = 100
+
+        /**
+         * DISCOVERING-LIVE: أقصى معدل لنشرات الجوس (10/ثانية) — بلا خنق
+         * كان كل ملف من 50 ألفًا يضخ StateFlow وإشعارًا فيسبّب اختناق الخيط.
+         */
+        private const val DISCOVER_PROGRESS_THROTTLE_MS = 100L
 
         /** حجم صفحة [markMissingFiles] — يحدّ ذروة كيانات audio_files الحيّة. */
         private const val MISSING_SCAN_PAGE = 200

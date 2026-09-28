@@ -32,6 +32,7 @@ import com.example.audiobook.data.room.entity.SyncStatus
 import com.example.audiobook.domain.usecases.ScanPhase
 import com.example.audiobook.domain.usecases.ScanProgress
 import com.example.audiobook.domain.usecases.ScanProgressBus
+import com.example.audiobook.domain.usecases.PreviewResultBus
 import com.example.audiobook.domain.usecases.ScanRoot
 import com.example.audiobook.domain.usecases.StrictFolderClassifier
 import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewBook
@@ -39,20 +40,28 @@ import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewTree
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 /** حالات آلة الإعداد (المرحلة 5): ترحيب → اختيار مجلد → معاينة → اعتماد/تعديل → استيراد → تم. */
 sealed interface OnboardingState {
     data object Welcome : OnboardingState
     data object PickFolder : OnboardingState
-    data class Previewing(val phase: ScanPhase, val processed: Int, val total: Int) : OnboardingState
+    data class Previewing(
+        val phase: ScanPhase,
+        val processed: Int,
+        val total: Int,
+        /** FIX 4: الموضع الجاري من الناقل — لا (0/0) مجمّدة. */
+        val folder: String = "",
+        val file: String = ""
+    ) : OnboardingState
     data class ShowPreview(val tree: PreviewTree) : OnboardingState
     data class Editing(val tree: PreviewTree, val edits: List<ClassificationEdit>) : OnboardingState
     /**
@@ -105,6 +114,21 @@ class OnboardingViewModel @Inject constructor(
 
     private val edits = mutableListOf<ClassificationEdit>()
 
+    /**
+     * FIX 9 — قناة رسائل الخطأ للشاشة (Snackbar): المعاينة لم تعد تبتلع
+     * الفشل صامتةً — كل فشل يصل هنا بنص يُعرض.
+     */
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
+    private fun emitMessage(text: String) {
+        _messages.tryEmit(text)
+    }
+
+    private fun backToPickFolder() {
+        _state.value = OnboardingState.PickFolder
+    }
+
     fun next() {
         when (_state.value) {
             OnboardingState.Welcome -> _state.value = OnboardingState.PickFolder
@@ -125,6 +149,10 @@ class OnboardingViewModel @Inject constructor(
 
     /** تخطي الإعداد صراحة: يُغلق الإعداد ويعرض المكتبة الفارغة (زر إضافة مجلد فيها). */
     fun skip() {
+        // FIX 7: الشجرة المحتفظ بها للتعديل لم يعد لها استخدام بعد مغادرة
+        // الاستهلال — تُحرَّر هنا (وفي مسح الـVM تلقائيًا).
+        originalTree = null
+        edits.clear()
         appSettings.setHasCompletedOnboarding(true)
         appSettings.setHasSkippedOnboarding(true)
         _state.value = OnboardingState.Done
@@ -141,32 +169,52 @@ class OnboardingViewModel @Inject constructor(
         val uri = _pickedUri.value ?: return
         if (_previewInFlight.value) return
         _previewInFlight.value = true
-        _state.value = OnboardingState.Previewing(ScanPhase.CLASSIFYING, 0, 0)
+        _state.value = OnboardingState.Previewing(ScanPhase.DISCOVERING, 0, 0)
+        // FIX 4: التقدّم حيّ من الناقل المشترك — نفس نمط confirmAndImport.
+        // الشاشة تعرض المجلد/الملف الجاريين لا (0/0) مجمّدة.
+        val progressJob = viewModelScope.launch {
+            ScanProgressBus.state.collect { progress ->
+                if (_state.value is OnboardingState.Previewing && progress != null) {
+                    _state.value = OnboardingState.Previewing(
+                        progress.phase, progress.processed, progress.total,
+                        folder = progress.currentFolder, file = progress.currentFile
+                    )
+                }
+            }
+        }
         viewModelScope.launch {
             try {
-                // جذر I/O خشن: listAudioFiles يتنقّل في شجرة SAF عبر ContentProvider
-                // على الـmain thread كان يجمّد الواجهة ويُطلق ANR على المكتبات الكبيرة.
-                val tree = withContext(Dispatchers.IO) {
-                    val rootName = StorageAccess.displayNameOf(uri)
-                    val files = fileSource.listAudioFiles(uri)
-                    val input = files.map {
-                        StrictFolderClassifier.InputFile(
-                            uri = it.uri.toString(),
-                            filename = it.fileName,
-                            folderPath = it.folderPath,
-                            sizeBytes = it.size,
-                            durationMs = 0L
-                        )
-                    }
-                    StrictFolderClassifier.preview(input, rootName)
+                // FIX 4: المعاينة في الخدمة الأمامية (حماية foreground +
+                // تقدّم حيّ + إلغاء تعاوني) — لا `withContext` محلي.
+                // FIX 9: بلا التقاط صامت؛ الفشل/الإلغاء يصلان عبر
+                // PreviewResultBus برسالة تُعرض للمستخدم.
+                PreviewResultBus.clear()
+                val started = scanServiceLauncher.launch(
+                    ScanRequest(ScanJob.PREVIEW, rootUri = uri.toString())
+                )
+                if (!started) {
+                    emitMessage("تعذّر بدء المعاينة — أعد المحاولة")
+                    backToPickFolder()
+                    return@launch
                 }
-                originalTree = tree
-                edits.clear()
-                _state.value = OnboardingState.ShowPreview(tree)
-            } catch (error: Throwable) {
-                // فشل القراءة (إذن سُحبت / URI تالف): نعود لاختيار المجلد.
-                _state.value = OnboardingState.PickFolder
+                // `first` بشرط غير-null لا يعيد null أبدًا — `!!` ليرى
+                // المترجم exhaustiveness الـsealed interface.
+                when (val result = PreviewResultBus.result.first { it != null }!!) {
+                    is PreviewResultBus.PreviewResult.Ready -> {
+                        originalTree = result.tree
+                        edits.clear()
+                        _state.value = OnboardingState.ShowPreview(result.tree)
+                    }
+                    is PreviewResultBus.PreviewResult.Failed -> {
+                        emitMessage("فشلت المعاينة: ${result.reason}")
+                        backToPickFolder()
+                    }
+                    PreviewResultBus.PreviewResult.Cancelled -> backToPickFolder()
+                }
             } finally {
+                // CancellationException الخاص بنا (مسح الـVM) يمرّ من هنا
+                // ويُعاد رميه — لا يُبتلَع (FIX 9).
+                progressJob.cancel()
                 _previewInFlight.value = false
             }
         }
@@ -313,9 +361,16 @@ class OnboardingViewModel @Inject constructor(
 
     fun retry() = confirmAndImport()
 
-    /** إيقاف تعاوني للاستيراد الجاري (ينهي الفحص بداية الدفعة القادمة). */
+    /**
+     * إيقاف تعاوني للاستيراد/المعاينة الجارية.
+     * FIX 6: المعاينة قابلة للإلغاء بزرها — يصل الخدمة عبر الناقل فيتوقف
+     * الجوس مبكرًا وتعود الشاشة لاختيار المجلد.
+     */
     fun cancel() {
-        if (_state.value is OnboardingState.Importing) ScanProgressBus.requestCancel()
+        val state = _state.value
+        if (state is OnboardingState.Importing || state is OnboardingState.Previewing) {
+            ScanProgressBus.requestCancel()
+        }
     }
 
     /** تخزين التعديلات المعتمدة في جدول onboarding_edits (تُفرَّغ عند النجاح). */
