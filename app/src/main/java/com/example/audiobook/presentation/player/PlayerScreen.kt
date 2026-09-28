@@ -223,11 +223,12 @@ fun PlayerScreen(
     val latestOnBack = rememberUpdatedState(onBack)
 
     // حارس أمان مؤقّت: أي طيّ يعلّم collapseAnimating=true دون أن يصل إلى الإعادة الفورية
-    // (إلغاءُ حركة، إعادة تنسيق، popBackStack فاشل) يُحرَّر تلقائيًا بعد 500ms كي لا يتجمّد
+    // (إلغاءُ حركة، إعادة تنسيق، popBackStack فاشل) يُحرَّر تلقائيًا بعد 300ms كي لا يتجمّد
     // المشغّل ويُحرم من أي سحب لاحق. يُلغي نفسه حال تصفير العلم في المسار الطبيعي.
+    // (الحركة الطبيعية 240ms فلا يتدخل الحارس فيها.)
     LaunchedEffect(collapseAnimating) {
         if (collapseAnimating) {
-            delay(500)
+            delay(300)
             if (collapseAnimating) {
                 Log.w(TAG, "collapseAnimating stuck — resetting")
                 collapseAnimating = false
@@ -449,11 +450,13 @@ fun PlayerScreen(
     )
     Box(modifier = Modifier.fillMaxSize()) {
         // ---- الطبقة 1: كامل محتوى المشغّل (تُموَّه كطبقة واحدة خلف أي نافذة منبثقة) ----
+        // FIX 3.4: تمويه أقوى (+50%: 14 → 21dp). اللوحات نفسها (طبقة 2+)
+        // خارج هذه الطبقة فلا يطالها التمويه.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .blur(
-                    radius = 14.dp * blurAmount,
+                    radius = 21.dp * blurAmount,
                     edgeTreatment = BlurredEdgeTreatment.Unbounded
                 )
                 .onGloballyPositioned {
@@ -489,16 +492,24 @@ fun PlayerScreen(
                             collapseAnimating = true
                             Log.d(TAG, "collapse: threshold reached (${gestureOffsetY}px) — animating down then back")
                             scope.launch {
-                                collapseAnim.snapTo(collapseOffsetPx)
-                                collapseAnim.animateTo(rootHeightPx.toFloat() + 120f, tween(240)) { collapseOffsetPx = value }
-                                // إعادة الضبط قبل الخروج حتى لا يعلق collapseAnimating مسمّرًا
-                                // (السبب الجذري للتجمّد: تعيينه true بلا reset أبدًا).
-                                collapseAnimating = false
-                                Log.d(TAG, "collapse: animation complete — invoking onBack")
-                                val popped = latestOnBack.value()
-                                Log.d(TAG, "collapse: popBackStack returned $popped")
-                                if (!popped) {
-                                    Log.w(TAG, "collapse: nothing to pop — MainActivity falls back to home route")
+                                try {
+                                    collapseAnim.snapTo(collapseOffsetPx)
+                                    collapseAnim.animateTo(rootHeightPx.toFloat() + 120f, tween(240)) { collapseOffsetPx = value }
+                                    Log.d(TAG, "collapse: animation complete — invoking onBack")
+                                    val popped = latestOnBack.value()
+                                    Log.d(TAG, "collapse: popBackStack returned $popped")
+                                    if (!popped) {
+                                        // FIX 3.1: الفشل الصامت كان يترك المحتوى مزاحًا خارج
+                                        // الشاشة (collapseOffsetPx = height+120) فتبدو الشاشة
+                                        // متجمدة ولا يستقبل أي سحب لاحق شيئًا — عُد للصفر.
+                                        Log.w(TAG, "collapse: nothing to pop — snapping content back")
+                                        collapseAnim.snapTo(collapseOffsetPx)
+                                        collapseAnim.animateTo(0f, tween(220)) { collapseOffsetPx = value }
+                                    }
+                                } finally {
+                                    // يُحرَّر العلم دائمًا حتى لو أُلغيت الحركة —
+                                    // بدونه تموت كل السحوبات اللاحقة حتى حارس الأمان.
+                                    collapseAnimating = false
                                 }
                             }
                         } else {
@@ -676,6 +687,15 @@ fun PlayerScreen(
                 sleepActive = sleepUi.phase == SleepTimerPhase.RUNNING ||
                     sleepUi.phase == SleepTimerPhase.WARNING_WINDOW ||
                     sleepUi.phase == SleepTimerPhase.FADING_OUT,
+                // FIX 3.3/3.4: عدّاد النوم الحي على الأيقونة + شارة السرعة.
+                sleepCountdown = run {
+                    val running = sleepUi.phase == SleepTimerPhase.RUNNING ||
+                        sleepUi.phase == SleepTimerPhase.WARNING_WINDOW ||
+                        sleepUi.phase == SleepTimerPhase.FADING_OUT
+                    val remaining = sleepUi.remainingMs ?: 0L
+                    if (running && remaining > 0L) formatTime(remaining) else null
+                },
+                speedBadge = speedLabel(selectedSpeed).replace('x', '×'),
                 activePanel = expandedPanel,
                 onMark = { sleepTimer.onActiveInteraction(ActiveInteraction.AddBookmark); captureMoment() },
                 onTogglePanel = { panel -> expandedPanel = if (expandedPanel == panel) null else panel },
@@ -860,7 +880,7 @@ private const val SEEK_BACK_THRESHOLD_MS = 2_000L
  * [onAccent] → نص/أيقونة فوق [accent] (يُختار تلقائيًا حسب سطوع [accent])
  * [glassBg]  → سطح زجاجي شفاف للوحات والبطاقات
  * [outline]  → حدود/فواصل — أبيض عند 14% (الليل) أو أسود عند 12% (النهار)
- * [scrim]    → طبقة حجب خلف النत्रح — 55% (ليل) أو 45% (نهار)
+ * [scrim]    → طبقة حجب خلف النوافذ — 65% (ليل) أو 55% (نهار)، 72% أمولد
  *
  * [ink] و [soft] هما النص الأساسي والثانوي على التدرج مباشرة،
  * وهما متكيفان مع الوضع (فاتح/داكن).
@@ -911,10 +931,11 @@ internal fun playerForeground(gradient: PlayerGradient, mode: AppThemeMode): Pla
         red = accent.red * SCRIM_ACCENT_REDUCE,
         green = accent.green * SCRIM_ACCENT_REDUCE,
         blue = accent.blue * SCRIM_ACCENT_REDUCE,
+        // FIX 3.4: حجاب أدكن (0.55 → 0.65 للوضعين الرئيسيين).
         alpha = when {
-            isAmoled -> 0.65f
-            isLightTheme -> 0.40f
-            else -> 0.50f
+            isAmoled -> 0.72f
+            isLightTheme -> 0.55f
+            else -> 0.65f
         }
     )
     val soft = ink.copy(alpha = if (isLightTheme && !lightText) 0.72f else 0.78f)
@@ -1633,6 +1654,8 @@ private fun PlayerToolsRow(
     markLabel: String,
     sleepLabel: String,
     sleepActive: Boolean,
+    sleepCountdown: String?,
+    speedBadge: String,
     activePanel: PlayerControlPanel?,
     onMark: () -> Unit,
     onTogglePanel: (PlayerControlPanel) -> Unit,
@@ -1644,22 +1667,29 @@ private fun PlayerToolsRow(
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.xxs),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ToolText(
-            text = markLabel,
+        // FIX 3.3: أيقونات بدل نص — حفظ اللحظة يفتح ورقة الخيارات نفسها.
+        ToolIcon(
+            imageVector = Icons.Outlined.BookmarkAdd,
+            contentDescription = markLabel,
+            badge = null,
             onClick = onMark,
             selected = false,
             fg = fg,
             modifier = Modifier.weight(1f)
         )
-        ToolText(
-            text = stringResource(R.string.player_speed_short),
+        ToolIcon(
+            imageVector = Icons.Outlined.Speed,
+            contentDescription = speedBadge,
+            badge = speedBadge,
             onClick = { onTogglePanel(PlayerControlPanel.SPEED) },
             selected = activePanel == PlayerControlPanel.SPEED,
             fg = fg,
             modifier = Modifier.weight(1f)
         )
-        ToolText(
-            text = sleepLabel,
+        ToolIcon(
+            imageVector = Icons.Outlined.Bedtime,
+            contentDescription = sleepLabel,
+            badge = sleepCountdown,
             onClick = { onTogglePanel(PlayerControlPanel.SLEEP) },
             selected = activePanel == PlayerControlPanel.SLEEP || sleepActive,
             fg = fg,
@@ -1668,27 +1698,44 @@ private fun PlayerToolsRow(
     }
 }
 
+/**
+ * FIX 3.3: زر أداة أيقوني بشارة نصية صغيرة (سرعة/عدّاد نوم) — هدف لمس
+ * 48dp عبر minTouchTarget، واللون المميز للّهجة عند التفعيل.
+ */
 @Composable
-private fun ToolText(
-    text: String,
+private fun ToolIcon(
+    imageVector: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String?,
+    badge: String?,
     onClick: () -> Unit,
     selected: Boolean,
     fg: PlayerFg,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = text,
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .minTouchTarget()
             .clickable(onClick = onClick)
-            .padding(vertical = AppSpacing.xs),
-        style = MaterialTheme.typography.labelLarge,
-        color = if (selected) fg.colors.accent else fg.soft,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = if (selected) fg.colors.accent else fg.soft,
+            modifier = Modifier.size(24.dp)
+        )
+        if (badge != null) {
+            Text(
+                text = badge,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) fg.colors.accent else fg.soft,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 /** لوحة الأدوات العائمة: تنبثق فوق أسفل الشاشة — زجاج شفاف بلغة ألوان المشغّل. */

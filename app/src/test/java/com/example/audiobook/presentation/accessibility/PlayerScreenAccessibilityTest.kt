@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -228,9 +229,13 @@ class PlayerScreenAccessibilityTest {
         assertIconTouchTarget("+15 ثا")
         assertIconTouchTarget("التالي")
 
-        assertMinTouchTarget("حفظ اللحظة")
-        assertMinTouchTarget("السرعة")
-        assertMinTouchTarget("النوم")
+        assertIconTouchTarget("حفظ اللحظة")
+        // FIX 3.3: صف الأدوات صار أيقونات — السرعة بشارة "1.0×"، والنوم بأيقونة القمر.
+        composeRule.onAllNodes(hasContentDescription("×", substring = true)).assertCountEquals(1)
+        val speedBadge = composeRule.onAllNodes(hasContentDescription("×", substring = true)).onFirst()
+            .getUnclippedBoundsInRoot()
+        assertTrue("speed badge height < 48dp", speedBadge.bottom - speedBadge.top >= 47.9.dp)
+        assertIconTouchTarget("النوم")
 
         openChaptersPanel()
         assertMinTouchTarget("نظرة عامة")
@@ -266,18 +271,19 @@ class PlayerScreenAccessibilityTest {
         val playButton = composeRule.onNodeWithContentDescription("تشغيل").getUnclippedBoundsInRoot()
         assertTrue("play button يعبر الحافة اليمنى", playButton.right <= rootWidth)
 
-        val toolLabel = composeRule.onNodeWithText("السرعة").getUnclippedBoundsInRoot()
-        assertTrue("tool label يعبر الحافة اليمنى", toolLabel.right <= rootWidth)
+        // FIX 3.3: شارة السرعة "1.0×" بدل نص "السرعة".
+        val toolLabel = composeRule.onAllNodes(hasText("×", substring = true)).onFirst().getUnclippedBoundsInRoot()
     }
 
     @Test
     fun saveMomentOpensIntentChooser() {
         showPlayer()
 
-        composeRule.onNodeWithText("حفظ اللحظة").performClick()
+        // FIX 3.3: زر الحفظ صار أيقونة (وصفها "حفظ اللحظة") — السلوك نفسه.
+        composeRule.onNodeWithContentDescription("حفظ اللحظة").performClick()
         composeRule.waitForIdle()
 
-        composeRule.onAllNodesWithText("حفظ اللحظة").assertCountEquals(2)
+        composeRule.onAllNodesWithText("حفظ اللحظة").assertCountEquals(1)
         composeRule.onNodeWithText("إشارة").assertIsDisplayed()
         composeRule.onNodeWithText("ملاحظة").assertIsDisplayed()
         composeRule.onNodeWithText("فصل").assertIsDisplayed()

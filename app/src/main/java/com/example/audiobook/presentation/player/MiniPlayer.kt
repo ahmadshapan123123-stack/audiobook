@@ -79,21 +79,26 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     viewModel: MiniPlayerViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(editionId) { viewModel.observeEdition(editionId) }
-
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val playbackState by controller.state.collectAsStateWithLifecycle()
-
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var dismissOffsetPx by remember { mutableFloatStateOf(0f) }
     val dismissAnim = remember { Animatable(0f) }
+    LaunchedEffect(editionId) {
+        viewModel.observeEdition(editionId)
+        // FIX 3.2: إزاحة الطيّ السابقة محفوظة في remember بلا مفتاح — كتاب
+        // جديد كان يظهر مزاحًا (أو مخفيًا) بإزاحة الكتاب السابق. تُصفَّر هنا.
+        dismissOffsetPx = 0f
+        dismissAnim.snapTo(0f)
+    }
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         appear.snapTo(0f)
         appear.animateTo(1f, tween(260))
     }
     val latestOnStopPlayback = rememberUpdatedState(onStopPlayback)
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playbackState by controller.state.collectAsStateWithLifecycle()
 
     val progressFraction = if (playbackState.durationMs > 0L) {
         (playbackState.positionMs.toFloat() / playbackState.durationMs).coerceIn(0f, 1f)
@@ -295,7 +300,7 @@ fun MiniPlayer(
 }
 
 /** عتبة سحب المشغّل المصغّر للأسفل لإيقاف التشغيل وإخفائه بالكامل. */
-private val miniPlayerDismissThresholdDp = 60.dp
+private val miniPlayerDismissThresholdDp = 40.dp
 
 /** سرعة الرمية (بكسل/ثانية) التي تطوي المشغّل حتى دون بلوغ عتبة المسافة. */
 private const val miniPlayerFlingVelocityPxPerSec = 500f
