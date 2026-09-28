@@ -89,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.BuildConfig
 import com.example.audiobook.R
 import com.example.audiobook.domain.usecases.ScanPhase
+import com.example.audiobook.presentation.common.middleTruncated
 import com.example.audiobook.domain.usecases.ScanProgress
 import com.example.audiobook.presentation.common.BookManagerViewModel
 import com.example.audiobook.presentation.common.ConfirmDeleteDialog
@@ -774,13 +775,32 @@ private fun phaseLabel(progress: ScanProgress?): String = when (progress?.phase)
     ScanPhase.IMPORTING -> stringResource(R.string.scan_phase_importing, progress.processed, progress.total)
     ScanPhase.PARSING -> stringResource(R.string.scan_phase_parsing, progress.processed, progress.total)
     ScanPhase.CLASSIFYING -> stringResource(R.string.scan_phase_classifying)
-    ScanPhase.CREATING -> if (progress.currentFolder.isBlank()) {
-        stringResource(R.string.scan_phase_creating, progress.processed, progress.total)
-    } else {
-        stringResource(R.string.scan_phase_creating, progress.processed, progress.total) + " · " + progress.currentFolder
-    }
+    ScanPhase.CREATING -> stringResource(R.string.scan_phase_creating, progress.processed, progress.total)
     ScanPhase.DONE -> stringResource(R.string.library_scan_progress)
     null -> stringResource(R.string.library_scan_progress)
+}
+
+/**
+ * STAGE 2 — سطر الموضع الجاري تحت التسمية: «مجلد — ملف» (مقلّصان من
+ * المنتصف). يظهر في أطوار العمل على ملفات (PARSING/CREATING/IMPORTING)،
+ * ويُخفى حين لا يحمل التقدّم موضعًا.
+ */
+@Composable
+private fun ScanLocationLine(progress: ScanProgress?): String? {
+    if (progress == null) return null
+    return when (progress.phase) {
+        ScanPhase.PARSING, ScanPhase.CREATING, ScanPhase.IMPORTING -> {
+            val folder = progress.currentFolder.middleTruncated()
+            val file = progress.currentFile.middleTruncated(32)
+            when {
+                folder.isNotBlank() && file.isNotBlank() -> "$folder — $file"
+                folder.isNotBlank() -> folder
+                file.isNotBlank() -> file
+                else -> null
+            }
+        }
+        else -> null
+    }
 }
 
 /**
@@ -816,6 +836,17 @@ private fun ScanProgressBanner(
             TextButton(onClick = onCancel) {
                 Text(stringResource(R.string.btn_cancel))
             }
+        }
+        // STAGE 2 — الموضع الجاري (مجلد — ملف) تحت التسمية.
+        ScanLocationLine(current)?.let { location ->
+            Text(
+                text = location,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         LinearProgressIndicator(
             progress = {

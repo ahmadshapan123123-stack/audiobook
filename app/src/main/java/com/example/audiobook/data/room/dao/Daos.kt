@@ -443,12 +443,19 @@ interface PendingDiscoveryDao {
     @Query("UPDATE pending_discoveries SET status = 'IGNORED' WHERE id = :id") suspend fun markIgnored(id: UUID)
     @Query("UPDATE pending_discoveries SET status = 'RESOLVED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun resolveAllForRoot(rootId: UUID)
     @Query("UPDATE pending_discoveries SET status = 'IGNORED' WHERE status = 'PENDING' AND rootId = :rootId") suspend fun ignoreAllForRoot(rootId: UUID)
+    /**
+     * STAGE 5/6 — نقل الاكتشافات لجذر أب عند الدمج، وحذفها عند حذف الجذر.
+     */
+    @Query("UPDATE pending_discoveries SET rootId = :newRootId, folderPath = :prefix || '/' || folderPath WHERE rootId = :oldRootId") suspend fun reassignRoot(oldRootId: UUID, newRootId: UUID, prefix: String)
+    @Query("DELETE FROM pending_discoveries WHERE rootId = :rootId") suspend fun deleteForRoot(rootId: UUID)
 }
 
 @Dao
 interface ScanCheckpointDao {
     @Query("SELECT * FROM scan_checkpoints WHERE rootId = :rootId") suspend fun getForRoot(rootId: UUID): ScanCheckpointEntity?
-    /** REPLACE: يبقى سجل واحد لكل جذر (آخر نقطة استئناف). */
+    /** STAGE 4 — كل نقاط التوقف، لاكتشاف «فحص متوقف» وعرض الاستئناف. */
+    @Query("SELECT * FROM scan_checkpoints ORDER BY scannedAt DESC") suspend fun getAll(): List<ScanCheckpointEntity>
+    /** REPLACE: single checkpoint per root — replaced on each batch (resume position). */
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(entity: ScanCheckpointEntity)
     @Query("DELETE FROM scan_checkpoints WHERE rootId = :rootId") suspend fun deleteForRoot(rootId: UUID)
 }

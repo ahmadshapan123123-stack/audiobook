@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ===== التطبيق ===== -->
     <string name="app_name">أثير</string>
@@ -927,4 +927,25 @@
     <!-- ===== تراجع ===== -->
     <string name="move_book_undo">تم النقل — تراجع</string>
     <string name="move_book_series_requires_author">لا يمكن إنشاء سلسلة لكتاب غير مصنّف — امنح الكتاب مؤلفًا أولًا</string>
+    <!-- ===== STAGE 3/4: استئناف الفحص ===== -->
+    <string name="notif_scan_eta">متبقٍ ~%1$s</string>
+    <string name="action_resume_scan">استئناف الفحص</string>
+    <string name="notif_resume_scan_title">فحص متوقف</string>
+    <string name="notif_resume_scan_text">توقف فحص "%1$s" — اضغط للاستئناف من حيث توقف.</string>
+    <string name="settings_resume_last_scan">استئناف الفحص الأخير</string>
+    <string name="settings_resume_last_scan_desc">المتابعة من "%1$s" حيث توقف الفحص.</string>
+    <!-- ===== STAGE 5: دمج الجذور ===== -->
+    <string name="settings_merge_roots">دمج جذور المكتبة</string>
+    <string name="settings_merge_roots_desc">جذور كلٌّ منها لمؤلف واحد تُدمج تحت مجلد أب واحد.</string>
+    <string name="settings_merge_roots_none">لا توجد جذور قابلة للدمج.</string>
+    <string name="settings_merge_roots_confirm_title">دمج %1$d جذور؟</string>
+    <string name="settings_merge_roots_confirm_body">ستُنقل %1$d كتابًا (%2$d إصدارًا) إلى "%3$s" ثم يُعاد الفحص. تبقى التقدّمات والعلامات كما هي.</string>
+    <string name="settings_merge_roots_pick_parent">اختر المجلد الأب الحاوي لمجلدات المؤلفين</string>
+    <string name="settings_merge_roots_done">تم الدمج: %1$d كتابًا تحت جذر واحد</string>
+    <string name="settings_merge_roots_failed">تعذّر الدمج</string>
+    <!-- ===== STAGE 6: إدارة الجذور ===== -->
+    <string name="library_folder_delete">حذف الجذر</string>
+    <string name="library_folder_delete_confirm">حذف "%1$s" نهائيًا؟ ستُحذف كتب هذا الجذر وملفاتها وفصولها وتقدّمها. لا يمكن التراجع.</string>
+    <string name="library_folder_rename">إعادة تسمية</string>
+    <string name="library_folder_rename_hint">اسم جديد</string>
 </resources>

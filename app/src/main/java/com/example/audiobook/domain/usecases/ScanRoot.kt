@@ -39,7 +39,12 @@ data class ScanProgress(
     val phase: ScanPhase,
     val processed: Int,
     val total: Int,
-    val currentFolder: String
+    val currentFolder: String,
+    /**
+     * STAGE 2 — اسم الملف الجاري معالجته (بلا مسار)، يُنشر مع نشرة PARSING
+     * كل PROGRESS_INTERVAL ملف. فارغ في الأطوار التي لا تعمل على ملف واحد.
+     */
+    val currentFile: String = ""
 )
 
 /** أطوار الفحص بترتيبها: اكتشاف الملفات ← قراءة الوسائط ← التصنيف ← إنشاء الكتب ← تم. */
@@ -103,44 +108,85 @@ class ScanRoot @Inject constructor(
             // كليًا، حتى لا يعلّم فحص أول/جزئي عن قائمة ناقصة شيئًا موجودًا على أنه مفقود.
             val isFirstScan = existingCount == 0
 
-            val files = fileSource.listAudioFiles(Uri.parse(root.uri))
-            publish(ScanProgress(ScanPhase.DISCOVERING, files.size, files.size, root.displayName), onProgress)
-
-            // Phase 2: التصنيف الصارم يُحسب مرة واحدة هنا فيغذّي عدّ النشرة وربط
-            // الوحدات بالملفات لاحقًا — لا يُصنَّف مرة ثانية ولا يُطوى في خريطة سياق.
-            val classified = if (StrictModeFlags.USE_STRICT_CLASSIFIER) classifyFiles(files, root.displayName) else null
-            val classifiedCount = classified?.size ?: buildContextByPath(files, root.displayName).size
-            publish(ScanProgress(ScanPhase.CLASSIFYING, classifiedCount, files.size, root.displayName), onProgress)
-
-            // قراءة metadata تدفقية — يُنشر كل 100 ملف — مع إعادة استخدام كاش الفحص السابق
-            // (نفس uri + نفس lastModified) بلا قراءة فعلية.
-            val prepared = prepareFiles(root.id, files, root, foundUris, report) { parsed, total, currentFolder ->
-                publish(ScanProgress(ScanPhase.PARSING, parsed, total, currentFolder), onProgress)
+            // STAGE 1B — الاكتشاف متدفق: `streamAudioFiles` يسلّم ملفًا ملفًا
+            // والفحص يجمّع في قائمة واحدة يملكها (`discovered`)، بدل قائمتين
+            // (واحدة في المصدر وواحدة هنا). يتوقف الجوس مبكرًا عند الإلغاء.
+            var discovered: MutableList<ScanFile>? = mutableListOf()
+            fileSource.streamAudioFiles(Uri.parse(root.uri), ScanProgressBus::isCancelRequested) { file ->
+                discovered!! += file
             }
-
-            val resumeIndex = resumeIndexFor(root.id, checkpointDao, prepared, System.currentTimeMillis())
-            // كل ClassifiedBook كتاب مستقل بهويته البنيوية (author, series, title)؛
-            // المسار القديم (إصدار لكل مجلد) باقٍ للمسار غير الصارم فقط.
-            val signalsByFolder = if (classified != null) {
-                resolveClassifiedBooks(root, bookUnits(classified, prepared, root.displayName), report, resumeIndex) { done, total, folderPath ->
-                    publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
-                }
-            } else {
-                val contexts = buildContextByPath(files, root.displayName)
-                resolveEditions(root, prepared, contexts, report, resumeIndex) { done, total, folderPath ->
-                    publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
-                }
-            }
-
+            val discoveredCount = discovered!!.size
+            publish(ScanProgress(ScanPhase.DISCOVERING, discoveredCount, discoveredCount, root.displayName), onProgress)
+            logHeap("after-discover files=$discoveredCount")
             cancelled = ScanProgressBus.isCancelRequested
-            if (!cancelled && !isFirstScan) {
-                markMissingFiles(root.id, root, foundUris, report)
+
+            if (!cancelled) {
+                var liveFiles: List<ScanFile>? = discovered
+                discovered = null
+                // Phase 2: التصنيف الصارم يُحسب مرة واحدة هنا فيغذّي عدّ النشرة وربط
+                // الوحدات بالملفات لاحقًا — لا يُصنَّف مرة ثانية ولا يُطوى في خريطة سياق.
+                var classified: List<StrictFolderClassifier.ClassifiedBook>? =
+                    if (StrictModeFlags.USE_STRICT_CLASSIFIER) classifyFiles(liveFiles!!, root.displayName) else null
+                var contexts: Map<String, AuthorSeriesContext>? =
+                    if (classified == null) buildContextByPath(liveFiles!!, root.displayName) else null
+                val classifiedCount = classified?.size ?: contexts!!.size
+                publish(ScanProgress(ScanPhase.CLASSIFYING, classifiedCount, discoveredCount, root.displayName), onProgress)
+
+                // قراءة metadata تدفقية — يُنشر كل 100 ملف — مع إعادة استخدام كاش الفحص السابق
+                // (نفس uri + نفس lastModified) بلا قراءة فعلية.
+                // STAGE 2: النشرة تحمل الآن اسم الملف الجاري أيضًا.
+                var prepared: Map<String, PreparedFolder>? = prepareFiles(
+                    root.id, liveFiles!!, root, foundUris, report,
+                    collectUris = !isFirstScan
+                ) { parsed, total, currentFolder, currentFile ->
+                    publish(ScanProgress(ScanPhase.PARSING, parsed, total, currentFolder, currentFile), onProgress)
+                }
+                // STAGE 1C — تحرير القوائم الكبيرة فور انتهاء الحاجة إليها:
+                // القائمة الخام + مدخلات التصنيف لم يعد لهما أي استخدام بعد
+                // بناء `prepared` (الوحدات تُبنى من `prepared` بالمطابقة على uri).
+                // `PreparedFile.scanFile` يبقي كائنات الملفات الحيّة — وهي مجموعة
+                // العمل الضرورية — لكن مصفوفات القوائم والنسخ الوسيطة تُحرَّر.
+                liveFiles = null
+                logHeap("after-prepare folders=${prepared!!.size}")
+                // الإفراج الكبير الوحيد الذي يستحق GC صريح: ملايين الكائنات
+                // الوسيطة (IndexedValue/نسخ الفرز/خرائط التصنيف) صارت قمامة.
+                System.gc()
+
+                val resumeIndex = resumeIndexFor(root.id, checkpointDao, prepared!!, System.currentTimeMillis())
+                // كل ClassifiedBook كتاب مستقل بهويته البنيوية (author, series, title)؛
+                // المسار القديم (إصدار لكل مجلد) باقٍ للمسار غير الصارم فقط.
+                val signalsByFolder = if (classified != null) {
+                    val units = bookUnits(classified!!, prepared!!, root.displayName)
+                    // STAGE 1C (تابع): قائمة التصنيف انتهت مهمتها — الوحدات
+                    // تحمل حصصها من الملفات، فتُحرَّر القائمة الكاملة هنا.
+                    classified = null
+                    contexts = null
+                    prepared = null
+                    System.gc()
+                    logHeap("after-bookUnits units=${units.size}")
+                    resolveClassifiedBooks(root, units, report, resumeIndex) { done, total, folderPath ->
+                        publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+                    }
+                } else {
+                    val folderContexts = contexts!!
+                    contexts = null
+                    resolveEditions(root, prepared!!, folderContexts, report, resumeIndex) { done, total, folderPath ->
+                        publish(ScanProgress(ScanPhase.CREATING, done, total, folderPath), onProgress)
+                    }.also { prepared = null }
+                }
+
+                cancelled = ScanProgressBus.isCancelRequested
+                if (!cancelled && !isFirstScan) {
+                    markMissingFiles(root.id, root, foundUris, report)
+                }
+                if (!cancelled && StrictModeFlags.ENABLE_AUTO_MERGE) {
+                    reconcileAutoMerges(root.id, signalsByFolder, report)
+                }
+                // عند الإنجاز التام يُقطع checkpoint؛ أما عند الإيقاف فيبقى لاستئناف الفحص التالي.
+                if (!cancelled) checkpointDao.deleteForRoot(root.id)
+
+                foundUris.clear()
             }
-            if (!cancelled && StrictModeFlags.ENABLE_AUTO_MERGE) {
-                reconcileAutoMerges(root.id, signalsByFolder, report)
-            }
-            // عند الإنجاز التام يُقطع checkpoint؛ أما عند الإيقاف فيبقى لاستئناف الفحص التالي.
-            if (!cancelled) checkpointDao.deleteForRoot(root.id)
 
             ScanProgressBus.finish()
             database.libraryRootDao().markScanFinished(root.id, System.currentTimeMillis(), ScanStatus.IDLE)
@@ -201,7 +247,12 @@ class ScanRoot @Inject constructor(
         root: LibraryRootEntity,
         foundUris: MutableSet<String>,
         report: MutableScanReport,
-        onParsed: (parsed: Int, total: Int, currentFolder: String) -> Unit = { _, _, _ -> }
+        /**
+         * STAGE 1C: الفحص الأول لا يحتاج `foundUris` إطلاقًا (`markMissingFiles`
+         * يُتخطى)، فتمرير false يوفّر مجموعة 50 ألف سلسلة نصية كاملة.
+         */
+        collectUris: Boolean = true,
+        onParsed: (parsed: Int, total: Int, currentFolder: String, currentFile: String) -> Unit = { _, _, _, _ -> }
     ): Map<String, PreparedFolder> {
         val byFolder = LinkedHashMap<String, MutableList<PreparedFile>>()
 
@@ -214,10 +265,17 @@ class ScanRoot @Inject constructor(
         //     المكرر داخل المجلد نفسه تمرّ بلا كشف → يتكرر الملف مرتين.
         //   - `existingByFolder` يُفرَّغ فتُعاد استعلامات الـDAO بلا داعٍ.
         // الترتيب حسب `folderPath` يجعل التجاور مضمونًا، فيصحّ الإفراغ ويبقى
-        // الكاش محصورًا بأكبر مجلد. `sortedBy` مستقرّ، فترتيب الملفات داخل
-        // المجلد الواحد يبقى كما جاء من الاستكشاف، و`orderIndex` يأخذ الفهرس
-        // الأصلي لا الموضّع الجديد حتى لا يتغيّر معنى «أول ملف في الكتاب».
-        val ordered = files.withIndex().sortedBy { it.value.folderPath }
+        // الكاش محصورًا بأكبر مجلد.
+        //
+        // STAGE 1D — كان الترتيب `files.withIndex().sortedBy { … }`: نسخة
+        // كاملة من القائمة + كائن IndexedValue مُغلَّف لكل ملف + مصفوفة الفرز
+        // الوسيطة، كلها قمامة فورية بعشرات الميغابايت على 50 ألف ملف. الآن
+        // نرتّب **الفهارس** لا المدخلات: قائمة int واحدة (`sortedBy` مستقرّ،
+        // فترتيب الملفات داخل المجلد الواحد يبقى كما جاء من الاستكشاف)،
+        // و`orderIndex` يأخذ الفهرس الأصلي لا الموضّع الجديد حتى لا يتغيّر
+        // معنى «أول ملف في الكتاب».
+        val sortedIndices = files.indices.sortedBy { files[it].folderPath }
+        val total = sortedIndices.size
 
         // PART 2: كان `bucket.any { … }` مسحًا خطيًا لكل ملف داخل مجلده، أي O(N²)
         // على مجلد واحد (50 ألف ملف ≈ 1.25 مليار مقارنة). الآن مجموعة مفاتيح
@@ -229,11 +287,11 @@ class ScanRoot @Inject constructor(
         // الكاش الحيّ بحجم أكبر مجلد لا بحجم المكتبة كلها.
         val existingByFolder = HashMap<String, Map<String, AudioFileEntity>>()
 
-        ordered.forEachIndexed { position, indexed ->
-            val file = indexed.value
-            val originalIndex = indexed.index
+        sortedIndices.forEachIndexed { position, fileIndex ->
+            val file = files[fileIndex]
+            val originalIndex = fileIndex
             val uri = file.uri.toString()
-            foundUris += uri
+            if (collectUris) foundUris += uri
             report.filesSeen++
 
             val folderPath = file.folderPath
@@ -266,11 +324,12 @@ class ScanRoot @Inject constructor(
             // GAP 4: الإشعار كان يُنشر بمجلد فارغ `""` طوال مرحلة القراءة،
             // فيرى المستخدم «جارٍ فحص المكتبة» بلا أي موضع يتقدّم منه.
             // نمرّر الآن اسم المجلد الحقيقي للملف الجاري قراءته.
-            if ((position + 1) % PROGRESS_INTERVAL == 0 || position + 1 == ordered.size) {
-                onParsed(position + 1, ordered.size, folderPath)
+            // STAGE 2: + اسم الملف الجاري (بلا مسار) ليعرضه الإشعار والواجهة.
+            if ((position + 1) % PROGRESS_INTERVAL == 0 || position + 1 == total) {
+                onParsed(position + 1, total, folderPath, file.fileName)
             }
 
-            if (position + 1 == ordered.size || ordered[position + 1].value.folderPath != folderPath) {
+            if (position + 1 == total || files[sortedIndices[position + 1]].folderPath != folderPath) {
                 existingByFolder.remove(folderPath)
                 seenKeysByFolder.remove(folderPath)
             }
@@ -1006,6 +1065,16 @@ class ScanRoot @Inject constructor(
         /** حجم صفحة [markMissingFiles] — يحدّ ذروة كيانات audio_files الحيّة. */
         private const val MISSING_SCAN_PAGE = 200
         private const val CHECKPOINT_TTL_MS = 24L * 60L * 60L * 1000L
+
+        /**
+         * STAGE 1C — سجل الكومة بعد كل طور: `used = total - free` بالميغابايت.
+         * يُقرأ من اللوغ مع سطر `scan-complete` لتتبّع أي انحدار ذاكرة.
+         */
+        private fun logHeap(phase: String) {
+            val runtime = Runtime.getRuntime()
+            val usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024.0 * 1024.0)
+            Log.i(TAG, "heap-$phase used=${"%.1f".format(usedMb)}MB")
+        }
     }
 }
 

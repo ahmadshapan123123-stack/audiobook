@@ -150,6 +150,9 @@ import com.example.audiobook.playback.PlaybackController
 import com.example.audiobook.playback.SleepTimerController
 import com.example.audiobook.domain.usecases.DatabaseSeeder
 import com.example.audiobook.domain.usecases.LibraryManagement
+import com.example.audiobook.domain.usecases.ScanProgressBus
+import com.example.audiobook.domain.usecases.ScanResume
+import com.example.audiobook.background.scan.ScanNotification
 import com.example.audiobook.domain.usecases.MarksCoordinator
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -208,13 +211,29 @@ class MainActivity : ComponentActivity() {
         reminderScheduler.syncWithSettings()
         // حقن بيانات التجربة على إصدارات التصحيح فقط (مرجعها ثابت الكذب في الإنتاج فتُشذَّب).
         // وفي إصدار الإنتاج تُنظَّف أي بقايا كتب تجريبية قادمة من ترقية بعد استخدام نسخة تصحيح.
-        if (BuildConfig.DEBUG) {
-            lifecycleScope.launch {
-                EntryPointAccessors.fromApplication(this@MainActivity, SeederEntryPoint::class.java)
-                    .databaseSeeder()
+        //
+        // STAGE 6A — في التصحيح أيضًا: إن وُجد جذر حقيقي (غير تجريبي) فالتجريبي
+        // صار ضجيجًا يُخفي مكتبة المستخدم — يُنظَّف بدل إعادة زرعه. البذر فقط
+        // عند غياب أي جذر حقيقي (تثبيت جديد).
+        //
+        // STAGE 4 — بعد الإقلاع: إن بقي checkpoint صالح ولا فحص يعمل، يُعرض
+        // إشعار «فحص متوقف» بزر استئناف (يكمل من المجلد المحفوظ).
+        lifecycleScope.launch {
+            if (BuildConfig.DEBUG) {
+                val hasRealRoots = database.libraryRootDao().getAll().any { !it.isDemo }
+                if (hasRealRoots) {
+                    libraryManagement.clearDemoData()
+                } else {
+                    EntryPointAccessors.fromApplication(this@MainActivity, SeederEntryPoint::class.java)
+                        .databaseSeeder()
+                }
+            } else {
+                libraryManagement.clearDemoData()
             }
-        } else {
-            lifecycleScope.launch { libraryManagement.clearDemoData() }
+            val resume = ScanResume.freshCheckpoint(database)
+            if (resume != null && !ScanProgressBus.isScanActive) {
+                ScanNotification.postResumeAvailable(this@MainActivity, resume.rootLabel)
+            }
         }
         setContent {
             val navController = rememberNavController()

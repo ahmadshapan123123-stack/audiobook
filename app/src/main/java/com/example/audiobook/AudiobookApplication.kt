@@ -44,12 +44,17 @@ class AudiobookApplication : Application() {
         // PART 7.2: onTrimMemory / onLowMemory. التطبيق يحتفظ بكائنات كبيرة
         // (قوائم فحص، خرائط تصنيف)، فالتنبيه يLogged فقط — الإفراج الفعلي
         // يجري بمقدار الحارس (tryBegin) والتفريغ التدريجي (PART 4/5).
+        //
+        // STAGE 1E: لم يعد التسجيل وحده كافيًا — لقد قُتلت العملية تحت ضغط
+        // الذاكرة لأن شيئًا لم يُحرَّر فعلًا. الآن يُستدعى سجل الإفراغات
+        // (كاشات قابلة لإعادة البناء + GC يعيد الصفحات للنظام).
         registerComponentCallbacks(object : ComponentCallbacks2 {
             override fun onTrimMemory(level: Int) {
                 Log.i(TAG, "onTrimMemory level=$level")
                 if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
                     // لا نُبطل الفحص الجاري: إبطاؤه فقط عبر تساهل الحارس.
                     MemoryPressure.onLowMemory(level)
+                    MemoryPressureReleasers.releaseAll()
                 }
             }
 
@@ -58,6 +63,7 @@ class AudiobookApplication : Application() {
             override fun onLowMemory() {
                 Log.w(TAG, "onLowMemory")
                 MemoryPressure.onLowMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+                MemoryPressureReleasers.releaseAll()
             }
         })
     }

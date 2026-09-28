@@ -30,6 +30,7 @@ import com.example.audiobook.data.room.entity.ScanStatus
 import com.example.audiobook.presentation.libraryroots.LibraryRootsScreen
 import com.example.audiobook.presentation.libraryroots.LibraryRootsViewModel
 import com.example.audiobook.domain.model.AppThemeMode
+import com.example.audiobook.domain.usecases.libraryManagementFor
 import com.example.audiobook.presentation.theme.AudiobookTheme
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -90,7 +91,8 @@ class LibraryRootsScreenAccessibilityTest {
             application = Application(),
             repository = repository,
             rootDao = dao,
-            scanScheduler = ScanScheduler(context, repository)
+            scanScheduler = ScanScheduler(context, repository),
+            libraryManagement = libraryManagementFor(database)
         )
         composeRule.setContent {
             CompositionLocalProvider(

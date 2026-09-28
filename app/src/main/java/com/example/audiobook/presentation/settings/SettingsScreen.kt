@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +35,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
@@ -156,6 +159,21 @@ fun SettingsScreen(
     val autoSeriesClassification by viewModel.autoSeriesClassification.collectAsStateWithLifecycle()
     val isPreviewingClassification by viewModel.isPreviewingClassification.collectAsStateWithLifecycle()
     val classificationPreview by viewModel.classificationPreview.collectAsStateWithLifecycle()
+    // STAGE 4/5 — الاستئناف والدمج.
+    val resumeInfo by viewModel.resumeInfo.collectAsStateWithLifecycle()
+    val mergeCandidates by viewModel.mergeCandidates.collectAsStateWithLifecycle()
+    val mergePreview by viewModel.mergePreview.collectAsStateWithLifecycle()
+    val mergeResult by viewModel.mergeResult.collectAsStateWithLifecycle()
+    val mergeFailed by viewModel.mergeFailed.collectAsStateWithLifecycle()
+    val isMerging by viewModel.isMerging.collectAsStateWithLifecycle()
+    var showMergeDialog by remember { mutableStateOf(false) }
+    var mergeParentName by remember { mutableStateOf("") }
+    val parentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            val name = mergeParentName.trim().ifBlank { it.lastPathSegment?.substringAfterLast(':') ?: it.toString() }
+            viewModel.applyMerge(it.toString(), name, mergeCandidates.map { c -> c.rootId })
+        }
+    }
     var showDailyTimePicker by remember { mutableStateOf(false) }
     var showRemoveDemoDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -181,6 +199,8 @@ fun SettingsScreen(
     val rebuildDoneTemplate = stringResource(R.string.settings_rebuild_result)
     val rebuildFailedMessage = stringResource(R.string.settings_rebuild_failed)
     val rebuildFailedReasonTemplate = stringResource(R.string.settings_rebuild_failed_reason)
+    val mergeDoneTemplate = stringResource(R.string.settings_merge_roots_done)
+    val mergeFailedMessage = stringResource(R.string.settings_merge_roots_failed)
     LaunchedEffect(rebuildResult) {
         rebuildResult?.let { result ->
             snackbarHostState.showSnackbar(
@@ -243,6 +263,24 @@ fun SettingsScreen(
                 String.format(Locale.US, reclassifyDoneTemplate, applied.affectedBooks)
             )
             viewModel.consumeReclassifyApplied()
+        }
+    }
+    // STAGE 4/5 — تحديث الاستئناف والدمج عند فتح الشاشة.
+    LaunchedEffect(Unit) {
+        viewModel.refreshResumeInfo()
+        viewModel.refreshMergeCandidates()
+    }
+    // STAGE 5 — نتائج الدمج.
+    LaunchedEffect(mergeResult) {
+        mergeResult?.let { books ->
+            snackbarHostState.showSnackbar(String.format(Locale.US, mergeDoneTemplate, books))
+            viewModel.consumeMergeResult()
+        }
+    }
+    LaunchedEffect(mergeFailed) {
+        if (mergeFailed) {
+            snackbarHostState.showSnackbar(mergeFailedMessage)
+            viewModel.consumeMergeFailed()
         }
     }
 
@@ -392,6 +430,33 @@ fun SettingsScreen(
                             stringResource(R.string.settings_scan_now_desc)
                         },
                         onClick = { viewModel.scanNow() }
+                    )
+                    SettingsDivider()
+                    // STAGE 4 — استئناف الفحص الأخير (checkpoint صالح < 24h).
+                    if (resumeInfo != null && !isScanning) {
+                        SettingsActionRow(
+                            title = stringResource(R.string.settings_resume_last_scan),
+                            subtitle = stringResource(
+                                R.string.settings_resume_last_scan_desc,
+                                resumeInfo?.rootLabel.orEmpty()
+                            ),
+                            onClick = { viewModel.resumeLastScan() }
+                        )
+                        SettingsDivider()
+                    }
+                    // STAGE 5 — دمج الجذور أحادية المؤلف.
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_merge_roots),
+                        subtitle = if (mergeCandidates.isEmpty()) {
+                            stringResource(R.string.settings_merge_roots_none)
+                        } else {
+                            stringResource(R.string.settings_merge_roots_desc)
+                        },
+                        enabled = mergeCandidates.isNotEmpty() && !isMerging && !isScanning,
+                        onClick = {
+                            viewModel.previewMerge(mergeCandidates.map { it.rootId })
+                            showMergeDialog = true
+                        }
                     )
                     SettingsDivider()
                     SettingsActionRow(
@@ -767,6 +832,78 @@ fun SettingsScreen(
             },
             title = { Text(stringResource(R.string.settings_remove_demo)) },
             text = { Text(stringResource(R.string.settings_remove_demo_confirm)) }
+        )
+    }
+
+    // STAGE 5 — حوار الدمج: المرشحون + اسم الأب + اختيار مجلده.
+    if (showMergeDialog) {
+        val preview = mergePreview
+        AlertDialog(
+            onDismissRequest = { if (!isMerging) { showMergeDialog = false; viewModel.consumeMergePreview() } },
+            confirmButton = {
+                TextButton(
+                    enabled = !isMerging && preview != null && preview.candidates.isNotEmpty(),
+                    onClick = { showMergeDialog = false; parentPicker.launch(null) }
+                ) { Text(stringResource(R.string.settings_merge_roots)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isMerging,
+                    onClick = { showMergeDialog = false; viewModel.consumeMergePreview() }
+                ) { Text(stringResource(R.string.cancel)) }
+            },
+            title = {
+                Text(
+                    stringResource(
+                        R.string.settings_merge_roots_confirm_title,
+                        preview?.candidates?.size ?: mergeCandidates.size
+                    )
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    (preview?.candidates ?: mergeCandidates).forEach { candidate ->
+                        Text(
+                            text = "${candidate.rootName} — ${candidate.authorName} (${candidate.bookCount})",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    HorizontalDivider()
+                    if (preview != null) {
+                        Text(
+                            stringResource(
+                                R.string.settings_merge_roots_confirm_body,
+                                preview.totalBooks,
+                                preview.totalEditions,
+                                mergeParentName.trim().ifBlank { "…" }
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    androidx.compose.material3.                    OutlinedTextField(
+                        value = mergeParentName,
+                        onValueChange = { mergeParentName = it },
+                        placeholder = { Text(stringResource(R.string.settings_merge_roots_pick_parent)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (isMerging) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(R.string.settings_scanning),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
         )
     }
 

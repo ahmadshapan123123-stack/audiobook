@@ -22,10 +22,40 @@ interface LibraryFileSource {
      * عملية I/O حاجبة يجب أن تُستدعى على خيط خلفي (Dispatchers.IO) حصرًا.
      *
      * التنفيذات تلتزم بسقفي [ScanLimits.MAX_DEPTH] و[ScanLimits.MAX_FILES]
-     *(LOG فقط) فلا تتكدّس الحلقات ولا تنفد الذاكرة على شجرة ضخمة أو عميقة.
+     * (LOG فقط) فلا تتكدّس الحلقات ولا تنفد الذاكرة على شجرة ضخمة أو عميقة.
+     *
+     * التنفيذ الافتراضي يجمّع عبر [streamAudioFiles]؛ المصادر الاختبارية
+     * الصغيرة تكتفي بتجاوز هذه الدالة وترث البثّ مجانًا.
      */
     @WorkerThread
-    fun listAudioFiles(rootUri: Uri): List<ScanFile>
+    fun listAudioFiles(rootUri: Uri): List<ScanFile> {
+        val out = mutableListOf<ScanFile>()
+        streamAudioFiles(rootUri) { out += it }
+        return out
+    }
+
+    /**
+     * STAGE 1B — بثّ ملفات SAF ملفًا ملفًا بدل بناء القائمة كاملة.
+     *
+     * يُستدعى [onFile] على كل ملف صوتي فور العثور عليه، فيقرر المستهلك
+     * (الفحص) التجميع أو المعالجة أو الإسقاط. [isCancelled] يُفحص في نقاط
+     * آمنة أثناء الجوس فيتوقف الجوس مبكرًا عند طلب الإلغاء بدل إكمال
+     * شجرة 50 ألف ملف عبثًا.
+     *
+     * تحذير: الدالتان لهما تنفيذ افتراضي يستدعي الأخرى — أي تنفيذ يجب أن
+     * يتجاوز واحدة منهما على الأقل وإلا وقع في تكرار لا نهائي.
+     */
+    @WorkerThread
+    fun streamAudioFiles(
+        rootUri: Uri,
+        isCancelled: () -> Boolean = { false },
+        onFile: (ScanFile) -> Unit
+    ) {
+        listAudioFiles(rootUri).forEach { file ->
+            if (isCancelled()) return
+            onFile(file)
+        }
+    }
 }
 
 /** سقوف أمان لت walkers شجرة SAF — تمنع StackOverflow ونمو القائمة بلا حد. */
@@ -38,43 +68,57 @@ object ScanLimits {
 }
 
 class DocumentTreeFileSource @Inject constructor(private val context: Context) : LibraryFileSource {
+    /**
+     * STAGE 1B — الجوس الحقيقي متدفق: لا قائمة `result` متراكمة هنا.
+     * كل ملف يُسلَّم فورًا عبر [onFile]، فيبقى الحيّ أثناء الجوس
+     * بحجم عمق الشجرة لا بحجم المكتبة.
+     */
     @WorkerThread
-    override fun listAudioFiles(rootUri: Uri): List<ScanFile> {
-        val root = DocumentFile.fromTreeUri(context, rootUri) ?: return emptyList()
-        val result = mutableListOf<ScanFile>()
+    override fun streamAudioFiles(
+        rootUri: Uri,
+        isCancelled: () -> Boolean,
+        onFile: (ScanFile) -> Unit
+    ) {
+        val root = DocumentFile.fromTreeUri(context, rootUri) ?: return
         var depthLimitReached = false
         var fileCapReached = false
+        var emitted = 0
 
-        fun visit(folder: DocumentFile, relativeFolder: String, depth: Int) {
+        fun visit(folder: DocumentFile, relativeFolder: String, depth: Int): Boolean {
+            if (isCancelled()) return false
             if (depth > ScanLimits.MAX_DEPTH) {
                 depthLimitReached = true
                 Log.w(TAG, "Depth limit ${ScanLimits.MAX_DEPTH} reached at \"$relativeFolder\"; deeper folders skipped")
-                return
+                return true
             }
-            if (result.size >= ScanLimits.MAX_FILES) {
+            if (emitted >= ScanLimits.MAX_FILES) {
                 fileCapReached = true
-                return
+                return false
             }
             for (child in folder.listFiles().sortedBy { it.name.orEmpty() }) {
                 // إعادة الفحص في كل تكرار: الحارس قد يُفعَّل أثناء هذا الجوس.
-                if (result.size >= ScanLimits.MAX_FILES) {
-                    fileCapReached = true
-                    break
+                if (isCancelled() || emitted >= ScanLimits.MAX_FILES) {
+                    fileCapReached = emitted >= ScanLimits.MAX_FILES
+                    return false
                 }
                 val name = child.name.orEmpty()
                 if (child.isDirectory) {
-                    visit(child, joinPath(relativeFolder, name), depth + 1)
+                    if (!visit(child, joinPath(relativeFolder, name), depth + 1)) return false
                 } else if (name.substringAfterLast('.', "").lowercase() in SUPPORTED_EXTENSIONS) {
-                    result += ScanFile(
-                        uri = child.uri,
-                        relativePath = joinPath(relativeFolder, name),
-                        folderPath = relativeFolder,
-                        fileName = name,
-                        size = child.length(),
-                        lastModified = child.lastModified()
+                    onFile(
+                        ScanFile(
+                            uri = child.uri,
+                            relativePath = joinPath(relativeFolder, name),
+                            folderPath = relativeFolder,
+                            fileName = name,
+                            size = child.length(),
+                            lastModified = child.lastModified()
+                        )
                     )
+                    emitted++
                 }
             }
+            return true
         }
         visit(root, "", depth = 1)
 
@@ -84,7 +128,6 @@ class DocumentTreeFileSource @Inject constructor(private val context: Context) :
         if (depthLimitReached) {
             Log.w(TAG, "Some folders beyond depth ${ScanLimits.MAX_DEPTH} were not scanned.")
         }
-        return result
     }
 
     private fun joinPath(relativeFolder: String, name: String): String =

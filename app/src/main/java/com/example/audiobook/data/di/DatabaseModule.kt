@@ -40,6 +40,8 @@ object DatabaseModule {
     @Provides fun provideFavoriteBookDao(db: AppDatabase) = db.favoriteBookDao()
 
     @Provides fun providePendingDiscoveryDao(db: AppDatabase) = db.pendingDiscoveryDao()
+    @Provides fun provideScanCheckpointDao(db: AppDatabase) = db.scanCheckpointDao()
+    @Provides fun provideOnboardingEditDao(db: AppDatabase) = db.onboardingEditDao()
 
     @Provides fun provideBookRepository(dao: com.example.audiobook.data.room.dao.BookDao): BookRepository = LocalOnlyBookRepository(dao)
     @Provides fun provideEditionRepository(dao: com.example.audiobook.data.room.dao.EditionDao): EditionRepository = LocalOnlyEditionRepository(dao)

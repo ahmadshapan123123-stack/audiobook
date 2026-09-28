@@ -28,7 +28,14 @@ internal object ScanNotification {
         detail: String,
         progress: Int,
         indeterminate: Boolean,
-        cancellable: Boolean
+        cancellable: Boolean,
+        /**
+         * STAGE 3A — لحظة بدء الفحص (uptime ms): تُعرض «منذ 2:34» تلقائيًا
+         * عبر chronometer النظام، وتتحدث كل ثانية بلا أي عمل منا.
+         */
+        startedAtMs: Long? = null,
+        /** STAGE 2 — نص موسّع (مجلد + ملف + ETA) يظهر عند فرد الإشعار. */
+        bigText: String? = null
     ): Notification {
         val builder = NotificationCompat.Builder(context, NotificationChannels.SCAN)
             .setSmallIcon(R.drawable.ic_scan)
@@ -40,6 +47,12 @@ internal object ScanNotification {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setProgress(100, progress.coerceIn(0, 100), indeterminate)
             .setContentIntent(taskIntent(context))
+        if (startedAtMs != null) {
+            builder.setWhen(startedAtMs).setUsesChronometer(true)
+        }
+        if (bigText != null) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+        }
 
         if (cancellable) {
             builder.addAction(
@@ -57,24 +70,35 @@ internal object ScanNotification {
         folderLabel: String,
         current: Int,
         total: Int,
-        indeterminate: Boolean
-    ): Notification = build(
-        context = context,
-        title = context.getString(R.string.notif_scan_title_scanning),
-        detail = if (total > 0) {
-            context.getString(
-                R.string.notif_scan_progress,
-                folderLabel.ifBlank { context.getString(R.string.notif_scan_no_folder) },
-                current,
-                total
-            )
+        indeterminate: Boolean,
+        currentFile: String = "",
+        startedAtMs: Long? = null,
+        etaText: String? = null
+    ): Notification {
+        val folder = folderLabel.ifBlank { context.getString(R.string.notif_scan_no_folder) }
+        val detail = if (total > 0) {
+            context.getString(R.string.notif_scan_progress, folder, current, total)
         } else {
             folderLabel.ifBlank { context.getString(R.string.notif_scan_progress_indeterminate) }
-        },
-        progress = if (total > 0) ((current.toLong() * 100) / total).toInt() else 0,
-        indeterminate = indeterminate || total <= 0,
-        cancellable = true
-    )
+        }
+        // STAGE 2+3: السطر الموسّع — المجلد، ثم الملف الجاري، ثم الوقت المتبقي.
+        val bigLines = buildList {
+            add(folder)
+            if (currentFile.isNotBlank()) add(currentFile)
+            if (total > 0) add(context.getString(R.string.notif_scan_progress, folder, current, total))
+            if (etaText != null) add(etaText)
+        }
+        return build(
+            context = context,
+            title = context.getString(R.string.notif_scan_title_scanning),
+            detail = detail,
+            progress = if (total > 0) ((current.toLong() * 100) / total).toInt() else 0,
+            indeterminate = indeterminate || total <= 0,
+            cancellable = true,
+            startedAtMs = startedAtMs,
+            bigText = bigLines.joinToString("\n")
+        )
+    }
 
     /**
      * تحديث الإشعار القائم. `notify` بنفس الـid يستبدل الإشعار، فالنوع
@@ -85,12 +109,15 @@ internal object ScanNotification {
         folderLabel: String,
         current: Int,
         total: Int,
-        indeterminate: Boolean
+        indeterminate: Boolean,
+        currentFile: String = "",
+        startedAtMs: Long? = null,
+        etaText: String? = null
     ) {
         try {
             NotificationManagerCompat.from(context).notify(
                 NotificationChannels.ID_SCAN,
-                scanning(context, folderLabel, current, total, indeterminate)
+                scanning(context, folderLabel, current, total, indeterminate, currentFile, startedAtMs, etaText)
             )
         } catch (error: SecurityException) {
             // إذن الإشعارات غير ممنوح: الإشعار غير مرئي أصلًا، والفحص يعمل.
@@ -105,6 +132,48 @@ internal object ScanNotification {
             // إذن الإشعارات غير ممنوح: لا إشعار لإلغائه. غير قاتل.
             Log.w(TAG, "Unable to cancel scan notification", error)
         }
+    }
+
+    /**
+     * STAGE 3C/4 — إشعار «فحص متوقف» بزر استئناف.
+     *
+     * إشعار عادي (ليس foreground — لا خدمة تعمل)، بنفس الـid فيحل محل أي
+     * أثر سابق. الضغط على «استئناف الفحص» يوقظ الخدمة التي تطلق FULL_SCAN،
+     * و`resumeIndexFor` يكمل تلقائيًا من مجلد الـcheckpoint.
+     */
+    fun postResumeAvailable(context: Context, rootLabel: String) {
+        try {
+            val notification = NotificationCompat.Builder(context, NotificationChannels.SCAN)
+                .setSmallIcon(R.drawable.ic_scan)
+                .setContentTitle(context.getString(R.string.notif_resume_scan_title))
+                .setContentText(context.getString(R.string.notif_resume_scan_text, rootLabel))
+                .setOngoing(false)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(taskIntent(context))
+                .addAction(
+                    R.drawable.ic_scan,
+                    context.getString(R.string.action_resume_scan),
+                    resumeIntent(context)
+                )
+                .build()
+            NotificationManagerCompat.from(context).notify(NotificationChannels.ID_SCAN, notification)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Unable to post resume notification", error)
+        }
+    }
+
+    private fun resumeIntent(context: Context): PendingIntent {
+        val intent = Intent(context, ScanForegroundService::class.java).apply {
+            action = ScanForegroundService.ACTION_RESUME
+        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        return PendingIntent.getService(context, REQUEST_RESUME, intent, flags)
     }
 
     private fun taskIntent(context: Context): PendingIntent {
@@ -142,4 +211,5 @@ internal object ScanNotification {
     private const val TAG = "ScanNotification"
     private const val REQUEST_TASK = 9101
     private const val REQUEST_CANCEL = 9102
+    private const val REQUEST_RESUME = 9103
 }

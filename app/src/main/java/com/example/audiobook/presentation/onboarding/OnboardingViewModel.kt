@@ -55,7 +55,17 @@ sealed interface OnboardingState {
     data class Previewing(val phase: ScanPhase, val processed: Int, val total: Int) : OnboardingState
     data class ShowPreview(val tree: PreviewTree) : OnboardingState
     data class Editing(val tree: PreviewTree, val edits: List<ClassificationEdit>) : OnboardingState
-    data class Importing(val phase: ScanPhase, val processed: Int, val total: Int) : OnboardingState
+    /**
+     * STAGE 2 — شاشة الاستيراد تعرض المجلد والملف الجاريين (تُملآن من
+     * الناقل المشترك عبر [publishImport])، لا العدّادات وحدها.
+     */
+    data class Importing(
+        val phase: ScanPhase,
+        val processed: Int,
+        val total: Int,
+        val folder: String = "",
+        val file: String = ""
+    ) : OnboardingState
     data object Done : OnboardingState
 }
 
@@ -324,7 +334,10 @@ class OnboardingViewModel @Inject constructor(
     }
 
     private fun publishImport(progress: ScanProgress) {
-        _state.value = OnboardingState.Importing(progress.phase, progress.processed, progress.total)
+        _state.value = OnboardingState.Importing(
+            progress.phase, progress.processed, progress.total,
+            folder = progress.currentFolder, file = progress.currentFile
+        )
     }
 
     private fun currentTree(): PreviewTree? {

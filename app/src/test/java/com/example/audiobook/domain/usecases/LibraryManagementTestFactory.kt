@@ -28,7 +28,10 @@ fun libraryManagementFor(database: AppDatabase): LibraryManagement = LibraryMana
     crossRefDao = database.collectionBookCrossRefDao(),
     favoriteBookDao = database.favoriteBookDao(),
     chapterCompletionDao = database.chapterCompletionDao(),
-    libraryRootDao = database.libraryRootDao()
+    libraryRootDao = database.libraryRootDao(),
+    scanCheckpointDao = database.scanCheckpointDao(),
+    pendingDiscoveryDao = database.pendingDiscoveryDao(),
+    onboardingEditDao = database.onboardingEditDao()
 )
 
 /** File source that reports an empty library (used when a test never scans). */

@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiobook.R
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.domain.usecases.ScanPhase
+import com.example.audiobook.presentation.common.middleTruncated
 import com.example.audiobook.domain.usecases.StrictFolderClassifier.PreviewTree
 
 /**
@@ -92,6 +93,7 @@ fun OnboardingScreen(
         )
         is OnboardingState.Importing -> ImportStep(
             phase = current.phase, processed = current.processed, total = current.total,
+            folder = current.folder, file = current.file,
             onCancel = viewModel::cancel
         )
         OnboardingState.Done -> Unit // LaunchedEffect بدأ الفتح
@@ -284,7 +286,14 @@ private fun ProgressStep(phase: ScanPhase, processed: Int, total: Int) {
 }
 
 @Composable
-private fun ImportStep(phase: ScanPhase, processed: Int, total: Int, onCancel: () -> Unit) {
+private fun ImportStep(
+    phase: ScanPhase,
+    processed: Int,
+    total: Int,
+    folder: String,
+    file: String,
+    onCancel: () -> Unit
+) {
     StepContainer {
         Text(
             text = stringResource(R.string.onboarding_importing_title),
@@ -299,8 +308,37 @@ private fun ImportStep(phase: ScanPhase, processed: Int, total: Int, onCancel: (
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        // STAGE 2 — الموضع الجاري: مجلد + ملف (مقلّصان من المنتصف)، ثم شريط X/Y.
+        if (folder.isNotBlank() || file.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            if (folder.isNotBlank()) {
+                Text(
+                    text = folder.middleTruncated(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+            if (file.isNotBlank()) {
+                Text(
+                    text = file.middleTruncated(32),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+        }
         Spacer(Modifier.height(24.dp))
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (total > 0) {
+            LinearProgressIndicator(
+                progress = { (processed.toFloat() / total).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
         Spacer(Modifier.height(24.dp))
         TextButton(onClick = onCancel) {
             Text(stringResource(R.string.onboarding_cancel_import), color = MaterialTheme.colorScheme.error)

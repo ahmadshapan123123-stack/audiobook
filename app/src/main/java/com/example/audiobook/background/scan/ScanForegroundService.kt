@@ -81,6 +81,10 @@ class ScanForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
 
+    /** STAGE 3A — wall-clock بدء المهمة الجارية، لchronometer الإشعار. */
+    @Volatile
+    private var scanStartedAtMs: Long = 0L
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -98,15 +102,24 @@ class ScanForegroundService : Service() {
             }
         }
 
-        val jobName = intent?.getStringExtra(EXTRA_JOB)
-            ?.let { name -> runCatching { ScanJob.valueOf(name) }.getOrNull() }
+        // STAGE 4 — زر «استئناف الفحص» من إشعار الفحص المتوقف: فحص كامل
+        // عادي، و`resumeIndexFor` داخل ScanRoot يكمل تلقائيًا من مجلد
+        // الـcheckpoint الباقي بدل البدء من الصفر.
+        val isResume = intent?.action == ACTION_RESUME
+        val jobName = if (isResume) {
+            ScanJob.FULL_SCAN
+        } else {
+            intent?.getStringExtra(EXTRA_JOB)
+                ?.let { name -> runCatching { ScanJob.valueOf(name) }.getOrNull() }
+        }
         if (jobName == null) {
             val reason = "unusable job extra: ${intent?.getStringExtra(EXTRA_JOB)}"
             Log.w(TAG, reason)
             serviceScope.launch { failAndStop(reason) }
             return START_NOT_STICKY
         }
-        val request = ScanRequest(job = jobName, rootId = intent.getStringExtra(EXTRA_ROOT_ID))
+        val request = ScanRequest(job = jobName, rootId = intent?.getStringExtra(EXTRA_ROOT_ID))
+        if (isResume) Log.i(TAG, "resume-requested via notification action")
         if (request.job == ScanJob.SINGLE_ROOT && request.rootId.isNullOrBlank()) {
             val reason = "SINGLE_ROOT without rootId"
             Log.w(TAG, reason)
@@ -115,12 +128,14 @@ class ScanForegroundService : Service() {
         }
 
         // الحماية أولاً: startForeground قبل أي عمل ثقيل.
-        if (!promoteToForeground(request)) return START_NOT_STICKY
-
         if (job?.isActive == true) {
             Log.w(TAG, "start-while-running job=${request.job}; ignoring duplicate start")
             return START_NOT_STICKY
         }
+        // STAGE 3A — ساعة المهمة تُضبط هنا (لا داخل الكوروتين) فيحمل حتى
+        // الإشعار الأولي نفس الأساس الزمني.
+        scanStartedAtMs = System.currentTimeMillis()
+        if (!promoteToForeground(request)) return START_NOT_STICKY
 
         job = serviceScope.launch {
             // مراقب التقدّم في نطاق فرعي: ينتهي فور انتهاء الفحص بدل أن
@@ -145,7 +160,8 @@ class ScanForegroundService : Service() {
             folderLabel = "",
             current = 0,
             total = 0,
-            indeterminate = true
+            indeterminate = true,
+            startedAtMs = scanStartedAtMs.takeIf { it > 0 }
         )
         return try {
             ServiceCompat.startForeground(
@@ -167,7 +183,10 @@ class ScanForegroundService : Service() {
         }
     }
 
-    /** يعكس تقدّم [ScanProgressBus] على الإشعار: المجلد + N/M. */
+    /**
+     * يعكس تقدّم [ScanProgressBus] على الإشعار: المجلد + الملف الجاري + N/M.
+     * STAGE 3B — بعد 100 ملف يُحسب ETA من المعدل ويُعرض «متبقٍ ~M:SS».
+     */
     private suspend fun observeProgressForNotification() {
         ScanProgressBus.state.collectLatest { progress ->
             if (progress == null || !ScanProgressBus.active.value) return@collectLatest
@@ -180,9 +199,31 @@ class ScanForegroundService : Service() {
                 folderLabel = label,
                 current = progress.processed,
                 total = progress.total,
-                indeterminate = progress.total <= 0
+                indeterminate = progress.total <= 0,
+                currentFile = progress.currentFile,
+                startedAtMs = scanStartedAtMs.takeIf { it > 0 },
+                etaText = computeEta(progress.processed, progress.total)
             )
         }
+    }
+
+    /**
+     * STAGE 3B — تقدير الوقت المتبقي من معدل المعالجة منذ بدء المهمة.
+     * @return «متبقٍ ~M:SS» أو null إن تعذّر التقدير (أقل من 100 ملف أو بلا معدل).
+     */
+    private fun computeEta(processed: Int, total: Int): String? {
+        if (processed <= 100 || total <= processed) return null
+        val elapsedMs = System.currentTimeMillis() - scanStartedAtMs
+        if (elapsedMs <= 0 || scanStartedAtMs <= 0) return null
+        val ratePerMs = processed.toDouble() / elapsedMs
+        if (ratePerMs <= 0) return null
+        val remainingMs = ((total - processed) / ratePerMs).toLong()
+        return getString(com.example.audiobook.R.string.notif_scan_eta, formatDuration(remainingMs))
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val totalSeconds = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
     }
 
     private suspend fun runRequest(request: ScanRequest) {
@@ -338,6 +379,9 @@ class ScanForegroundService : Service() {
 
         /** intent قارئه `ScanNotification` لبناء زر الإلغاء. */
         const val ACTION_CANCEL = "com.example.audiobook.action.CANCEL_SCAN"
+
+        /** STAGE 4 — زر «استئناف الفحص» من إشعار الفحص المتوقف. */
+        const val ACTION_RESUME = "com.example.audiobook.action.RESUME_SCAN"
         private const val EXTRA_JOB = "scan_job"
         private const val EXTRA_ROOT_ID = "scan_root_id"
         private const val FINISH_NOTIFICATION_MS = 2_500L

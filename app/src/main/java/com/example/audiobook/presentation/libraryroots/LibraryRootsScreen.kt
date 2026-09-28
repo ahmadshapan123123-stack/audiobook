@@ -2,6 +2,8 @@ package com.example.audiobook.presentation.libraryroots
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Surface
@@ -22,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -85,13 +94,16 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}
                 onPriorityChanged = { viewModel.setPriority(root, it) },
                 onEnabledChanged = { viewModel.setEnabled(root, it) },
                 onRefresh = { viewModel.refresh(root) },
-                onReGrant = { reGrantPicker.launch(android.net.Uri.parse(root.uri)) }
+                onReGrant = { reGrantPicker.launch(android.net.Uri.parse(root.uri)) },
+                onDelete = { viewModel.deleteRoot(root) },
+                onRename = { name -> viewModel.renameRoot(root, name) }
             )
         }
     }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryRootRow(
     root: LibraryRootEntity,
@@ -99,8 +111,14 @@ private fun LibraryRootRow(
     onPriorityChanged: (Boolean) -> Unit,
     onEnabledChanged: (Boolean) -> Unit,
     onRefresh: () -> Unit,
-    onReGrant: () -> Unit
+    onReGrant: () -> Unit,
+    // STAGE 6B — حذف/إعادة تسمية عبر ضغطة مطوّلة.
+    onDelete: () -> Unit,
+    onRename: (String) -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
     val appAccent = LocalAppAccent.current
     val switchColors = SwitchDefaults.colors(
         checkedThumbColor = appAccent.onAccent,
@@ -110,7 +128,14 @@ private fun LibraryRootRow(
         uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
         uncheckedBorderColor = MaterialTheme.colorScheme.outline
     )
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { showMenu = true }
+            )
+    ) {
         Text(root.displayName, style = MaterialTheme.typography.titleMedium)
         Text(root.uri, style = MaterialTheme.typography.bodySmall)
         val priorityDesc = stringResource(R.string.library_folder_priority_toggle, root.displayName)
@@ -153,6 +178,58 @@ private fun LibraryRootRow(
             Button(onClick = onReGrant, modifier = Modifier.minTouchTarget()) {
                 Text(stringResource(R.string.library_folder_access_repair))
             }
+        }
+        // STAGE 6B — قائمة الضغطة المطوّلة: إعادة تسمية / حذف.
+        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.library_folder_rename)) },
+                onClick = { showMenu = false; showRename = true }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.library_folder_delete)) },
+                onClick = { showMenu = false; showDeleteConfirm = true }
+            )
+        }
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+                },
+                title = { Text(stringResource(R.string.library_folder_delete)) },
+                text = { Text(stringResource(R.string.library_folder_delete_confirm, root.displayName)) }
+            )
+        }
+        if (showRename) {
+            var draft by remember(root.id) { mutableStateOf(root.displayName) }
+            AlertDialog(
+                onDismissRequest = { showRename = false },
+                confirmButton = {
+                    TextButton(
+                        enabled = draft.trim().isNotEmpty(),
+                        onClick = { showRename = false; onRename(draft) }
+                    ) { Text(stringResource(R.string.library_folder_rename)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRename = false }) { Text(stringResource(R.string.cancel)) }
+                },
+                title = { Text(stringResource(R.string.library_folder_rename)) },
+                text = {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        placeholder = { Text(stringResource(R.string.library_folder_rename_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            )
         }
         HorizontalDivider()
     }

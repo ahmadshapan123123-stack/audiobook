@@ -21,6 +21,7 @@ import com.example.audiobook.domain.usecases.LibraryManagement
 import com.example.audiobook.domain.usecases.ReclassifyLibrary
 import com.example.audiobook.domain.usecases.ReclassifyPreview
 import com.example.audiobook.domain.usecases.ScanLibraryNow
+import com.example.audiobook.domain.usecases.ScanResume
 import com.example.audiobook.domain.usecases.RebuildLibraryStructure
 import com.example.audiobook.domain.usecases.RebuildStructureResult
 import com.example.audiobook.domain.usecases.ScanNowResult
@@ -106,6 +107,28 @@ class SettingsViewModel @Inject constructor(
     private val _scanResult = MutableStateFlow<ScanNowResult?>(null)
     val scanResult: StateFlow<ScanNowResult?> = _scanResult.asStateFlow()
 
+    // ── STAGE 4/5: حالات الاستئناف والدمج — قبل `init` قصدًا: `init`
+    // يستدعي `refreshResumeInfo()`، وأي حالة تُعلَن بعده تكون null أثناء
+    // تنفيذ الكوروتين الفوري (Main.immediate + مصدر mocked لا يعلّق).
+    private val _resumeInfo = MutableStateFlow<ScanResume.ResumeInfo?>(null)
+    val resumeInfo: StateFlow<ScanResume.ResumeInfo?> = _resumeInfo.asStateFlow()
+
+    private val _mergeCandidates = MutableStateFlow<List<LibraryManagement.MergeCandidate>>(emptyList())
+    val mergeCandidates: StateFlow<List<LibraryManagement.MergeCandidate>> = _mergeCandidates.asStateFlow()
+
+    private val _mergePreview = MutableStateFlow<LibraryManagement.MergePreview?>(null)
+    val mergePreview: StateFlow<LibraryManagement.MergePreview?> = _mergePreview.asStateFlow()
+
+    private val _mergeResult = MutableStateFlow<Int?>(null)
+    /** عدد الكتب بعد دمج ناجح (يُستهلك لعرض snackbar). */
+    val mergeResult: StateFlow<Int?> = _mergeResult.asStateFlow()
+
+    private val _mergeFailed = MutableStateFlow(false)
+    val mergeFailed: StateFlow<Boolean> = _mergeFailed.asStateFlow()
+
+    private val _isMerging = MutableStateFlow(false)
+    val isMerging: StateFlow<Boolean> = _isMerging.asStateFlow()
+
     private val _isRebuilding = MutableStateFlow(false)
     val isRebuilding: StateFlow<Boolean> = _isRebuilding.asStateFlow()
 
@@ -170,6 +193,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _hasLibraryRoots.value = libraryRootDao.countAll() > 0
         }
+        // STAGE 4: عرض «استئناف الفحص الأخير» إن بقي checkpoint صالح.
+        refreshResumeInfo()
         // يلتقط نتيجة Worker إعادة التصنيف الخلفي ويعرضها (Snackbar + إنهاء الحالة).
         viewModelScope.launch {
             ReclassifyResultNotifier.result.collect { result ->
@@ -200,6 +225,73 @@ class SettingsViewModel @Inject constructor(
 
     fun consumeDemoCleanupResult() {
         _demoCleanupResult.value = null
+    }
+
+    // ── STAGE 4: استئناف الفحص الأخير ──
+
+    /** يحدّث عرض الاستئناف: checkpoint صالح (< 24h) وجذر مفعّل. */
+    fun refreshResumeInfo() {
+        viewModelScope.launch {
+            _resumeInfo.value = libraryManagement.getScanResumeInfo()
+        }
+    }
+
+    /** زر الاستئناف: فحص كامل عادي — `resumeIndexFor` يكمل من الـcheckpoint. */
+    fun resumeLastScan() {
+        _resumeInfo.value = null
+        scanNow()
+    }
+
+    // ── STAGE 5: دمج الجذور ──
+
+    fun refreshMergeCandidates() {
+        viewModelScope.launch {
+            _mergeCandidates.value = libraryManagement.detectMergeCandidates()
+        }
+    }
+
+    fun previewMerge(rootIds: List<java.util.UUID>) {
+        viewModelScope.launch {
+            _mergePreview.value = libraryManagement.previewMerge(rootIds)
+        }
+    }
+
+    fun consumeMergePreview() {
+        _mergePreview.value = null
+    }
+
+    fun consumeMergeResult() {
+        _mergeResult.value = null
+    }
+
+    fun consumeMergeFailed() {
+        _mergeFailed.value = false
+    }
+
+    /**
+     * تطبيق الدمج ثم فحص الأب الجديد. `parentUri` من منتقي المجلدات
+     * (المجلد الحاوي لمجلدات المؤلفين).
+     */
+    fun applyMerge(parentUri: String, parentName: String, rootIds: List<java.util.UUID>) {
+        if (_isMerging.value) return
+        viewModelScope.launch {
+            _isMerging.value = true
+            try {
+                val preview = libraryManagement.previewMerge(rootIds)
+                libraryManagement.applyMerge(parentUri, parentName, preview.candidates.map { it.rootId })
+                _mergePreview.value = null
+                _mergeResult.value = preview.totalBooks
+                refreshMergeCandidates()
+                refreshResumeInfo()
+                // فحص الأب الجديد لملء الملفات/المدد تحت الهوية البنيوية نفسها.
+                scanNow()
+            } catch (error: Exception) {
+                android.util.Log.w(TAG, "merge-roots failed: ${error.message}")
+                _mergeFailed.value = true
+            } finally {
+                _isMerging.value = false
+            }
+        }
     }
 
     /**
@@ -249,6 +341,8 @@ class SettingsViewModel @Inject constructor(
             progressObserver?.cancel()
             progressObserver = null
             _isScanning.value = false
+            // STAGE 4: بعد أي فحص تتغير نقاط التوقف — حدّث عرض الاستئناف.
+            refreshResumeInfo()
         }
     }
 

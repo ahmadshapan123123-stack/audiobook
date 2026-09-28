@@ -31,7 +31,14 @@ class LibraryManagement @Inject constructor(
     private val crossRefDao: CollectionBookCrossRefDao,
     private val favoriteBookDao: FavoriteBookDao,
     private val chapterCompletionDao: ChapterCompletionDao,
-    private val libraryRootDao: LibraryRootDao
+    private val libraryRootDao: LibraryRootDao,
+    /**
+     * STAGE 4/5/6 — وصول مباشر لجداول دورة الفحص: نقاط التوقف (استئناف)،
+     * الاكتشافات المعلقة (دمج/حذف جذور)، وتعديلات الاستهلال (تنظيف).
+     */
+    private val scanCheckpointDao: ScanCheckpointDao,
+    private val pendingDiscoveryDao: PendingDiscoveryDao,
+    private val onboardingEditDao: OnboardingEditDao
 ) {
 
     // ── Author Operations ──
@@ -563,5 +570,155 @@ class LibraryManagement @Inject constructor(
 
         val removedIds = (demoBooks.map { it.id } + legacyDemoBooks.map { it.id }).toSet().size
         return ClearDemoDataResult(removedIds, afterFlagged + afterByAuthor > 0)
+    }
+
+    // ── STAGE 4: استئناف الفحص ──
+
+    /**
+     * أحدث checkpoint صالح: يُبنى [ScanResume.ResumeInfo] من الجدول مباشرة
+     * (لا حاجة لكامل AppDatabase هنا).
+     */
+    suspend fun getScanResumeInfo(now: Long = System.currentTimeMillis()): ScanResume.ResumeInfo? {
+        val all = scanCheckpointDao.getAll()
+        all.filter { now - it.scannedAt > ScanResume.TTL_MS }.forEach { scanCheckpointDao.deleteForRoot(it.rootId) }
+        val fresh = all.filter { now - it.scannedAt <= ScanResume.TTL_MS }.maxByOrNull { it.scannedAt } ?: return null
+        val root = libraryRootDao.getById(fresh.rootId) ?: run {
+            scanCheckpointDao.deleteForRoot(fresh.rootId)
+            return null
+        }
+        if (!root.isEnabled) return null
+        return ScanResume.ResumeInfo(fresh.rootId, root.displayName, fresh.lastProcessedFolderPath, fresh.scannedAt)
+    }
+
+    // ── STAGE 6B: حذف/إعادة تسمية الجذور ──
+
+    data class RootDeleteResult(val rootName: String, val booksRemoved: Int, val editionsRemoved: Int)
+
+    /**
+     * حذف جذر مكتبة مع تتابع صريح كامل: كل إصدارات الجذر تُحذف بتتابع
+     * الإصدار (ملفات/فصول/علامات/تقدم)، ثم الكتب اليتيمة (بلا إصدارات
+     * باقية في أي جذر)، ثم الاكتشافات ونقاط التوقف وتعديلات الاستهلال،
+     * وأخيرًا صف الجذر نفسه. التقدّمات والعلامات لإصدارات الجذر تُحذف
+     * معها (هي ملك ذلك الجذر)؛ كتب لها إصدارات في جذور أخرى تبقى.
+     */
+    suspend fun deleteLibraryRoot(rootId: UUID): RootDeleteResult? {
+        val root = libraryRootDao.getById(rootId) ?: return null
+        val editions = editionDao.getByRoot(rootId)
+        val touchedBookIds = editions.map { it.bookId }.toSet()
+        var editionsRemoved = 0
+        editions.forEach { edition ->
+            deleteEditionCascade(edition.id)
+            editionsRemoved++
+        }
+        var booksRemoved = 0
+        touchedBookIds.forEach { bookId ->
+            if (editionDao.getByParent(bookId).isEmpty()) {
+                favoriteBookDao.delete(bookId)
+                bookDao.getById(bookId)?.let { bookDao.delete(it) }
+                booksRemoved++
+            }
+        }
+        pendingDiscoveryDao.deleteForRoot(rootId)
+        scanCheckpointDao.deleteForRoot(rootId)
+        onboardingEditDao.deleteForRoot(root.uri)
+        libraryRootDao.delete(root)
+        Log.i(TAG, "deleteLibraryRoot name=${root.displayName} editions=$editionsRemoved books=$booksRemoved")
+        return RootDeleteResult(root.displayName, booksRemoved, editionsRemoved)
+    }
+
+    /** إعادة تسمية عرضية فقط — لا تمسّ المسارات ولا الهوية البنيوية. */
+    suspend fun renameLibraryRoot(rootId: UUID, newName: String): Boolean {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return false
+        val root = libraryRootDao.getById(rootId) ?: return false
+        libraryRootDao.update(root.copy(displayName = trimmed))
+        return true
+    }
+
+    // ── STAGE 5: دمج الجذور أحادية المؤلف ──
+
+    data class MergeCandidate(val rootId: UUID, val rootName: String, val authorName: String, val bookCount: Int)
+    data class MergePreview(val candidates: List<MergeCandidate>, val totalBooks: Int, val totalEditions: Int)
+
+    /**
+     * كشف نمط «جذر لكل مؤلف»: جذور مفعّلة غير تجريبية، كلٌّ منها يحمل
+     * إصدارات لمؤلف واحد غير فارغ، والمؤلف لا يظهر في أي جذر آخر.
+     * الإصدارات بلا مؤلف (authorId=null) تُستبعد من الترشيح — دمجها قد
+     * يغيّر تصنيفها، فيبقى دمجها يدويًا.
+     */
+    suspend fun detectMergeCandidates(): List<MergeCandidate> {
+        val roots = libraryRootDao.getAll().filter { it.isEnabled && !it.isDemo }
+        if (roots.size < 2) return emptyList()
+        // مؤلف كل جذر: كل الإصدارات تشترك في authorId واحد غير null.
+        val authorByRoot = LinkedHashMap<UUID, UUID?>()
+        val editionsByRoot = LinkedHashMap<UUID, List<EditionEntity>>()
+        roots.forEach { root ->
+            val editions = editionDao.getByRoot(root.id)
+            editionsByRoot[root.id] = editions
+            authorByRoot[root.id] = editions.map { it.authorId }.toSet().singleOrNull()
+        }
+        // المؤلفون الحصريون: لا يظهرون في جذرين.
+        val rootCountByAuthor = authorByRoot.values.filterNotNull().groupingBy { it }.eachCount()
+        return roots.mapNotNull { root ->
+            val authorId = authorByRoot[root.id] ?: return@mapNotNull null
+            if (rootCountByAuthor[authorId] != 1) return@mapNotNull null
+            val editions = editionsByRoot[root.id].orEmpty()
+            if (editions.isEmpty()) return@mapNotNull null
+            val authorName = authorDao.getById(authorId)?.name ?: return@mapNotNull null
+            val bookCount = editions.map { it.bookId }.toSet().size
+            MergeCandidate(root.id, root.displayName, authorName, bookCount)
+        }
+    }
+
+    /** معاينة الدمج: المرشحون + إجمالي الكتب/الإصدارات المتأثرة. */
+    suspend fun previewMerge(rootIds: List<UUID>): MergePreview {
+        val candidates = detectMergeCandidates().filter { it.rootId in rootIds }
+        val editions = candidates.sumOf { editionDao.getByRoot(it.rootId).size }
+        return MergePreview(candidates, candidates.sumOf { it.bookCount }, editions)
+    }
+
+    /**
+     * تطبيق الدمج تحت جذر أب جديد (`parentUri` يختاره المستخدم — المجلد
+     * الحاوي لمجلدات المؤلفين):
+     * - تُنقل كل إصدارات الجذور الأبناء إلى الأب مع بادئة مسار = اسم مجلد
+     *   الابن (آخر مقطع من uri الابن)، فتحافظ `sourceFolderPath` على معناها
+     *   ويبقى الفحص اللاحق مطابقًا للملفات نفسها.
+     * - تُنقل الاكتشافات المعلقة بنفس البادئة، وتُنقل نقاط التوقف بحذفها
+     *   (الفحص اللاحق للأب يعيد بناءها).
+     * - تُحذف صفوف الجذور الأبناء.
+     * - لا تُمسّ الكتب/الإصدارات/الملفات/الفصول/التقدم/العلامات: كلها
+     *   مفاتيحها صفوف محفوظة، فيبقى تقدم الاستماع كما هو.
+     * @return id الجذر الأب الجديد لجدولة فحصه.
+     */
+    suspend fun applyMerge(parentUri: String, parentName: String, childRootIds: List<UUID>): UUID {
+        val preview = previewMerge(childRootIds)
+        require(preview.candidates.isNotEmpty()) { "no-merge-candidates" }
+        val parent = LibraryRootEntity(
+            uri = parentUri,
+            displayName = parentName.trim().ifBlank { parentUri.substringAfterLast('/') },
+            isPriority = false,
+            isEnabled = true,
+            lastScanAt = null,
+            scanStatus = ScanStatus.IDLE
+        )
+        libraryRootDao.insert(parent)
+        preview.candidates.forEach { candidate ->
+            val child = libraryRootDao.getById(candidate.rootId) ?: return@forEach
+            val prefix = child.uri.trimEnd('/').substringAfterLast('/').ifBlank { child.displayName }
+            editionDao.getByRoot(child.id).forEach { edition ->
+                editionDao.update(
+                    edition.copy(
+                        libraryRootId = parent.id,
+                        sourceFolderPath = "$prefix/${edition.sourceFolderPath}".trim('/')
+                    )
+                )
+            }
+            pendingDiscoveryDao.reassignRoot(child.id, parent.id, prefix)
+            scanCheckpointDao.deleteForRoot(child.id)
+            onboardingEditDao.deleteForRoot(child.uri)
+            libraryRootDao.delete(child)
+        }
+        Log.i(TAG, "mergeRoots parent=${parent.displayName} children=${preview.candidates.size} books=${preview.totalBooks}")
+        return parent.id
     }
 }
