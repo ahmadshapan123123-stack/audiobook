@@ -91,7 +91,7 @@ class SleepTimerControllerTest {
 
         clock.set(deadline - SLEEP_FADE_OUT_MS + 1)
         controller.tickClock()
-        assertEquals("آخر 2.5 ثانية", SleepTimerPhase.FADING_OUT, controller.uiState.value.phase)
+        assertEquals("آخر 30 ثانية", SleepTimerPhase.FADING_OUT, controller.uiState.value.phase)
         assertTrue("Fade Out حقيقي: الصوت بدأ ينخفض", playback.currentVolume < 1f)
 
         clock.set(deadline)
@@ -107,40 +107,45 @@ class SleepTimerControllerTest {
         assertEquals(SessionState.COMPLETED, sessions.first().sessionState)
     }
 
-    // ---- النقطة 2+3: 6 نبضات بالضبط عند التوقيتات الست بالضبط عبر Duck ثم استعادة ----
+    // ---- FIX 4.6: لا إشارات صوتية إطلاقًا — لا نبضات Duck، خبو رتيب 30 ثانية ----
 
     @Test
-    fun warningWindowProducesExactlySixDuckBeepsAtExactlyTheSixInstants() = runBlocking {
+    fun warningWindowProducesNoAudioCuesAndFadeIsSmoothOverThirtySeconds() = runBlocking {
         val clock = FakeClock()
         val playback = FakePlayback(clock = clock)
         val controller = controller(clock, playback)
         controller.start(15)
         val deadline = FAKE_EPOCH + 15 * 60_000L
 
-        // قبل النافذة: لا نبضة إطلاقًا
-        clock.set(deadline - SLEEP_WARNING_WINDOW_MS - 1_000L)
-        controller.tickClock()
-        assertEquals(0, playback.duckEvents().size)
-
-        // كل نقطة من النقاط الست بالضبط: Duck إلى 25% ثم إعادة إلى الصوت الأساسي بعد 300ms
-        SLEEP_BEEP_REMAINING_MS.forEach { remaining ->
-            val instant = deadline - remaining
-            clock.set(instant)
+        // داخل نافذة الـ3 دقائق (حتى لحظة دخول الخبو): لا أي تغيير صوت.
+        listOf(180_000L, 150_000L, 120_000L, 90_000L, 60_000L, 31_000L).forEach { remaining ->
+            clock.set(deadline - remaining)
             controller.tickClock()
-            val duck = playback.duckEvents().last()
-            assertEquals("النقطة بالضبط عند ${remaining / 1000} ثانية متبقية", instant, duck.first)
-            assertEquals("نبضة هادئة 25%", SLEEP_DUCK_VOLUME_RATIO, playback.currentVolume, 0.001f)
-            clock.advance(SLEEP_DUCK_RESTORE_MS)
-            controller.tickClock()
-            assertEquals("استعادة الصوت بعد النبضة", 1f, playback.currentVolume, 0.001f)
         }
+        assertTrue("لا إشارة صوتية في نافذة التحذير", playback.volumeEvents.isEmpty())
 
-        assertEquals("6 نبضات بالضبط", 6, playback.duckEvents().size)
-        assertEquals(
-            "التوقيتات الست: 3:00، 2:30، 2:00، 1:30، 1:00، 0:30",
-            SLEEP_BEEP_REMAINING_MS.map { deadline - it },
-            playback.duckEvents().map { it.first }
-        )
+        // الخبو 30 ثانية: تناقص رتيب من الأساس (1f) إلى الصفر تقريبًا.
+        var last = 1f
+        var steps = 0
+        var remaining = SLEEP_FADE_OUT_MS
+        while (remaining >= 2_000L) {
+            clock.set(deadline - remaining)
+            controller.tickClock()
+            val v = playback.currentVolume
+            assertTrue("رتيب غير متزايد عند $remaining", v <= last + 0.001f)
+            last = v
+            steps++
+            remaining -= 4_000L
+        }
+        assertTrue("خطوات خبو متعددة عبر 30 ثانية", steps >= 5)
+        assertTrue("يقارب الصفر في النهاية", playback.currentVolume < 0.1f)
+
+        // عند الصفر: pause + استعادة الصوت الأساسي (لا إغلاق ولا صوت).
+        clock.set(deadline)
+        controller.tickClock()
+        assertEquals(SleepTimerPhase.STOPPED, controller.uiState.value.phase)
+        assertTrue("إيقاف مؤقت فقط", playback.paused)
+        assertEquals("الصوت يعود للأساس", 1f, playback.currentVolume, 0.001f)
     }
 
     // ---- النقطة 4: isExtendWindowVisible صريحة ومنفصلة — false قبل النافذة وtrue داخلها ----
@@ -451,10 +456,6 @@ class SleepTimerControllerTest {
         var currentVolume = 1f
         var paused = false
         val volumeEvents: MutableList<Pair<Long, Float>> = java.util.Collections.synchronizedList(mutableListOf())
-
-        fun duckEvents(): List<Pair<Long, Float>> = synchronized(volumeEvents) {
-            volumeEvents.filter { it.second == SLEEP_DUCK_VOLUME_RATIO }
-        }
 
         override suspend fun openEdition(editionId: UUID) = Unit
         override fun play() = Unit

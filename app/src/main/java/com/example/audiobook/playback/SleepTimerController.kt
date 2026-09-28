@@ -25,17 +25,11 @@ import kotlinx.coroutines.launch
 /** طول نافذة التحذير: آخر 3 دقائق من المؤقت. */
 const val SLEEP_WARNING_WINDOW_MS = 3 * 60_000L
 
-/** نقاط النبضات الست بالضبط (بالثواني المتبقية): 3:00، 2:30، 2:00، 1:30، 1:00، 0:30. */
-val SLEEP_BEEP_REMAINING_MS = longArrayOf(180_000L, 150_000L, 120_000L, 90_000L, 60_000L, 30_000L)
-
-/** مستوى النبضة الهادئة: خفض الصوت مؤقتًا إلى 25% ثم إعادته (Duck وليس Interrupt). */
-const val SLEEP_DUCK_VOLUME_RATIO = 0.25f
-
-/** مدة إبقاء الصوت منخفضًا في كل نبضة قبل إعادته. */
-const val SLEEP_DUCK_RESTORE_MS = 300L
-
-/** آخر 2.5 ثانية: تدرّج هبوطي حقيقي (Fade Out) لصوت player.volume. */
-const val SLEEP_FADE_OUT_MS = 2_500L
+/**
+ * FIX 4.5 — آخر 30 ثانية: تدرّج هبوطي حقيقي (Fade Out) لصوت player.volume
+ * من 100% إلى 0%. كان 2.5 ثانية فقط فينقطع الصوت فجأةً فيُقرأ «توقفًا».
+ */
+const val SLEEP_FADE_OUT_MS = 30_000L
 
 /** قاعدة التمديد التلقائي: +15 دقيقة بالضبط (وليس Reset وليس +30). */
 const val SLEEP_AUTO_EXTEND_MINUTES = 15
@@ -117,10 +111,13 @@ class SleepTimerController @Inject constructor(
     private var deadlineMs = 0L
     private var timerStartedMs = 0L
     private var originalDurationMs = 0L
-    private var beepThresholds = longArrayOf()
-    private val firedBeeps = mutableSetOf<Long>()
-    private var duckBaseVolume = 1f
-    private var pendingDuckRestoreAtMs = 0L
+    /**
+     * FIX 4.5/4.6: مستوى الصوت المرجعي للخبو — يُلتقط عند دخول FADING_OUT
+     * من الصوت الفعلي (لا يُفترض 1f). نبضات الـDuck الست حُذفت نهائيًا:
+     * كانت تُقرأ «صوتًا غريبًا» عند التوقف، والمواصفة تمنع أي إشارة صوتية
+     * قبل الخبو — لا ToneGenerator ولا MediaPlayer ولا خفض مؤقت في هذا المسار.
+     */
+    private var fadeBaseVolume = 1f
     private val stopHandled = AtomicBoolean(false)
 
     private val _uiState = MutableStateFlow(SleepTimerUiState())
@@ -139,9 +136,6 @@ class SleepTimerController @Inject constructor(
         deadlineMs = now + minutes * 60_000L
         timerStartedMs = now
         originalDurationMs = minutes * 60_000L
-        firedBeeps.clear()
-        pendingDuckRestoreAtMs = 0L
-        armBeeps()
         stopHandled.set(false)
         setPhase(SleepTimerPhase.RUNNING)
         job = scope.launch { runLoop() }
@@ -149,10 +143,8 @@ class SleepTimerController @Inject constructor(
 
     fun cancel() {
         job?.cancel()
-        if (phase == SleepTimerPhase.FADING_OUT) playback.setVolume(duckBaseVolume)
+        if (phase == SleepTimerPhase.FADING_OUT) playback.setVolume(fadeBaseVolume)
         deadlineMs = 0L
-        firedBeeps.clear()
-        pendingDuckRestoreAtMs = 0L
         stopHandled.set(false)
         setPhase(SleepTimerPhase.IDLE)
     }
@@ -161,8 +153,6 @@ class SleepTimerController @Inject constructor(
     fun extendBy(minutes: Int) {
         if (minutes <= 0 || deadlineMs == 0L) return
         deadlineMs += minutes * 60_000L
-        firedBeeps.clear()
-        armBeeps()
         val remaining = (deadlineMs - clock.nowMillis()).coerceAtLeast(0L)
         setPhase(if (remaining > SLEEP_WARNING_WINDOW_MS) SleepTimerPhase.RUNNING else phase)
     }
@@ -181,8 +171,6 @@ class SleepTimerController @Inject constructor(
             return
         }
         deadlineMs -= minutes * 60_000L
-        firedBeeps.clear()
-        armBeeps()
         setPhase(if (newRemaining > SLEEP_WARNING_WINDOW_MS) SleepTimerPhase.RUNNING else phase)
     }
 
@@ -212,18 +200,12 @@ class SleepTimerController @Inject constructor(
     private fun nextEventMs(): Long? {
         if (deadlineMs == 0L) return null
         val now = clock.nowMillis()
-        val beep = beepThresholds.firstOrNull { it > now }
-        val restore = if (pendingDuckRestoreAtMs > 0L) pendingDuckRestoreAtMs else deadlineMs
-        return minOf(deadlineMs, beep ?: deadlineMs, restore, now + 1_000L)
-    }
-
-    private fun armBeeps() {
-        beepThresholds = SLEEP_BEEP_REMAINING_MS.map { deadlineMs - it }.toLongArray()
+        return minOf(deadlineMs, now + 1_000L)
     }
 
     /**
      * معالجة لقطة من الزمن (تستدعيها الحلقة دوريًا، ويستدعيها الاختبار بالـFake Clock):
-     * نبضات الـ3 دقائق، استعادة الصوت بعد كل نبضة، انتقالات الحالة، تدرّج Fade، والتوقف.
+     * انتقالات الحالة، تدرّج Fade، والتوقف. بلا أي إشارة صوتية (FIX 4.6).
      */
     internal suspend fun tickClock() {
         val now = clock.nowMillis()
@@ -232,29 +214,20 @@ class SleepTimerController @Inject constructor(
         synchronized(tickLock) {
             val remainingMs = deadlineMs - now
 
-            if (remainingMs <= SLEEP_WARNING_WINDOW_MS) {
-                beepThresholds.forEach { instant ->
-                    if (instant >= timerStartedMs && now >= instant && !firedBeeps.contains(instant)) {
-                        firedBeeps += instant
-                        duckOnce()
-                    }
-                }
-            }
-            if (pendingDuckRestoreAtMs > 0L && now >= pendingDuckRestoreAtMs) {
-                playback.setVolume(duckBaseVolume)
-                pendingDuckRestoreAtMs = 0L
-            }
-
             val nextPhase = when {
                 remainingMs <= 0L -> SleepTimerPhase.STOPPED
                 remainingMs <= SLEEP_FADE_OUT_MS -> SleepTimerPhase.FADING_OUT
                 remainingMs <= SLEEP_WARNING_WINDOW_MS -> SleepTimerPhase.WARNING_WINDOW
                 else -> SleepTimerPhase.RUNNING
             }
+            // FIX 4.5: التقاط المرجع عند دخول الخبو — لا يُفترض مستوى الصوت.
+            if (nextPhase == SleepTimerPhase.FADING_OUT && phase != SleepTimerPhase.FADING_OUT) {
+                fadeBaseVolume = playback.getVolume().takeIf { it > 0f } ?: 1f
+            }
             if (nextPhase != phase) setPhase(nextPhase)
             if (phase == SleepTimerPhase.FADING_OUT) {
                 val ratio = (remainingMs.toFloat() / SLEEP_FADE_OUT_MS).coerceIn(0f, 1f)
-                playback.setVolume(duckBaseVolume * ratio)
+                playback.setVolume(fadeBaseVolume * ratio)
             }
             stopNow = nextPhase == SleepTimerPhase.STOPPED && remainingMs <= 0L
             if (!stopNow) publishState()
@@ -262,23 +235,15 @@ class SleepTimerController @Inject constructor(
         if (stopNow) finishStop()
     }
 
-    private fun duckOnce() {
-        val base = playback.getVolume()
-        duckBaseVolume = if (base > 0f) base else 1f
-        playback.setVolume(duckBaseVolume * SLEEP_DUCK_VOLUME_RATIO)
-        pendingDuckRestoreAtMs = clock.nowMillis() + SLEEP_DUCK_RESTORE_MS
-    }
-
     /** توقف كامل عند الصفر + حفظ الموضع فورًا (عبر pause الحالية التي تحفظ) + تسجيل الجلسة. */
     private suspend fun finishStop() {
         if (!stopHandled.compareAndSet(false, true)) return
         playback.setVolume(0f)
+        // FIX 4.5: إيقاف مؤقت فقط — لا إغلاق للتطبيق ولا إيقاف للخدمة ولا صوت.
         playback.pause()
         recordSession(endedAtMs = deadlineMs)
-        playback.setVolume(duckBaseVolume)
+        playback.setVolume(fadeBaseVolume)
         deadlineMs = 0L
-        firedBeeps.clear()
-        pendingDuckRestoreAtMs = 0L
         phase = SleepTimerPhase.STOPPED
         _uiState.value = SleepTimerUiState(phase = SleepTimerPhase.STOPPED, remainingMs = 0L, isExtendWindowVisible = false)
     }

@@ -219,6 +219,7 @@
     <string name="player_sleep_minutes">مؤقت النوم: %1$d دقيقة</string>
     <string name="player_sleep_active">متبقٍ %1$s</string>
     <string name="player_sleep_ending">سينتهي قريبًا</string>
+    <string name="player_sleep_warning_banner">النوم بعد %1$s — اضغط للتمديد</string>
     <string name="player_sleep_extend">+%1$d دقيقة</string>
     <string name="player_sleep_increase">+%1$d</string>
     <string name="player_sleep_decrease">−%1$d</string>

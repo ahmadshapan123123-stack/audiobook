@@ -681,6 +681,17 @@ fun PlayerScreen(
             }
 
             // ---- أدوات الاستماع: خفيفة، لا تنافس التحكّم ----
+            // FIX 4.4 — شريط تحذير النوم (آخر 3 دقائق): عدّاد حي + تمديد
+            // سريع +5/+10/+15، والنقر يفتح لوحة النوم الكاملة.
+            if (sleepUi.isExtendWindowVisible) {
+                SleepWarningBanner(
+                    remainingText = formatTime(sleepUi.remainingMs ?: 0L),
+                    onOpenPanel = { expandedPanel = PlayerControlPanel.SLEEP },
+                    onExtend = { sleepTimer.extendBy(it) },
+                    fg = fg,
+                    modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md, bottom = AppSpacing.xs)
+                )
+            }
             PlayerToolsRow(
                 markLabel = stringResource(R.string.player_save_moment),
                 sleepLabel = sleepStatusLabel(sleepUi),
@@ -1649,6 +1660,59 @@ private fun PlayButton(isPlaying: Boolean, onClick: () -> Unit, fg: PlayerFg, mo
 }
 
 /** أدوات الاستماع: نص هادئ بأهداف لمس 48dp — لا عبوات، لا بطاقات. */
+/**
+ * FIX 4.4 — شريط تحذير النوم: يظهر في آخر 3 دقائق فوق صف الأدوات —
+ * عدّاد حي + أزرار تمديد +5/+10/+15 (نفس مسار اللوحة والإشعار).
+ */
+@Composable
+private fun SleepWarningBanner(
+    remainingText: String,
+    onOpenPanel: () -> Unit,
+    onExtend: (Int) -> Unit,
+    fg: PlayerFg,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(fg.colors.accent.copy(alpha = 0.14f))
+            .border(1.dp, fg.colors.accent.copy(alpha = 0.40f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpenPanel)
+            .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Bedtime,
+            contentDescription = null,
+            tint = fg.colors.accent,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = stringResource(R.string.player_sleep_warning_banner, remainingText),
+            style = MaterialTheme.typography.labelLarge,
+            color = fg.colors.accent,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        listOf(5, 10, 15).forEach { minutes ->
+            Text(
+                text = "+$minutes",
+                style = MaterialTheme.typography.labelMedium,
+                color = fg.colors.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .minTouchTarget()
+                    .clickable { onExtend(minutes) }
+                    .padding(horizontal = AppSpacing.xs),
+                maxLines = 1
+            )
+        }
+    }
+}
+
 @Composable
 private fun PlayerToolsRow(
     markLabel: String,
@@ -1870,7 +1934,9 @@ private fun UtilitiesDeck(
                                 primary = true,
                                 onClick = {
                                     val minutes = customMinutes.toIntOrNull()
-                                    if (minutes != null && minutes in 1..240) {
+                                    // FIX 4.3: مخصص 1..999 دقيقة (كان 240) — يُمرَّر
+                                    // مباشرةً لـstart دون حفظ كافتراضي.
+                                    if (minutes != null && minutes in 1..999) {
                                         choosingDuration = false
                                         onSleepStart(minutes)
                                         showCustom = false
