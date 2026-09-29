@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -41,6 +42,7 @@ import com.example.audiobook.R
 import com.example.audiobook.data.localfilesystem.StorageAccess
 import com.example.audiobook.data.room.entity.LibraryRootEntity
 import com.example.audiobook.data.room.entity.ScanStatus
+import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.CosmicScreenHeader
 import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.LocalAppAccent
@@ -96,7 +98,8 @@ fun LibraryRootsScreen(viewModel: LibraryRootsViewModel, onBack: () -> Unit = {}
                 onRefresh = { viewModel.refresh(root) },
                 onReGrant = { reGrantPicker.launch(android.net.Uri.parse(root.uri)) },
                 onDelete = { viewModel.deleteRoot(root) },
-                onRename = { name -> viewModel.renameRoot(root, name) }
+                onRename = { name -> viewModel.renameRoot(root, name) },
+                onEdit = { name, priority, enabled -> viewModel.editRoot(root.id, name, priority, enabled) }
             )
         }
     }
@@ -114,11 +117,14 @@ private fun LibraryRootRow(
     onReGrant: () -> Unit,
     // STAGE 6B — حذف/إعادة تسمية عبر ضغطة مطوّلة.
     onDelete: () -> Unit,
-    onRename: (String) -> Unit
+    onRename: (String) -> Unit,
+    // تحرير موحّد: الاسم + الأولوية + التفعيل في حوار واحد.
+    onEdit: (String, Boolean, Boolean) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
     val appAccent = LocalAppAccent.current
     val switchColors = SwitchDefaults.colors(
         checkedThumbColor = appAccent.onAccent,
@@ -179,8 +185,12 @@ private fun LibraryRootRow(
                 Text(stringResource(R.string.library_folder_access_repair))
             }
         }
-        // STAGE 6B — قائمة الضغطة المطوّلة: إعادة تسمية / حذف.
+        // STAGE 6B — قائمة الضغطة المطوّلة: تعديل / إعادة تسمية / حذف.
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.library_folder_edit)) },
+                onClick = { showMenu = false; showEdit = true }
+            )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.library_folder_rename)) },
                 onClick = { showMenu = false; showRename = true }
@@ -228,6 +238,61 @@ private fun LibraryRootRow(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+            )
+        }
+        if (showEdit) {
+            var editName by remember(root.id) { mutableStateOf(root.displayName) }
+            var editPriority by remember(root.id) { mutableStateOf(root.isPriority) }
+            var editEnabled by remember(root.id) { mutableStateOf(root.isEnabled) }
+            AlertDialog(
+                onDismissRequest = { showEdit = false },
+                confirmButton = {
+                    TextButton(
+                        enabled = editName.trim().isNotEmpty(),
+                        onClick = { showEdit = false; onEdit(editName, editPriority, editEnabled) }
+                    ) { Text(stringResource(R.string.bd_save)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEdit = false }) { Text(stringResource(R.string.cancel)) }
+                },
+                title = { Text(stringResource(R.string.library_folder_edit)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            placeholder = { Text(stringResource(R.string.library_folder_rename_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.library_folder_priority))
+                            Switch(
+                                checked = editPriority,
+                                onCheckedChange = { editPriority = it },
+                                colors = switchColors,
+                                modifier = Modifier.minTouchTarget()
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.library_folder_enabled))
+                            Switch(
+                                checked = editEnabled,
+                                onCheckedChange = { editEnabled = it },
+                                colors = switchColors,
+                                modifier = Modifier.minTouchTarget()
+                            )
+                        }
+                    }
                 }
             )
         }

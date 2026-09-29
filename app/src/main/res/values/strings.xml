@@ -953,5 +953,6 @@
     <string name="library_folder_delete">حذف الجذر</string>
     <string name="library_folder_delete_confirm">حذف "%1$s" نهائيًا؟ ستُحذف كتب هذا الجذر وملفاتها وفصولها وتقدّمها. لا يمكن التراجع.</string>
     <string name="library_folder_rename">إعادة تسمية</string>
+    <string name="library_folder_edit">تعديل</string>
     <string name="library_folder_rename_hint">اسم جديد</string>
 </resources>

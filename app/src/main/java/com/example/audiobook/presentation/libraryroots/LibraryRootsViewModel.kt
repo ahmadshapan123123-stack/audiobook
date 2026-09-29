@@ -130,4 +130,31 @@ class LibraryRootsViewModel @Inject constructor(
             onDone(libraryManagement.renameLibraryRoot(root.id, newName))
         }
     }
+
+    /**
+     * تحرير موحّد للجذر: الاسم + الأولوية + التفعيل في عملية واحدة.
+     * يحدّث صف الجذر فقط — لا يمسّ الكتب/الإصدارات. @return false للاسم
+     * الفارغ أو الجذر المفقود.
+     */
+    fun editRoot(rootId: UUID, newName: String, priority: Boolean, enabled: Boolean, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val trimmed = newName.trim()
+            if (trimmed.isEmpty()) {
+                onDone(false)
+                return@launch
+            }
+            val root = repository.getById(rootId) ?: run {
+                onDone(false)
+                return@launch
+            }
+            repository.update(root.copy(displayName = trimmed, isPriority = priority, isEnabled = enabled))
+            if (priority) {
+                repository.clearPriorityExcept(rootId)
+                scanScheduler.schedulePriorityScan(root.copy(displayName = trimmed))
+            } else {
+                scanScheduler.scheduleBackgroundScans()
+            }
+            onDone(true)
+        }
+    }
 }
