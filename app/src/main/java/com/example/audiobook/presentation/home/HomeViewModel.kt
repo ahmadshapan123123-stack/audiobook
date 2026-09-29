@@ -22,7 +22,6 @@ import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.ProgressStatus
 import com.example.audiobook.data.room.entity.SeriesEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.util.LinkedHashSet
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,7 +43,9 @@ data class HomeBook(
     val remainingMs: Long,
     val hasProgress: Boolean,
     val addedOrder: Int,
-    val lastPlayedAt: Long
+    val lastPlayedAt: Long,
+    /** PART 1: ترتيب الكتاب في سلسلته (لقاعدة "التالي في السلسلة"). */
+    val orderInSeries: Int? = null
 )
 
 /** بطاقة "أكمل استماعك" المميّزة. */
@@ -81,6 +82,8 @@ data class HomeCollection(
 
 data class HomeUiState(
     val continueListening: HomeContinue? = null,
+    /** PART 3: حتى 3 كتب قيد الاستماع (الأحدث أولًا) — بطاقة مميزة للواحد، صف للاثنين فأكثر. */
+    val continueList: List<HomeContinue> = emptyList(),
     val nextUp: List<HomeBook> = emptyList(),
     val recentlyListened: List<HomeBook> = emptyList(),
     val series: List<HomeSeries> = emptyList(),
@@ -146,30 +149,49 @@ class HomeViewModel @Inject constructor(
             )
         }
 
+        // PART 3: حتى 3 كتب IN_PROGRESS (الأحدث أولًا) لقسم المتابعة الموسّع.
+        val continueList = progressList
+            .filter { it.status == ProgressStatus.IN_PROGRESS }
+            .sortedByDescending { it.lastPlayedAt }
+            .take(3)
+            .mapNotNull { progress ->
+                val edition = editions.firstOrNull { it.id == progress.editionId } ?: return@mapNotNull null
+                val book = homeById[edition.bookId] ?: return@mapNotNull null
+                HomeContinue(
+                    book = book,
+                    totalMs = edition.totalDurationMs,
+                    playedMs = progress.currentPositionMs,
+                    currentChapterTitle = HomeMapper.chapterTitleAt(chapters, edition.id, progress.currentPositionMs)
+                )
+            }
+
         val recentlyListened = homeBooks
             .filter { it.hasProgress && it.editionId != null }
             .sortedByDescending { it.lastPlayedAt }
             .take(8)
 
-        // ماذا بعد؟ — اختيار من بيانات المكتبة الفعلية (لا بيانات تجريبية).
-        val picked = LinkedHashSet<UUID>()
+        // PART 1 — "ماذا بعد؟" مبسّطة لقاعدتين متوقعتين بدل 5 استدلالات:
+        // RULE 1: الكتاب التالي في سلسلة آخر كتاب مستمع (by orderInSeries).
+        // RULE 2: إكمال حتى 5 بأحدث الكتب غير المستمعة (addedOrder تنازلي).
+        // RULE 3: لا شيء منهما = إخفاء القسم.
         val nextUp = mutableListOf<HomeBook>()
-        fun addCandidate(candidate: HomeBook?) {
-            candidate?.takeIf { picked.add(it.bookId) }?.let { nextUp.add(it) }
+        val lastPlayed = continueUnit?.book
+        val lastPlayedOrder = lastPlayed?.let { lp -> books.firstOrNull { it.id == lp.bookId }?.orderInSeries }
+        if (lastPlayed?.seriesId != null && lastPlayedOrder != null) {
+            homeBooks.firstOrNull { candidate ->
+                candidate.seriesId == lastPlayed.seriesId &&
+                    candidate.bookId != lastPlayed.bookId &&
+                    candidate.editionId != null &&
+                    books.firstOrNull { it.id == candidate.bookId }?.orderInSeries == lastPlayedOrder + 1
+            }?.let { nextUp += it }
         }
-        addCandidate(homeBooks.firstOrNull { !it.hasProgress && it.editionId != null })
-        addCandidate(
-            homeBooks
-                .filter { it.editionId != null && it.progressFraction in 0.01f..0.99f && it.bookId != continueUnit?.book?.bookId }
-                .maxByOrNull { it.lastPlayedAt }
-        )
-        val seriesAnchor = continueUnit?.book?.seriesId ?: recentlyListened.firstOrNull()?.seriesId
-        seriesAnchor?.let { anchor ->
-            addCandidate(homeBooks.firstOrNull { it.seriesId == anchor && it.bookId != continueUnit?.book?.bookId })
-        }
-        addCandidate(homeBooks.filter { it.editionId != null }.maxByOrNull { it.addedOrder })
-        addCandidate(homeBooks.filter { it.hasProgress && it.bookId != continueUnit?.book?.bookId }.minByOrNull { it.lastPlayedAt })
+        homeBooks
+            .filter { it.editionId != null && !it.hasProgress && it.bookId !in nextUp.map { b -> b.bookId } }
+            .sortedByDescending { it.addedOrder }
+            .take(5 - nextUp.size)
+            .forEach { nextUp += it }
 
+        // PART 2: سقف 6 صفوف لكل قسم أفقي — كان بلا حد فينفجر مع المكتبات الكبيرة.
         val seriesSection = series
             .map { s ->
                 HomeSeries(
@@ -181,6 +203,7 @@ class HomeViewModel @Inject constructor(
                 )
             }
             .filter { it.books.isNotEmpty() }
+            .take(6)
 
         val authorsSection = authors
             .map { a ->
@@ -194,6 +217,7 @@ class HomeViewModel @Inject constructor(
                 )
             }
             .filter { it.books.isNotEmpty() }
+            .take(6)
 
         val collectionsSection = collections
             .map { collection ->
@@ -207,13 +231,16 @@ class HomeViewModel @Inject constructor(
                 )
             }
             .filter { it.books.isNotEmpty() }
+            .take(6)
 
         val favoritesSection = favorites
             .sortedByDescending { it.addedAt }
             .mapNotNull { favorite -> homeById[favorite.bookId] }
+            .take(6)
 
         HomeUiState(
             continueListening = continueUnit,
+            continueList = continueList,
             nextUp = nextUp,
             recentlyListened = recentlyListened,
             series = seriesSection,

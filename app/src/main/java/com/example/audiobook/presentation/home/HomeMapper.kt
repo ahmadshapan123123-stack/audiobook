@@ -51,7 +51,8 @@ internal object HomeMapper {
                 remainingMs = (total - played).coerceAtLeast(0L),
                 hasProgress = progress != null && played > 0L,
                 addedOrder = byAddedIndex[book.id] ?: index,
-                lastPlayedAt = progress?.lastPlayedAt ?: 0L
+                lastPlayedAt = progress?.lastPlayedAt ?: 0L,
+                orderInSeries = book.orderInSeries
             )
         }
     }

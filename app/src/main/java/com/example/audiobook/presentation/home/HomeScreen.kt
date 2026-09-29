@@ -113,30 +113,39 @@ fun HomeScreen(
             } else if (state.totalBooks == 0) {
                 HomeEmptyState(onExplore = { onOpenLibrarySection("ALL_BOOKS") })
             } else {
-                state.continueListening?.let { cont ->
+                // PART 3: كتاب واحد → بطاقة مميزة؛ 2-3 → صف تمرير (النقر يشغّل).
+                if (state.continueList.isNotEmpty()) {
                     HomeSectionTitle(stringResource(R.string.home_continue_title))
-                    ContinueFeaturedCard(
-                        cont = cont,
-                        onOpenCard = { onBookSelected(it) },
-                        onOpenPlayer = onOpenPlayer,
-                        onBookOptions = onBookOptions
-                    )
-                }
-
-                HomeListenNowCard(
-                    onClick = onOpenListenNow,
-                    modifier = Modifier.padding(top = AppSpacing.md)
-                )
-
-                if (state.nextUp.isNotEmpty()) {
-                    HomeSectionTitle(stringResource(R.string.home_next_title))
-                    LazyRow(
-                        contentPadding = PaddingValues(end = AppSpacing.lg),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        items(state.nextUp, key = { it.bookId }) { item ->
-                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
+                    if (state.continueList.size == 1) {
+                        val cont = state.continueList.first()
+                        ContinueFeaturedCard(
+                            cont = cont,
+                            onOpenCard = { onBookSelected(it) },
+                            onOpenPlayer = onOpenPlayer,
+                            onBookOptions = onBookOptions
+                        )
+                    } else {
+                        LazyRow(
+                            contentPadding = PaddingValues(end = AppSpacing.lg),
+                            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                        ) {
+                            items(state.continueList, key = { it.book.bookId }) { cont ->
+                                HomeBookCard(
+                                    cont.book,
+                                    Modifier.width(132.dp),
+                                    onClick = { cont.book.editionId?.let(onOpenPlayer) },
+                                    onBookOptions = { bookLongPress(cont.book) }
+                                )
+                            }
                         }
+                    }
+                } else {
+                    // PART 5: بلا تقدّم — دعوة للمكتبة بزر موجود مسبقًا.
+                    OutlinedButton(
+                        onClick = { onOpenLibrarySection("ALL_BOOKS") },
+                        modifier = Modifier.minTouchTarget()
+                    ) {
+                        Text(stringResource(R.string.home_explore_library))
                     }
                 }
 
@@ -154,7 +163,54 @@ fun HomeScreen(
                             HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
                         }
                     }
+                } else {
+                    HomeSectionTitle(text = stringResource(R.string.home_recent_title))
+                    Text(
+                        text = stringResource(R.string.entity_no_books),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+
+                if (state.favorites.isNotEmpty()) {
+                    HomeSectionTitle(
+                        text = stringResource(R.string.home_favorites_title),
+                        actionLabel = stringResource(R.string.home_view_all_favorites),
+                        onAction = { onOpenLibrarySection("FAVORITES") }
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(end = AppSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        items(state.favorites, key = { it.bookId }) { item ->
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
+                        }
+                    }
+                } else {
+                    HomeSectionTitle(text = stringResource(R.string.home_favorites_title))
+                    Text(
+                        text = stringResource(R.string.entity_no_books),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (state.nextUp.isNotEmpty()) {
+                    HomeSectionTitle(stringResource(R.string.home_next_title))
+                    LazyRow(
+                        contentPadding = PaddingValues(end = AppSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        items(state.nextUp, key = { it.bookId }) { item ->
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
+                        }
+                    }
+                }
+
+                HomeListenNowCard(
+                    onClick = onOpenListenNow,
+                    modifier = Modifier.padding(top = AppSpacing.md)
+                )
 
                 if (state.series.isNotEmpty()) {
                     HomeSectionPanel(
@@ -175,6 +231,13 @@ fun HomeScreen(
                             }
                         }
                     }
+                } else {
+                    HomeSectionTitle(text = stringResource(R.string.home_series_title))
+                    Text(
+                        text = stringResource(R.string.entity_empty_series),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 if (state.authors.isNotEmpty()) {
@@ -191,6 +254,13 @@ fun HomeScreen(
                             HomeAuthorCard(a, onClick = { onOpenAuthor(a.authorId) }, onOptions = { onAuthorOptions(a.authorId) })
                         }
                     }
+                } else {
+                    HomeSectionTitle(text = stringResource(R.string.home_authors_title))
+                    Text(
+                        text = stringResource(R.string.entity_empty_authors),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 if (state.collections.isNotEmpty()) {
@@ -203,22 +273,13 @@ fun HomeScreen(
                             HomeCollectionCard(c, onClick = { onOpenCollection(c.collectionId) }, onOptions = { onCollectionOptions(c.collectionId) })
                         }
                     }
-                }
-
-                if (state.favorites.isNotEmpty()) {
-                    HomeSectionTitle(
-                        text = stringResource(R.string.home_favorites_title),
-                        actionLabel = stringResource(R.string.home_view_all_favorites),
-                        onAction = { onOpenLibrarySection("FAVORITES") }
+                } else {
+                    HomeSectionTitle(stringResource(R.string.home_collections_title))
+                    Text(
+                        text = stringResource(R.string.entity_no_books),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    LazyRow(
-                        contentPadding = PaddingValues(end = AppSpacing.lg),
-                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
-                    ) {
-                        items(state.favorites, key = { it.bookId }) { item ->
-                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
-                        }
-                    }
                 }
             }
 
