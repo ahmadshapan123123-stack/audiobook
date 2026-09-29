@@ -152,7 +152,10 @@ class AtherMediaNotificationProvider(
             playPauseLabel,
             Player.COMMAND_PLAY_PAUSE
         )
-        val staticButtons = PlaybackSessionCommands.notificationButtons()
+        val staticButtons = PlaybackSessionCommands.notificationButtons(
+            forwardSeconds = appSettings.skipForwardSeconds.value,
+            backwardSeconds = appSettings.skipBackwardSeconds.value
+        )
         val fullActions = listOf(
             actionFor(staticButtons[0], actionFactory),
             playPauseAction,

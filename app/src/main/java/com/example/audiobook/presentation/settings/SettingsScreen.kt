@@ -84,6 +84,21 @@ import java.io.File
 import java.util.Locale
 
 private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+private val SKIP_OPTIONS = listOf(10, 15, 20, 30, 45, 60)
+
+/** قائمة التراخيص من كتالوج الإصدارات — كلها Apache License 2.0. */
+private val OSS_LICENSES = listOf(
+    "AndroidX Core / Activity" to "Apache License 2.0",
+    "Jetpack Compose (UI / Material3 / Tooling)" to "Apache License 2.0",
+    "Navigation Compose" to "Apache License 2.0",
+    "Lifecycle Runtime Compose" to "Apache License 2.0",
+    "Hilt (Android + Compiler + Navigation)" to "Apache License 2.0",
+    "Room (Runtime + KTX)" to "Apache License 2.0",
+    "Media3 (ExoPlayer + Session)" to "Apache License 2.0",
+    "WorkManager" to "Apache License 2.0",
+    "DocumentFile" to "Apache License 2.0",
+    "Haze (chrisbanes)" to "Apache License 2.0"
+)
 private val SLEEP_DURATIONS = listOf(5, 10, 15, 30, 45, 60)
 private const val DATABASE_FILE_NAME = "audiobook.db"
 
@@ -127,6 +142,10 @@ fun SettingsScreen(
     val defaultSpeed by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val autoResume by viewModel.autoResume.collectAsStateWithLifecycle()
     val pauseOnDisconnect by viewModel.pauseOnAudioDisconnect.collectAsStateWithLifecycle()
+    val autoNextChapter by viewModel.autoNextChapter.collectAsStateWithLifecycle()
+    val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
+    val skipForwardSeconds by viewModel.skipForwardSeconds.collectAsStateWithLifecycle()
+    val skipBackwardSeconds by viewModel.skipBackwardSeconds.collectAsStateWithLifecycle()
     val defaultSleep by viewModel.defaultSleepMinutes.collectAsStateWithLifecycle()
     val autoExtend by viewModel.autoExtendSleep.collectAsStateWithLifecycle()
     val notifications by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
@@ -139,7 +158,6 @@ fun SettingsScreen(
     val dailyMinute by viewModel.dailyReminderMinute.collectAsStateWithLifecycle()
     val resumeReminder by viewModel.resumeReminderEnabled.collectAsStateWithLifecycle()
     val hasDemoData by viewModel.hasSeededDemoData.collectAsStateWithLifecycle()
-    val hasLibraryRoots by viewModel.hasLibraryRoots.collectAsStateWithLifecycle()
     val noRootsPrompt by viewModel.noRootsPrompt.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanResult by viewModel.scanResult.collectAsStateWithLifecycle()
@@ -177,6 +195,7 @@ fun SettingsScreen(
     }
     var showDailyTimePicker by remember { mutableStateOf(false) }
     var showRemoveDemoDialog by remember { mutableStateOf(false) }
+    var showLicensesDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     val context = LocalContext.current
     var postNotificationsGranted by remember { mutableStateOf(checkPostNotifications(context)) }
@@ -328,6 +347,34 @@ fun SettingsScreen(
                     checked = pauseOnDisconnect,
                     onCheckedChange = { viewModel.setPauseOnAudioDisconnect(it) }
                 )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_auto_next_chapter),
+                    subtitle = stringResource(R.string.settings_auto_next_chapter_desc),
+                    checked = autoNextChapter,
+                    onCheckedChange = { viewModel.setAutoNextChapter(it) }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_keep_screen_on),
+                    subtitle = stringResource(R.string.settings_keep_screen_on_desc),
+                    checked = keepScreenOn,
+                    onCheckedChange = { viewModel.setKeepScreenOn(it) }
+                )
+                SettingsDivider()
+                SettingsOptionGrid(
+                    label = stringResource(R.string.settings_skip_forward),
+                    options = SKIP_OPTIONS.map { stringResource(R.string.settings_skip_seconds, it) },
+                    selectedIndex = SKIP_OPTIONS.indexOf(skipForwardSeconds).coerceAtLeast(0),
+                    onSelect = { viewModel.setSkipForwardSeconds(SKIP_OPTIONS[it]) }
+                )
+                SettingsDivider()
+                SettingsOptionGrid(
+                    label = stringResource(R.string.settings_skip_backward),
+                    options = SKIP_OPTIONS.map { stringResource(R.string.settings_skip_seconds, it) },
+                    selectedIndex = SKIP_OPTIONS.indexOf(skipBackwardSeconds).coerceAtLeast(0),
+                    onSelect = { viewModel.setSkipBackwardSeconds(SKIP_OPTIONS[it]) }
+                )
             }
 
             // ── 2. مؤقت النوم ──
@@ -394,6 +441,8 @@ fun SettingsScreen(
                 description = stringResource(R.string.settings_library_desc)
             )
             if (onOpenLibraryRoots != null) {
+                // Group A — المصادر: إدارة المجلدات + الاكتشافات المعلقة.
+                SettingsSubHeader(text = stringResource(R.string.settings_group_sources))
                 SettingsCardGroup {
                     SettingsNavRow(
                         title = stringResource(R.string.settings_library_roots),
@@ -418,6 +467,45 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
+                }
+            }
+                // Group B — الذكاء (خارج شرط الجذور عمدًا: الإعداد يخص الفحص
+                // لا التنقل، فيبقى مرئيًا حتى بلا onOpenLibraryRoots كما في الاختبار).
+                SettingsSubHeader(text = stringResource(R.string.settings_group_intelligence))
+                // مستوى الذكاء في كشف الإصدارات (عقد الوصولية R8) — داخل قسم المكتبة والفحص.
+                SettingsRowContent(title = stringResource(R.string.settings_intelligence)) {
+                    Text(
+                        stringResource(R.string.settings_intelligence_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SettingsRadioCard(
+                    title = stringResource(R.string.settings_intelligence_conservative_title),
+                    description = stringResource(R.string.settings_intelligence_conservative_desc),
+                    selected = level == IntelligenceLevel.CONSERVATIVE,
+                    onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE) }
+                )
+                SettingsRadioCard(
+                    title = stringResource(R.string.settings_intelligence_balanced_title),
+                    description = stringResource(R.string.settings_intelligence_balanced_desc),
+                    selected = level == IntelligenceLevel.BALANCED,
+                    onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.BALANCED) }
+                )
+                SettingsRadioCard(
+                    title = stringResource(R.string.settings_intelligence_aggressive_title),
+                    description = stringResource(R.string.settings_intelligence_aggressive_desc),
+                    selected = level == IntelligenceLevel.AGGRESSIVE,
+                    onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.AGGRESSIVE) }
+                )
+                Text(
+                    stringResource(R.string.settings_intelligence_strict_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // Group C — الفحص.
+                SettingsSubHeader(text = stringResource(R.string.settings_group_scan))
+                SettingsCardGroup {
                     // PART 12: وضع الفحص — صفّان بنفس نمط الصفوف المجاورة (لا تصميم جديد).
                     SettingsNavRow(
                         title = stringResource(R.string.settings_scan_mode),
@@ -453,21 +541,19 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
-                    // STAGE 5 — دمج الجذور أحادية المؤلف.
                     SettingsActionRow(
-                        title = stringResource(R.string.settings_merge_roots),
-                        subtitle = if (mergeCandidates.isEmpty()) {
-                            stringResource(R.string.settings_merge_roots_none)
+                        title = stringResource(R.string.settings_classification_preview),
+                        subtitle = if (isPreviewingClassification) {
+                            stringResource(R.string.settings_classification_preview_loading)
                         } else {
-                            stringResource(R.string.settings_merge_roots_desc)
+                            stringResource(R.string.settings_classification_preview_desc)
                         },
-                        enabled = mergeCandidates.isNotEmpty() && !isMerging && !isScanning,
-                        onClick = {
-                            viewModel.previewMerge(mergeCandidates.map { it.rootId })
-                            showMergeDialog = true
-                        }
+                        onClick = { viewModel.requestClassificationPreview() }
                     )
-                    SettingsDivider()
+        }
+            // Group D — الصيانة: إجراءات مدمّرة/ثقيلة في الأسفل.
+            SettingsSubHeader(text = stringResource(R.string.settings_group_maintenance))
+            SettingsCardGroup {
                     SettingsActionRow(
                         title = stringResource(R.string.settings_rebuild_structure),
                         subtitle = if (isRebuilding) {
@@ -493,49 +579,21 @@ fun SettingsScreen(
                         )
                         SettingsDivider()
                     }
+                    // STAGE 5 — دمج الجذور أحادية المؤلف (صيانة: آخر الصفوف).
                     SettingsActionRow(
-                        title = stringResource(R.string.settings_classification_preview),
-                        subtitle = if (isPreviewingClassification) {
-                            stringResource(R.string.settings_classification_preview_loading)
+                        title = stringResource(R.string.settings_merge_roots),
+                        subtitle = if (mergeCandidates.isEmpty()) {
+                            stringResource(R.string.settings_merge_roots_none)
                         } else {
-                            stringResource(R.string.settings_classification_preview_desc)
+                            stringResource(R.string.settings_merge_roots_desc)
                         },
-                        onClick = { viewModel.requestClassificationPreview() }
+                        enabled = mergeCandidates.isNotEmpty() && !isMerging && !isScanning,
+                        onClick = {
+                            viewModel.previewMerge(mergeCandidates.map { it.rootId })
+                            showMergeDialog = true
+                        }
                     )
-                }
-            }
-
-            // مستوى الذكاء في كشف الإصدارات (عقد الوصولية R8) — داخل قسم المكتبة والفحص.
-            SettingsRowContent(title = stringResource(R.string.settings_intelligence)) {
-                Text(
-                    stringResource(R.string.settings_intelligence_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            SettingsRadioCard(
-                title = stringResource(R.string.settings_intelligence_conservative_title),
-                description = stringResource(R.string.settings_intelligence_conservative_desc),
-                selected = level == IntelligenceLevel.CONSERVATIVE,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.CONSERVATIVE) }
-            )
-            SettingsRadioCard(
-                title = stringResource(R.string.settings_intelligence_balanced_title),
-                description = stringResource(R.string.settings_intelligence_balanced_desc),
-                selected = level == IntelligenceLevel.BALANCED,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.BALANCED) }
-            )
-            SettingsRadioCard(
-                title = stringResource(R.string.settings_intelligence_aggressive_title),
-                description = stringResource(R.string.settings_intelligence_aggressive_desc),
-                selected = level == IntelligenceLevel.AGGRESSIVE,
-                onSelect = { viewModel.selectIntelligenceLevel(IntelligenceLevel.AGGRESSIVE) }
-            )
-            Text(
-                stringResource(R.string.settings_intelligence_strict_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        }
 
             // ── 5. الإشعارات ──
             SettingsSectionLabel(
@@ -754,8 +812,15 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                SettingsDivider()
+                // التراخيص فقط — بلا سجل تغييرات/خصوصية/تواصل/تقييم (تطبيق شخصي).
+                SettingsNavRow(
+                    title = stringResource(R.string.settings_licenses),
+                    subtitle = stringResource(R.string.settings_licenses_title),
+                    onClick = { showLicensesDialog = true }
+                )
             }
-        }
     }
 
     if (noRootsPrompt) {
@@ -841,6 +906,35 @@ fun SettingsScreen(
             },
             title = { Text(stringResource(R.string.settings_remove_demo)) },
             text = { Text(stringResource(R.string.settings_remove_demo_confirm)) }
+        )
+    }
+
+    // التراخيص: قائمة ثابتة من كتالوج الإصدارات (Apache-2.0 كلها) — امتثال OSS.
+    if (showLicensesDialog) {
+        AlertDialog(
+            onDismissRequest = { showLicensesDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showLicensesDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+            dismissButton = {},
+            title = { Text(stringResource(R.string.settings_licenses_title)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                ) {
+                    OSS_LICENSES.forEach { (name, license) ->
+                        Column {
+                            Text(text = name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = license,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
         )
     }
 
@@ -1072,6 +1166,17 @@ private fun SettingsCardGroup(content: @Composable androidx.compose.foundation.l
             content()
         }
     }
+}
+
+/** تسمية مجموعة فرعية داخل قسم (المصادر/الذكاء/الفحص/الصيانة) — نص فقط، لا صف. */
+@Composable
+private fun SettingsSubHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xxs)
+    )
 }
 
 @Composable

@@ -230,6 +230,8 @@
     <string name="player_play">تشغيل</string>
     <string name="player_pause">إيقاف</string>
     <string name="player_skip_forward">+15 ثا</string>
+    <string name="player_skip_back_n">-%1$d ثا</string>
+    <string name="player_skip_forward_n">+%1$d ثا</string>
     <string name="player_next">التالي</string>
     <string name="player_sleep_label">مؤقت النوم</string>
     <string name="player_sleep_minutes">مؤقت النوم: %1$d دقيقة</string>
@@ -409,6 +411,13 @@
     <string name="settings_auto_resume_desc">فتح التطبيق يستأنف آخر كتاب كنت تستمع إليه.</string>
     <string name="settings_pause_on_disconnect">إيقاف عند فصل السماعة</string>
     <string name="settings_pause_on_disconnect_desc">إيقاف التشغيل مؤقتًا عند فصل سماعة البلوتوث أو السلكية</string>
+    <string name="settings_auto_next_chapter">متابعة الفصل التالي تلقائيًا</string>
+    <string name="settings_auto_next_chapter_desc">عند نهاية الفصل يبدأ التالي، وإلا يتوقف التشغيل</string>
+    <string name="settings_keep_screen_on">إبقاء الشاشة مضاءة</string>
+    <string name="settings_keep_screen_on_desc">منع إطفاء الشاشة أثناء الاستماع في المشغل</string>
+    <string name="settings_skip_forward">تقديم</string>
+    <string name="settings_skip_backward">تأخير</string>
+    <string name="settings_skip_seconds">%1$d ثا</string>
     <string name="settings_sleep_timer">مؤقت النوم</string>
     <string name="settings_default_duration">المدة الافتراضية</string>
     <string name="settings_auto_extend">تمديد تلقائي</string>
@@ -431,6 +440,8 @@
     <string name="settings_about">عن أثير</string>
     <string name="settings_version">الإصدار %1$s</string>
     <string name="settings_about_desc">مكتبة صوتية عربية ذكية مفتوحة المصدر.</string>
+    <string name="settings_licenses">التراخيص</string>
+    <string name="settings_licenses_title">تراخيص المصادر المفتوحة</string>
 
     <string name="settings_pending_discoveries">الاكتشافات المعلّقة</string>
     <string name="settings_pending_discoveries_desc">مراجعة المجلدات الصوتية المكتشفة حديثًا: دمج أو إسناد أو تجاهل.</string>
@@ -471,6 +482,10 @@
     <string name="settings_appearance_desc">اختر السمة المريحة لقراءتك واستماعك.</string>
 
     <string name="settings_library_desc">مصادر الفحص ومستوى الذكاء في كشف الإصدارات.</string>
+    <string name="settings_group_sources">المصادر</string>
+    <string name="settings_group_intelligence">الذكاء</string>
+    <string name="settings_group_scan">الفحص</string>
+    <string name="settings_group_maintenance">الصيانة</string>
     <string name="settings_intelligence_conservative_title">محافظ</string>
     <string name="settings_intelligence_conservative_desc">لا دمج تلقائي إطلاقًا؛ كل تجميع مقترح يُعرض عليك في شاشة المراجعة.</string>
     <string name="settings_intelligence_balanced_title">متوازن</string>

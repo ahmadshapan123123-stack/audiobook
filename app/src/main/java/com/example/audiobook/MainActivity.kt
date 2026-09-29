@@ -667,12 +667,18 @@ class MainActivity : ComponentActivity() {
                 )
             ) { entry ->
                 val startMs = entry.arguments?.getLong("startMs") ?: -1L
+                val skipFwd by appSettings.skipForwardSeconds.collectAsStateWithLifecycle()
+                val skipBack by appSettings.skipBackwardSeconds.collectAsStateWithLifecycle()
+                val keepAwake by appSettings.keepScreenOn.collectAsStateWithLifecycle()
                 PlayerScreen(
                     controller = playbackController,
                     themeMode = mode,
                     marks = marksCoordinator,
                     sleepTimer = sleepTimerController,
                     notificationCenter = notificationCenter,
+                    skipForwardSeconds = skipFwd,
+                    skipBackwardSeconds = skipBack,
+                    keepScreenOn = keepAwake,
                     onFirstPlaybackPermissionRequest = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

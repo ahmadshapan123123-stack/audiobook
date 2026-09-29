@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AudioFileEntity
+import com.example.audiobook.data.room.entity.ChapterEntity
 import com.example.audiobook.data.room.entity.FileStatus
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
 import com.example.audiobook.data.room.entity.ListeningSessionEntity
@@ -85,6 +86,8 @@ class ExoPlaybackController @Inject constructor(
     private var sessionStartMs: Long? = null
     private var sessionStartPositionMs: Long = 0L
     private var sessionEditionId: UUID? = null
+    /** آخر موضع فُحص لعبور حد الفصل (إيقاف المتابعة التلقائية) — سالب = غير مهيأ. */
+    private var lastChapterCheckPositionMs: Long = -1L
     /**
      * نطاق كتابة الجلسات: مستقل عن scope الرئيسي الذي يُلغى في release() —
      * وإلا ضاعت جلسة الإغلاق نفسها.
@@ -176,6 +179,7 @@ class ExoPlaybackController @Inject constructor(
 
     override suspend fun openEdition(editionId: UUID) {
         this.editionId = editionId
+        lastChapterCheckPositionMs = -1L
         PlaybackStateHolder.update(editionId)
         files = database.audioFileDao().getByParent(editionId)
         playableFiles = files.filter { it.fileStatus == FileStatus.AVAILABLE }
@@ -294,11 +298,17 @@ class ExoPlaybackController @Inject constructor(
     override fun seekTo(positionMs: Long) {
         val mark = finishedMarkMs
         if (mark != null && positionMs <= mark - UNFINISH_REWIND_THRESHOLD_MS) finishedMarkMs = null
+        // قفزة يدوية تُعيد ضبط كاشف العبور — لا إيقاف بعد قفزة صريحة.
+        lastChapterCheckPositionMs = positionMs
         seekToGlobal(positionMs)
         saveProgress()
     }
-    override fun skipForward15Seconds() { seekTo(currentGlobalPosition() + 15_000L) }
-    override fun skipBack15Seconds() { seekTo(currentGlobalPosition() - 15_000L) }
+    override fun skipForward15Seconds() {
+        seekTo(currentGlobalPosition() + appSettings.skipForwardSeconds.value * 1_000L)
+    }
+    override fun skipBack15Seconds() {
+        seekTo(currentGlobalPosition() - appSettings.skipBackwardSeconds.value * 1_000L)
+    }
 
     override suspend fun previousChapter() {
         val id = editionId ?: return
@@ -392,6 +402,31 @@ class ExoPlaybackController @Inject constructor(
         scope.launch(Dispatchers.IO) {
             val chapters = database.chapterDao().getByParent(id)
             chapterCompletionObserver.onPositionUpdate(id, positionMs, chapters, timeline.durationMs)
+            pauseAtChapterEndIfDisabled(id, positionMs, chapters)
+        }
+    }
+
+    /**
+     * إيقاف عند نهاية الفصل عندما تكون المتابعة التلقائية OFF: يُطلق مرة
+     * واحدة عند عبور الحد (الموضع السابق قبل النهاية والحالي بعدها)، فلا
+     * يعيد الإيقاف عند ضغط التشغيل مجددًا من نفس الموضع. الفصل الأخير
+     * يُترك لمنطق الإنهاء الطبيعي.
+     */
+    private fun pauseAtChapterEndIfDisabled(editionId: UUID, positionMs: Long, chapters: List<ChapterEntity>) {
+        if (appSettings.autoNextChapter.value) {
+            lastChapterCheckPositionMs = positionMs
+            return
+        }
+        if (chapters.size < 2) {
+            lastChapterCheckPositionMs = positionMs
+            return
+        }
+        val previous = lastChapterCheckPositionMs
+        lastChapterCheckPositionMs = positionMs
+        if (previous < 0L) return
+        val boundary = chapters.drop(1).map { it.startPositionMs }.firstOrNull { it > previous } ?: return
+        if (positionMs >= boundary && previous < boundary) {
+            player.pause()
         }
     }
 

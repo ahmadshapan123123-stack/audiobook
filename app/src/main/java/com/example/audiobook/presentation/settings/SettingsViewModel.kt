@@ -25,8 +25,6 @@ import com.example.audiobook.domain.usecases.ScanResume
 import com.example.audiobook.domain.usecases.RebuildLibraryStructure
 import com.example.audiobook.domain.usecases.RebuildStructureResult
 import com.example.audiobook.domain.usecases.ScanNowResult
-import com.example.audiobook.domain.usecases.ScanProgress
-import com.example.audiobook.domain.usecases.ScanProgressBus
 import com.example.audiobook.domain.model.AppThemeMode
 import com.example.audiobook.domain.model.LogoColorMode
 import com.example.audiobook.domain.model.ScanMode
@@ -70,6 +68,11 @@ class SettingsViewModel @Inject constructor(
     val defaultSpeed: StateFlow<Float> = appSettings.defaultSpeed
     val autoResume: StateFlow<Boolean> = appSettings.autoResume
     val pauseOnAudioDisconnect: StateFlow<Boolean> = appSettings.pauseOnAudioDisconnect
+    val autoNextChapter: StateFlow<Boolean> = appSettings.autoNextChapter
+    val keepScreenOn: StateFlow<Boolean> = appSettings.keepScreenOn
+    /** PART 3: فاصلا التقديم/التأخير (ثوانٍ) — القيم: 10/15/20/30/45/60. */
+    val skipForwardSeconds: StateFlow<Int> = appSettings.skipForwardSeconds
+    val skipBackwardSeconds: StateFlow<Int> = appSettings.skipBackwardSeconds
     val defaultSleepMinutes: StateFlow<Int> = appSettings.defaultSleepMinutes
     val autoExtendSleep: StateFlow<Boolean> = appSettings.autoExtendSleep
     val notificationsEnabled: StateFlow<Boolean> = appSettings.notificationsEnabled
@@ -83,19 +86,12 @@ class SettingsViewModel @Inject constructor(
     val resumeReminderEnabled: StateFlow<Boolean> = appSettings.resumeReminderEnabled
     val hasSeededDemoData: StateFlow<Boolean> = appSettings.hasSeededDemoData
 
-    private val _hasLibraryRoots = MutableStateFlow(false)
-    val hasLibraryRoots: StateFlow<Boolean> = _hasLibraryRoots.asStateFlow()
-
     /**
-     * «لا توجد مجلدات» (غير true = لا شيء يُعرض). يملؤه ViewModel بعد استشارة القاعدة
-     * مباشرةً (`countAll()` suspend) بدل الوثوق بقيمة `hasLibraryRoots` القديمة في
-     * Composable — القراءة القديمة كانت تبقى كما لو لم تُستدعَ `refreshRootsCount()` أصلًا.
+     * «لا توجد مجلدات» (غير true = لا شيء يُعرض). يُحسم باستشارة القاعدة
+     * مباشرةً (`countAll()` suspend) عند الحاجة — لا حالة مخزّنة تتقادم.
      */
     private val _noRootsPrompt = MutableStateFlow(false)
     val noRootsPrompt: StateFlow<Boolean> = _noRootsPrompt.asStateFlow()
-
-    private val _isRemovingDemoData = MutableStateFlow(false)
-    val isRemovingDemoData: StateFlow<Boolean> = _isRemovingDemoData.asStateFlow()
 
     /** حصيلة آخر تنظيف لبيانات التجربة (تُستهلك مرة واحدة لعرض Snackbar). */
     private val _demoCleanupResult = MutableStateFlow<ClearDemoDataResult?>(null)
@@ -171,17 +167,11 @@ class SettingsViewModel @Inject constructor(
     val scanFailed: StateFlow<Boolean> = _scanFailed.asStateFlow()
 
     /**
-     * PART 11: رُفض الفحص لأن فحصًا آخر يعمل (حارس [ScanProgressBus]). حالة منفصلة
+     * PART 11: رُفض الفحص لأن فحصًا آخر يعمل (حارس الفحص الوحيد). حالة منفصلة
      * عن [scanFailed] لأن الرسالة مختلفة — ليست خطأً ولا «فشل».
      */
     private val _scanAlreadyRunning = MutableStateFlow(false)
     val scanAlreadyRunning: StateFlow<Boolean> = _scanAlreadyRunning.asStateFlow()
-
-    /** PART 1: تقدّم الفحص الآتي من الخدمة الأمامية (يملؤه مراقب ScanProgressBus). */
-    private val _scanProgress = MutableStateFlow<ScanProgress?>(null)
-    val scanProgress: StateFlow<ScanProgress?> = _scanProgress.asStateFlow()
-
-    private var progressObserver: kotlinx.coroutines.Job? = null
 
     private val _isPreviewingClassification = MutableStateFlow(false)
     val isPreviewingClassification: StateFlow<Boolean> = _isPreviewingClassification.asStateFlow()
@@ -191,9 +181,6 @@ class SettingsViewModel @Inject constructor(
     val classificationPreview: StateFlow<List<ClassificationPreviewPerRoot>?> = _classificationPreview.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            _hasLibraryRoots.value = libraryRootDao.countAll() > 0
-        }
         // STAGE 4: عرض «استئناف الفحص الأخير» إن بقي checkpoint صالح.
         refreshResumeInfo()
         // يلتقط نتيجة Worker إعادة التصنيف الخلفي ويعرضها (Snackbar + إنهاء الحالة).
@@ -208,19 +195,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun refreshRootsCount() {
-        viewModelScope.launch {
-            _hasLibraryRoots.value = libraryRootDao.countAll() > 0
-        }
-    }
-
     fun removeDemoData() {
         viewModelScope.launch {
-            _isRemovingDemoData.value = true
             val result = libraryManagement.clearDemoData()
             appSettings.setHasSeededDemoData(false)
             _demoCleanupResult.value = result
-            _isRemovingDemoData.value = false
         }
     }
 
@@ -308,14 +287,8 @@ class SettingsViewModel @Inject constructor(
             }
             _isScanning.value = true
             // PART 1: الفحص يمرّ عبر ScanForegroundService — نطاق foreground
-            // لا مقيّد بظهور الشاشة، فلا يقتله lmkd على مكتبة كبيرة. التقدّم
-            // يأتي من ScanProgressBus مباشرةً فيُبقي الشريط حيًّا.
-            progressObserver?.cancel()
-            progressObserver = viewModelScope.launch {
-                ScanProgressBus.state.collect { progress ->
-                    if (progress != null) _scanProgress.value = progress
-                }
-            }
+            // لا مقيّد بظهور الشاشة، فلا يقتله lmkd على مكتبة كبيرة.
+            // PART 1 (تنظيف): مراقب التقدّم المحلي حُذف — لا شاشة تقرؤه.
             // PART 1: لا مسار احتياطي مباشر. الفحص في هذه الشاشة إما عبر
             // الخدمة الأمامية أو لا فحص — تشغيل `scanLibraryNow()` من
             // ViewModel كان يسقط كل ضمانة بقاء الخدمة عند فشل `start()`،
@@ -331,7 +304,6 @@ class SettingsViewModel @Inject constructor(
                 when (val outcome = awaitScanOutcome()) {
                     is ScanOutcome.Completed -> {
                         _scanResult.value = outcome.outcome
-                        refreshRootsCount()
                     }
                     is ScanOutcome.Failed -> _scanFailed.value = true
                     // ليس خطأ: فحص آخر يعمل. نُظهر الرسالة المخصّصة لا رسالة الفشل.
@@ -339,8 +311,6 @@ class SettingsViewModel @Inject constructor(
                     ScanOutcome.Cancelled -> Unit
                 }
             }
-            progressObserver?.cancel()
-            progressObserver = null
             _isScanning.value = false
             // STAGE 4: بعد أي فحص تتغير نقاط التوقف — حدّث عرض الاستئناف.
             refreshResumeInfo()
@@ -406,12 +376,6 @@ class SettingsViewModel @Inject constructor(
             // لعرض مؤشّر التقدّم، وهو ما يحجب ما خلفه عن اللمس أصلًا.
             // PART 1: عبر الخدمة الأمامية — نظافة القشور + الفحص كلاهما مغطّى
             // بستوى foreground، فلا يُقتل الفحص على مكتبة كبيرة.
-            progressObserver?.cancel()
-            progressObserver = viewModelScope.launch {
-                ScanProgressBus.state.collect { progress ->
-                    if (progress != null) _scanProgress.value = progress
-                }
-            }
             ScanServiceNotifier.reset()
             if (!scanServiceLauncher.launch(ScanRequest(ScanJob.REBUILD))) {
                 // لا rebuild مباشر: المسار القديم كان ينظّف القشور ثم يفحص
@@ -430,7 +394,6 @@ class SettingsViewModel @Inject constructor(
                         // إعادة البناء كاملةً فتُرجع نفس العقد.
                         _rebuildResult.value = outcome.rebuildResult
                             ?: RebuildStructureResult(shellsRemoved = 0, orphanBooksRemoved = 0, scan = outcome.outcome)
-                        refreshRootsCount()
                     }
                     is ScanOutcome.Failed -> {
                         _rebuildError.value = outcome.reason
@@ -440,8 +403,6 @@ class SettingsViewModel @Inject constructor(
                     ScanOutcome.Cancelled -> Unit
                 }
             }
-            progressObserver?.cancel()
-            progressObserver = null
             _isRebuilding.value = false
             // انتهى التنفيذ: يُغلق الحوار ليظهر الـSnackbar.
             _rebuildBookCount.value = null
@@ -478,12 +439,8 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** استشارة القاعدة مباشرةً + تحديث [_hasLibraryRoots] ليبقى العدّاد متسقًا. */
-    private suspend fun hasRootsNow(): Boolean {
-        val count = libraryRootDao.countAll()
-        _hasLibraryRoots.value = count > 0
-        return count > 0
-    }
+    /** استشارة القاعدة مباشرةً — لا حالة مخزّنة تتقادم. */
+    private suspend fun hasRootsNow(): Boolean = libraryRootDao.countAll() > 0
 
     fun consumeClassificationPreview() {
         _classificationPreview.value = null
@@ -535,8 +492,12 @@ class SettingsViewModel @Inject constructor(
     fun selectIntelligenceLevel(level: IntelligenceLevel) = appSettings.setIntelligenceLevel(level)
     fun setAutoSeriesClassification(enabled: Boolean) = appSettings.setAutoSeriesClassification(enabled)
     fun setDefaultSpeed(speed: Float) = appSettings.setDefaultSpeed(speed)
+    fun setSkipForwardSeconds(seconds: Int) = appSettings.setSkipForwardSeconds(seconds)
+    fun setSkipBackwardSeconds(seconds: Int) = appSettings.setSkipBackwardSeconds(seconds)
     fun setAutoResume(enabled: Boolean) = appSettings.setAutoResume(enabled)
     fun setPauseOnAudioDisconnect(enabled: Boolean) = appSettings.setPauseOnAudioDisconnect(enabled)
+    fun setAutoNextChapter(enabled: Boolean) = appSettings.setAutoNextChapter(enabled)
+    fun setKeepScreenOn(enabled: Boolean) = appSettings.setKeepScreenOn(enabled)
     fun setDefaultSleepMinutes(minutes: Int) = appSettings.setDefaultSleepMinutes(minutes)
     fun setAutoExtendSleep(enabled: Boolean) = appSettings.setAutoExtendSleep(enabled)
     fun setNotificationsEnabled(enabled: Boolean) {

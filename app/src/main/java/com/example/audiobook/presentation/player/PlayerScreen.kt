@@ -179,7 +179,12 @@ fun PlayerScreen(
     onFirstPlaybackPermissionRequest: () -> Unit = {},
     initialPositionMs: Long = -1L,
     onBack: () -> Boolean = { true },
-    viewModel: PlayerViewModel = hiltViewModel()
+    viewModel: PlayerViewModel = hiltViewModel(),
+    /** PART 3: فواصل التخطي (ثوانٍ) من الإعدادات — التسميات والسلوك معًا. */
+    skipForwardSeconds: Int = 15,
+    skipBackwardSeconds: Int = 15,
+    /** إبقاء الشاشة مضاءة أثناء المشغل (من الإعدادات). */
+    keepScreenOn: Boolean = false
 ) {
     val playerUi by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by controller.state.collectAsState()
@@ -190,6 +195,15 @@ fun PlayerScreen(
     val storedBookmarks by (if (editionId != null && marks != null) marks.bookmarks(editionId) else flowOf(emptyList())).collectAsState(initial = emptyList())
     val cosmicHeader = LocalCosmicHeader.current
     SideEffect { cosmicHeader.reset() }
+    // إبقاء الشاشة مضاءة أثناء المشغل (من الإعدادات) — يُرفع العلم عند
+    // الدخول ويُزال عند الخروج مهما كانت القيمة.
+    val keepAwakeContext = LocalContext.current
+    DisposableEffect(keepScreenOn) {
+        val activity = keepAwakeContext as? android.app.Activity
+        val window = activity?.window
+        if (keepScreenOn) window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     var timeline by remember {
         mutableStateOf(
@@ -687,6 +701,8 @@ fun PlayerScreen(
                     scope.launch { controller.nextChapter() }
                 },
                 fg = fg,
+                skipBackLabel = stringResource(R.string.player_skip_back_n, skipBackwardSeconds),
+                skipForwardLabel = stringResource(R.string.player_skip_forward_n, skipForwardSeconds),
                 modifier = Modifier.padding(start = AppSpacing.md, end = AppSpacing.md)
             )
 
@@ -1580,6 +1596,8 @@ private fun PlayerTransportRow(
     onSkipForward: () -> Unit,
     onNext: () -> Unit,
     fg: PlayerFg,
+    skipBackLabel: String,
+    skipForwardLabel: String,
     modifier: Modifier = Modifier
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -1596,15 +1614,15 @@ private fun PlayerTransportRow(
                 modifier = Modifier.size(26.dp).graphicsLayer { scaleX = if (isRtl) -1f else 1f })
         }
         SkipButton(
-            cd = stringResource(R.string.player_skip_back),
-            label = stringResource(R.string.player_skip_back).removeSuffix(" ثا"),
+            cd = skipBackLabel,
+            label = skipBackLabel.removeSuffix(" ثا"),
             onClick = onSkipBack,
             fg = fg
         )
         PlayButton(isPlaying = isPlaying, onClick = onTogglePlay, fg = fg)
         SkipButton(
-            cd = stringResource(R.string.player_skip_forward),
-            label = stringResource(R.string.player_skip_forward).removeSuffix(" ثا"),
+            cd = skipForwardLabel,
+            label = skipForwardLabel.removeSuffix(" ثا"),
             onClick = onSkipForward,
             fg = fg
         )

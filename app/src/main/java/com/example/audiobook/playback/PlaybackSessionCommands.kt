@@ -33,8 +33,8 @@ object PlaybackSessionCommands {
 
     fun commands(): List<SessionCommand> = COMMANDS
 
-    /** أزرار تظهر في إشعار التشغيل الكامل (الفصل السابق، +15، التالي، −15). */
-    fun notificationButtons(): List<CommandButton> = listOf(
+    /** أزرار تظهر في إشعار التشغيل الكامل (الفصل السابق، +N، التالي، −N). */
+    fun notificationButtons(forwardSeconds: Int = 15, backwardSeconds: Int = 15): List<CommandButton> = listOf(
         CommandButton.Builder()
             .setSessionCommand(COMMANDS[0])
             .setDisplayName("الفصل السابق")
@@ -43,7 +43,7 @@ object PlaybackSessionCommands {
             .build(),
         CommandButton.Builder()
             .setSessionCommand(COMMANDS[2])
-            .setDisplayName("+15")
+            .setDisplayName("+$forwardSeconds")
             .setIconResId(CommandButton.getIconResIdForIconConstant(CommandButton.ICON_SKIP_FORWARD_15))
             .setEnabled(true)
             .build(),
@@ -55,7 +55,7 @@ object PlaybackSessionCommands {
             .build(),
         CommandButton.Builder()
             .setSessionCommand(COMMANDS[3])
-            .setDisplayName("-15")
+            .setDisplayName("-$backwardSeconds")
             .setIconResId(CommandButton.getIconResIdForIconConstant(CommandButton.ICON_SKIP_BACK_15))
             .setEnabled(true)
             .build()

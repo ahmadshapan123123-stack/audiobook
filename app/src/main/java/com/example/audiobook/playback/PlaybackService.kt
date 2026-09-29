@@ -124,6 +124,9 @@ class PlaybackService : MediaSessionService() {
     private fun observeNotificationMode() {
         scope.launch { appSettings.notificationsEnabled.collect { provider.refresh() } }
         scope.launch { appSettings.mediaNotificationMinimal.collect { provider.refresh() } }
+        // فواصل التخطي تغيّر تسميات الأزرار — إعادة بناء عند تغييرها.
+        scope.launch { appSettings.skipForwardSeconds.collect { provider.refresh() } }
+        scope.launch { appSettings.skipBackwardSeconds.collect { provider.refresh() } }
         scope.launch {
             appSettings.themeMode.collect { mode ->
                 provider.accentArgb = AtherAccent.accentFor(mode, seriesColorArgb, authorColorArgb, null)
@@ -318,7 +321,10 @@ class PlaybackService : MediaSessionService() {
             phase == SleepTimerPhase.WARNING_WINDOW ||
             phase == SleepTimerPhase.FADING_OUT
         return if (timerPriority) SleepTimerCommands.customButtons()
-        else PlaybackSessionCommands.notificationButtons()
+        else PlaybackSessionCommands.notificationButtons(
+            forwardSeconds = appSettings.skipForwardSeconds.value,
+            backwardSeconds = appSettings.skipBackwardSeconds.value
+        )
     }
 
     /** إعادة تطبيق الأزرار الحيّة على الجلسة الدّوّارة دون إيقاف التشغيل. */

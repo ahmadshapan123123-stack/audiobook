@@ -33,6 +33,21 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _autoResume = MutableStateFlow(prefs.getBoolean(KEY_AUTO_RESUME, true))
     val autoResume: StateFlow<Boolean> = _autoResume.asStateFlow()
 
+    /** متابعة الفصل التالي تلقائيًا (افتراضي ON) — عند OFF يتوقف عند نهاية الفصل. */
+    private val _autoNextChapter = MutableStateFlow(prefs.getBoolean(KEY_AUTO_NEXT_CHAPTER, true))
+    val autoNextChapter: StateFlow<Boolean> = _autoNextChapter.asStateFlow()
+
+    /** إبقاء الشاشة مضاءة أثناء التشغيل (افتراضي OFF). */
+    private val _keepScreenOn = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    /** PART 3: فواصل التخطي (ثوانٍ) — تقديم/تأخير، افتراضي 15. */
+    private val _skipForwardSeconds = MutableStateFlow(prefs.getInt(KEY_SKIP_FORWARD, DEFAULT_SKIP_SECONDS))
+    val skipForwardSeconds: StateFlow<Int> = _skipForwardSeconds.asStateFlow()
+
+    private val _skipBackwardSeconds = MutableStateFlow(prefs.getInt(KEY_SKIP_BACKWARD, DEFAULT_SKIP_SECONDS))
+    val skipBackwardSeconds: StateFlow<Int> = _skipBackwardSeconds.asStateFlow()
+
     /**
      * FIX 8.3 — إيقاف مؤقت عند فصل السماعة (بلوتوث/سلكية): افتراضيًا ON.
      * OFF = يواصل التشغيل على سماعة الهاتف.
@@ -136,9 +151,29 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         prefs.edit().putBoolean(KEY_AUTO_RESUME, value).apply()
     }
 
+    fun setSkipForwardSeconds(value: Int) {
+        _skipForwardSeconds.value = value
+        prefs.edit().putInt(KEY_SKIP_FORWARD, value).apply()
+    }
+
+    fun setSkipBackwardSeconds(value: Int) {
+        _skipBackwardSeconds.value = value
+        prefs.edit().putInt(KEY_SKIP_BACKWARD, value).apply()
+    }
+
     fun setPauseOnAudioDisconnect(value: Boolean) {
         _pauseOnAudioDisconnect.value = value
         prefs.edit().putBoolean(KEY_PAUSE_ON_DISCONNECT, value).apply()
+    }
+
+    fun setAutoNextChapter(value: Boolean) {
+        _autoNextChapter.value = value
+        prefs.edit().putBoolean(KEY_AUTO_NEXT_CHAPTER, value).apply()
+    }
+
+    fun setKeepScreenOn(value: Boolean) {
+        _keepScreenOn.value = value
+        prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
     }
 
     fun setDefaultSleepMinutes(value: Int) {
@@ -277,6 +312,10 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
         const val KEY_DEFAULT_SPEED = "default_speed"
         const val KEY_AUTO_RESUME = "auto_resume"
+        const val KEY_AUTO_NEXT_CHAPTER = "auto_next_chapter"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_SKIP_FORWARD = "skip_forward_seconds"
+        const val KEY_SKIP_BACKWARD = "skip_backward_seconds"
         const val KEY_PAUSE_ON_DISCONNECT = "pause_on_audio_disconnect"
         const val KEY_DEFAULT_SLEEP = "default_sleep_minutes"
         const val KEY_AUTO_EXTEND = "auto_extend_sleep"
@@ -300,5 +339,6 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
         const val DEFAULT_SPEED = 1.0f
         const val DEFAULT_SLEEP = 30
+        const val DEFAULT_SKIP_SECONDS = 15
     }
 }
