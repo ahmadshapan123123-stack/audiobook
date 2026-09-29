@@ -34,6 +34,8 @@ class AtherNotificationCenter @Inject constructor(
 ) {
     private val manager = NotificationManagerCompat.from(context)
     private val handler = Handler(Looper.getMainLooper())
+    /** FIX 2 (B7): هلال إشعار النوم — ثابت فيُحسب مرة واحدة. */
+    private val sleepLargeIcon by lazy { NotificationLargeIcons.moonArtwork() }
 
     // ── التشغيل المصغّر ضمن خدمة التشغيل (يُدار من PlaybackService) ──
 
@@ -54,6 +56,7 @@ class AtherNotificationCenter @Inject constructor(
         val builder = NotificationCompat.Builder(context, NotificationChannels.SLEEP_TIMER)
             .setSmallIcon(R.drawable.ic_stat_ather)
             .setColor(brandAccent())
+            .setLargeIcon(sleepLargeIcon)
             .setContentTitle(context.getString(R.string.notif_sleep_title))
             .setContentText(context.getString(R.string.notif_sleep_remaining, time))
             .setOngoing(true)

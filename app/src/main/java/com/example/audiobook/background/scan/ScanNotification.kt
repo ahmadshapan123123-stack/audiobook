@@ -53,6 +53,9 @@ internal object ScanNotification {
         if (bigText != null) {
             builder.setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
         }
+        // FIX 3 (B7): largeIcon للفحص — عدسة بيضاء على خلفية كونية، تُحسب
+        // مرة واحدة وتُعاد. smallIcon تبقى أحادية كما تفرض المنصة.
+        builder.setLargeIcon(scanLargeIcon(context))
 
         if (cancellable) {
             builder.addAction(
@@ -207,6 +210,18 @@ internal object ScanNotification {
     }
 
     const val FOREGROUND_TYPE = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+
+    @Volatile
+    private var cachedScanIcon: android.graphics.Bitmap? = null
+
+    private fun scanLargeIcon(context: Context): android.graphics.Bitmap {
+        cachedScanIcon?.let { return it }
+        return com.example.audiobook.notifications.NotificationLargeIcons.vectorArtwork(
+            context,
+            com.example.audiobook.R.drawable.ic_scan,
+            0xFF131A38.toInt()
+        ).also { cachedScanIcon = it }
+    }
 
     private const val TAG = "ScanNotification"
     private const val REQUEST_TASK = 9101

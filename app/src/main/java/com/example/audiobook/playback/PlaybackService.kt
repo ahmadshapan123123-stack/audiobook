@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.LruCache
 import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -83,6 +84,8 @@ class PlaybackService : MediaSessionService() {
     private var authorColorArgb: Int? = null
     private var latestAlbumName: String? = null
     private var artworkBytes: ByteArray? = null
+    /** FIX 1 (B7): مخبأ الأغلفة المولّدة (bookId → صورة 128px). */
+    private val fallbackArtworkCache = LruCache<java.util.UUID, Bitmap>(20)
 
     override fun onCreate() {
         super.onCreate()
@@ -219,9 +222,20 @@ class PlaybackService : MediaSessionService() {
         val bitmap = coverPath?.let { path ->
             withContext(Dispatchers.IO) { runCatching { BitmapFactory.decodeFile(path) }.getOrNull() }
         }
-        provider.artwork = bitmap
+        // FIX 1 (B7): بلا غلاف → مولّد (حرف + لهجة) مخبأ لكل كتاب، لا أيقونة
+        // التطبيق. التوليد على IO؛ المخبأ LruCache آمن خيطيًا (20 كتابًا).
+        val largeIcon = bitmap ?: book?.let { b ->
+            withContext(Dispatchers.IO) {
+                fallbackArtworkCache.get(b.id)
+                    ?: com.example.audiobook.notifications.NotificationLargeIcons.letterArtwork(
+                        b.title,
+                        provider.accentArgb
+                    ).also { fallbackArtworkCache.put(b.id, it) }
+            }
+        }
+        provider.artwork = largeIcon
         withContext(Dispatchers.IO) {
-            artworkBytes = bitmap?.let { b ->
+            artworkBytes = largeIcon?.let { b ->
                 runCatching {
                     ByteArrayOutputStream().use { out ->
                         if (b.compress(Bitmap.CompressFormat.PNG, 100, out)) out.toByteArray() else null
