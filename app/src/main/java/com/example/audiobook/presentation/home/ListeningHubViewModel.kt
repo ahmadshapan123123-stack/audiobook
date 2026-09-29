@@ -153,6 +153,8 @@ class ListeningHubViewModel @Inject constructor(
             }
             .filter { s -> s.books.any { it.hasProgress } }
             .sortedByDescending { s -> s.books.maxOf { it.lastPlayedAt } }
+            // FIX 2: سقف 6 كصف الرئيسية (كان بلا حد).
+            .take(6)
 
         val longSessions = homeBooks
             .filter { it.editionId != null && it.progressFraction < 1f && totalMs(it) >= HUB_LONG_BOOK_MIN_MS }

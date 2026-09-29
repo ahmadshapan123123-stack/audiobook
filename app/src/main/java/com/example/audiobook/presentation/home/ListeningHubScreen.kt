@@ -66,6 +66,7 @@ fun ListeningHubScreen(
     onOpenLibrarySection: (String) -> Unit,
     onBack: () -> Unit,
     onBookOptions: (UUID) -> Unit = {},
+    onOpenSeriesList: () -> Unit = {},
     viewModel: ListeningHubViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -105,13 +106,19 @@ fun ListeningHubScreen(
                     onOpenPlayer = onOpenPlayer,
                     onBookOptions = onBookOptions
                 )
-            }
+            } ?: HubEmptyCta(
+                title = stringResource(R.string.home_empty_title),
+                actionLabel = stringResource(R.string.home_explore_library),
+                onAction = { onOpenLibrarySection("ALL_BOOKS") }
+            )
 
             if (state.fitsWindow.isNotEmpty()) {
                 HomeSectionTitle(
                     text = stringResource(R.string.listen_now_shelf_title),
+                    // FIX 4: أول عنصر قابل للتشغيل صراحةً (لا ضمنيًا) — ويفتح
+                    // المشغّل ليرى المستخدم ما يعمل. السلوك نفسه، بلا صمت.
                     actionLabel = stringResource(R.string.listen_now_play_all),
-                    onAction = { state.fitsWindow.firstOrNull()?.editionId?.let(onOpenPlayer) }
+                    onAction = { state.fitsWindow.firstOrNull { it.editionId != null }?.editionId?.let(onOpenPlayer) }
                 )
                 LazyRow(
                     contentPadding = PaddingValues(end = AppSpacing.lg),
@@ -121,6 +128,12 @@ fun ListeningHubScreen(
                         HomeBookCard(item, Modifier.width(132.dp), onClick = { item.editionId?.let(onOpenPlayer) }, onBookOptions = { onBookOptions(item.bookId) })
                     }
                 }
+            } else {
+                // FIX 1: صف فارغ من سطر واحد بدل الإخفاء الصامت.
+                HubEmptyLine(
+                    text = stringResource(R.string.entity_no_books),
+                    icon = Icons.Outlined.PlayArrow
+                )
             }
 
             if (state.bedtime.isNotEmpty()) {
@@ -129,10 +142,20 @@ fun ListeningHubScreen(
                     onPlay = onPlayWithSleepTimer,
                     onBookOptions = onBookOptions
                 )
+            } else {
+                HubEmptyLine(
+                    text = stringResource(R.string.entity_no_books),
+                    icon = Icons.Outlined.DarkMode
+                )
             }
 
             if (state.series.isNotEmpty()) {
-                HomeSectionTitle(stringResource(R.string.listen_now_series_title))
+                // FIX 2: عرض الكل كصف الرئيسية (مقفول على 6 في الـVM).
+                HomeSectionTitle(
+                    text = stringResource(R.string.listen_now_series_title),
+                    actionLabel = stringResource(R.string.home_view_all),
+                    onAction = onOpenSeriesList
+                )
                 LazyRow(
                     contentPadding = PaddingValues(end = AppSpacing.lg),
                     horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
@@ -153,6 +176,63 @@ fun ListeningHubScreen(
         }
 
         Spacer(Modifier.height(bottomContentInset()))
+    }
+}
+
+/**
+ * FIX 1 — صف فارغ من سطر واحد + أيقونة (نصوص موجودة مسبقًا فقط):
+ * الأقسام المختفية صامتًا كانت توحي بأن الصفحة معطوبة.
+ */
+@Composable
+internal fun HubEmptyLine(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = AppSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+/** دعوة للمكتبة بزر موجود مسبقًا عندما لا يوجد تقدّم بعد. */
+@Composable
+internal fun HubEmptyCta(
+    title: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        androidx.compose.material3.TextButton(onClick = onAction, modifier = Modifier.minTouchTarget()) {
+            Text(actionLabel)
+        }
     }
 }
 
@@ -217,14 +297,16 @@ internal fun HubBedtimeBlock(
             }
         }
         val shape = RoundedCornerShape(AppSpacing.sm)
+        // FIX 3: بلا !! — صف بلا نسخة (غير قابل للتشغيل) يُتخطى بدل أن يسقط الشاشة.
         books.forEach { book ->
+            val editionId = book.editionId ?: return@forEach
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .clip(shape)
                     .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { onPlay(book.editionId!!) },
+                        onClick = { onPlay(editionId) },
                         onLongClick = { onBookOptions(book.bookId) }
                     )
                     .padding(vertical = AppSpacing.xs),
@@ -250,7 +332,7 @@ internal fun HubBedtimeBlock(
                     )
                 }
                 IconButton(
-                    onClick = { onPlay(book.editionId!!) },
+                    onClick = { onPlay(editionId) },
                     modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 ) {
                     Icon(

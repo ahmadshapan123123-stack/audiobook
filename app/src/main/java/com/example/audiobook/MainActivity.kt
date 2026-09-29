@@ -560,6 +560,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
                     onOpenSeries = { seriesId -> navController.navigate("series_details/$seriesId") },
+                    onOpenSeriesList = { navController.navigate("series_list") },
                     onOpenLibrarySection = { section -> navController.navigate("library?section=$section") },
                     onBack = { navController.popBackStack() },
                     onBookOptions = onBookOptions
