@@ -1,6 +1,7 @@
 package com.example.audiobook.presentation.theme
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,11 +30,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -84,34 +90,49 @@ fun AtherCoverBlock(
     title: String,
     coverColor: Color,
     modifier: Modifier = Modifier,
+    /**
+     * FIX 5.2: مسار صورة غلاف من اختيار المستخدم (يُفك ترميزها خارج خيط
+     * الواجهة). null أو ملف مفقود/تالف = الرجوع للحرف الأول كما كان.
+     */
+    imagePath: String? = null,
     showMissingBadge: Boolean = false,
     missingFileDescription: String? = null
 ) {
     val shape = RoundedCornerShape(AppSpacing.xs)
+    val coverBitmap = coverImageBitmap(imagePath)
     Box(
         modifier = modifier
             .clip(shape)
             .background(coverColor, shape),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.16f),
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.12f)
+        if (coverBitmap != null) {
+            Image(
+                bitmap = coverBitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.16f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.12f)
+                        )
                     )
                 )
             )
-        )
-        val letter = title.trim().firstOrNull()?.toString() ?: "؟"
-        Text(
-            text = letter,
-            color = Color.White,
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
-        )
+            val letter = title.trim().firstOrNull()?.toString() ?: "؟"
+            Text(
+                text = letter,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
         if (showMissingBadge) {
             Box(
                 modifier = Modifier.align(Alignment.TopEnd).padding(AppSpacing.xxs).size(26.dp)
@@ -127,6 +148,32 @@ fun AtherCoverBlock(
             }
         }
     }
+}
+
+/**
+ * FIX 5.2: فك ترميز صورة غلاف من مسار ملف — خارج الخيط الرئيسي، مع
+ * downsample (ReqWidth 512) حتى لا تنفجر الذاكرة بصورة كاميرا ضخمة.
+ * null عند غياب المسار أو فساد الملف.
+ */
+@Composable
+private fun coverImageBitmap(imagePath: String?): ImageBitmap? {
+    if (imagePath.isNullOrBlank()) return null
+    val loaded = produceState<ImageBitmap?>(
+        initialValue = null, key1 = imagePath
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(imagePath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                val sample = (bounds.outWidth / 512).coerceAtLeast(1)
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                android.graphics.BitmapFactory.decodeFile(imagePath, opts)
+                    ?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    return loaded.value
 }
 
 @Composable

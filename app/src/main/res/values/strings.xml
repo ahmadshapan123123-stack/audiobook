@@ -298,6 +298,7 @@
     <string name="entity_no_books">لا توجد كتب بعد.</string>
     <string name="entity_series_group_header">سلسلة %1$s</string>
     <string name="entity_standalone_header">كتب مستقلة</string>
+    <string name="entity_author_series_header">السلاسل</string>
 
     <string name="entity_edit_button">تعديل</string>
     <string name="entity_edit_title">تعديل البيانات</string>

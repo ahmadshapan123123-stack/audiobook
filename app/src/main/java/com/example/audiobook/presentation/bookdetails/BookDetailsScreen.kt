@@ -37,19 +37,26 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.audiobook.R
 import com.example.audiobook.data.room.entity.BookmarkType
 import com.example.audiobook.data.room.entity.EditionEntity
@@ -90,6 +97,28 @@ fun BookDetailsScreen(
         return
     }
 
+    // FIX 5.2: منتقي صور (image/*) + نسخ إلى التخزين الداخلي + تحديث المسار.
+    // كان الزر يمرّر اسم ملف وهميًا ثابتًا ("user-selected-cover.jpg") لا وجود
+    // له على القرص — لذا لم يتغير أي غلاف أبدًا رغم تحديث القاعدة.
+    val context = LocalContext.current
+    val ioScope = rememberCoroutineScope()
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        ioScope.launch {
+            val dest = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dir = java.io.File(context.filesDir, "covers").apply { mkdirs() }
+                    val out = java.io.File(dir, "${book.id}.jpg")
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        out.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    out.takeIf { it.exists() && it.length() > 0L }
+                }.getOrNull()
+            }
+            dest?.let { viewModel.setUserCover(book, it.absolutePath) }
+        }
+    }
+
     if (title.isBlank()) title = book.title
     if (author.isBlank()) author = uiState.authorName
 
@@ -117,6 +146,9 @@ fun BookDetailsScreen(
             AtherCoverBlock(
                 title = cleanDisplayTitle(book.title),
                 coverColor = coverColor,
+                // FIX 5.2: يعرض صورة المستخدم عند وجودها (مراقبة bookFlow
+                // تعيد التركيب تلقائيًا بعد setUserCover).
+                imagePath = book.coverImagePath,
                 modifier = Modifier.width(120.dp).aspectRatio(0.72f)
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
@@ -203,7 +235,7 @@ fun BookDetailsScreen(
 
                     SectionTitle(stringResource(R.string.bd_cover_header))
                     Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                        FilledTonalButton(onClick = { viewModel.setUserCover(book, "user-selected-cover.jpg") }, modifier = Modifier.minTouchTarget()) {
+                        FilledTonalButton(onClick = { coverPicker.launch("image/*") }, modifier = Modifier.minTouchTarget()) {
                             Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(AppSpacing.xs))
                             Text(stringResource(R.string.bd_set_user_cover))

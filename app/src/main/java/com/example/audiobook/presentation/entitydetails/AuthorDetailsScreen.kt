@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -208,34 +209,49 @@ fun AuthorDetailsScreen(
             }
 
             EntitySectionTitle(stringResource(R.string.entity_author_books_header))
-            if (state.groups.isEmpty()) {
+            // FIX 5.1: قسمان صريحان — «السلاسل» كبطاقات (اسم + عدّ، نقرة
+            // تفتح السلسلة) ثم «الكتب المستقلة». البطاقات من جدول السلاسل
+            // مباشرة فتظهر حتى السلاسل الفارغة الرابط.
+            val seriesCards = state.seriesCards
+            val standaloneBooks = state.groups.filter { it.seriesId == null }.flatMap { it.books }
+            if (seriesCards.isEmpty() && standaloneBooks.isEmpty()) {
                 Text(stringResource(R.string.entity_no_books), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                state.groups.forEach { group ->
-                    if (group.seriesId != null) {
+                if (seriesCards.isNotEmpty()) {
+                    EntitySectionTitle(stringResource(R.string.entity_author_series_header))
+                    seriesCards.forEach { card ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .minTouchTarget()
-                                .clickable { onSeriesSelected(group.seriesId) }
-                                .padding(vertical = AppSpacing.xxs)
+                                .clickable { onSeriesSelected(card.seriesId) }
+                                .padding(vertical = AppSpacing.xxs),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                stringResource(R.string.entity_series_group_header, group.seriesName ?: ""),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    card.seriesName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    pluralStringResource(R.plurals.book_count, card.bookCount, card.bookCount),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    } else {
-                        Text(
-                            stringResource(R.string.entity_standalone_header),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = AppSpacing.xxs)
-                        )
                     }
-                    group.books.forEach { row ->
+                }
+                if (standaloneBooks.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.entity_standalone_header),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = AppSpacing.xxs)
+                    )
+                    standaloneBooks.forEach { row ->
                         EntityBookRowItem(
                             row = row,
                             onClick = { onBookSelected(row.bookId) },

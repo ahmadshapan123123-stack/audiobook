@@ -33,9 +33,21 @@ data class AuthorBookGroup(
     val books: List<EntityBookRow>
 )
 
+/**
+ * FIX 5.1 — بطاقة سلسلة للمؤلف: تُشتق من جدول السلاسل مباشرة
+ * (authorId == X) لا من روابط الكتب — فسلسلة بلا كتب مربوطة تظهر
+ * أيضًا (بعدّ صفر) بدل أن تختفي تمامًا كما كان.
+ */
+data class AuthorSeriesCard(
+    val seriesId: UUID,
+    val seriesName: String,
+    val bookCount: Int
+)
+
 data class AuthorDetailsUiState(
     val author: AuthorEntity? = null,
     val groups: List<AuthorBookGroup> = emptyList(),
+    val seriesCards: List<AuthorSeriesCard> = emptyList(),
     val totalBooks: Int = 0,
     val candidateBooks: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
@@ -117,10 +129,23 @@ class AuthorDetailsViewModel @Inject constructor(
             .sortedBy { it.seriesName }
         val standalone = rows.filter { it.seriesId == null }
         val allGroups = if (standalone.isEmpty()) groups else groups + AuthorBookGroup(null, null, null, sortRows(standalone))
+        // FIX 5.1: بطاقات السلاسل من جدول السلاسل (authorId == author) —
+        // لا تعتمد على روابط الكتب، فتظهر السلسلة حتى لو فقدت كتبها الرابط.
+        val seriesCards = allSeries
+            .filter { it.authorId == authorId }
+            .sortedBy { it.name }
+            .map { series ->
+                AuthorSeriesCard(
+                    seriesId = series.id,
+                    seriesName = series.name,
+                    bookCount = rows.count { it.seriesId == series.id }
+                )
+            }
 
         AuthorDetailsUiState(
             author = author,
             groups = allGroups,
+            seriesCards = seriesCards,
             totalBooks = rows.size,
             candidateBooks = candidateRows,
             coverColor = parseColor(author?.colorTheme, 0xFF356B68),
