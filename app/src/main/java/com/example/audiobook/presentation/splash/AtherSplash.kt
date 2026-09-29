@@ -14,13 +14,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audiobook.R
@@ -65,24 +62,17 @@ fun AtherSplash(
                 Image(
                     painter = painterResource(id = R.drawable.app_logo_source),
                     contentDescription = null,
-                    modifier = Modifier
-                        .size(160.dp)
-                        .drawWithContent {
-                            drawContent()
-                            if (overlay != null) {
-                                drawRect(color = overlay, blendMode = BlendMode.Hardlight)
-                            }
-                        }
+                    // FIX 4: بلا أي drawRect فوق الصورة — المستطيل كان يرسم
+                    // على كامل حدود الـ160dp *بما فيها البكسلات الشفافة*
+                    // فيظهر مربع داكن حول الشعار الشفاف. الـPNG شفاف أصلًا
+                    // (الزوايا A=0) فلا حاجة لأي تغطية؛ لون اللون المختار
+                    // ينعكس على التوهج الخلفي فقط.
+                    modifier = Modifier.size(160.dp)
                 )
             }
             Spacer(Modifier.height(20.dp))
-            Text(
-                text = "أثير",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(Modifier.height(6.dp))
+            // FIX 5: سطر "أثير" العربي محذوف — موجود أصلًا داخل رسمة الشعار،
+            // فيبقى "ATHER" اللاتيني عنوانًا فرعيًا وحيدًا بلا تكرار ثلاثي.
             Text(
                 text = "ATHER",
                 style = MaterialTheme.typography.labelMedium,

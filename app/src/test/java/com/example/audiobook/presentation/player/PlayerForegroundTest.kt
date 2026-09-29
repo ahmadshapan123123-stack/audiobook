@@ -23,7 +23,7 @@ class PlayerForegroundTest {
         assertEquals(Color(0xFFEDF2FF), fg.colors.popupInk)
         assertEquals(Color(0xFFABB4CE), fg.colors.popupSoft)
         assertEquals(Color(0x4DFFFFFF), fg.colors.popupOutline)
-        assertEquals(Color(0x1EFFFFFF), fg.colors.popupSurface)
+        assertEquals(Color(0x33FFFFFF), fg.colors.popupSurface)
     }
 
     @Test
@@ -57,7 +57,7 @@ class PlayerForegroundTest {
         assertEquals(Color(0xFFEDF2FF), fg.colors.popupInk)
         assertEquals(Color(0xFFABB4CE), fg.colors.popupSoft)
         assertEquals(Color(0x4D000000), fg.colors.popupOutline)
-        assertEquals(Color(0x1E000000), fg.colors.popupSurface)
+        assertEquals(Color(0x33000000), fg.colors.popupSurface)
     }
 
     @Test

@@ -221,6 +221,12 @@ fun PlayerScreen(
     var timelineBottomPx by remember { mutableIntStateOf(-1) }
     val collapseAnim = remember { Animatable(0f) }
     val latestOnBack = rememberUpdatedState(onBack)
+    /**
+     * FIX 1: حدود منطقة التايم-لاين تُقرأ من مرجع مستقر لا من مفاتيح
+     * الـpointerInput — كانت المفاتيح تتغير مع أول قياس (من -1 لقيمة)
+     * فيُعاد تشغيل الكاشف mid-gesture ويُترك collapseOffsetPx عالقًا.
+     */
+    val latestTimelineBounds = rememberUpdatedState(timelineTopPx to timelineBottomPx)
 
     // حارس أمان مؤقّت: أي طيّ يعلّم collapseAnimating=true دون أن يصل إلى الإعادة الفورية
     // (إلغاءُ حركة، إعادة تنسيق، popBackStack فاشل) يُحرَّر تلقائيًا بعد 300ms كي لا يتجمّد
@@ -335,6 +341,11 @@ fun PlayerScreen(
     val currentChapterLabel = if (currentChapter != null && currentChapter.chapter.title.isNotBlank()) {
         stringResource(R.string.player_top_chapter_format, currentChapter.number, currentChapter.chapter.title.take(26))
     } else title
+    // FIX 1 (تابع): أي سحب جزئي عالق يُصفَّر فور فتح نافذة أو بدء تحرير —
+    // لا تبقى إزاحة يتيمة تجمّد المحتوى خارج الشاشة.
+    LaunchedEffect(anyPopupOpen, editing) {
+        if (anyPopupOpen || editing) collapseOffsetPx = 0f
+    }
 
     // ---- أهمية اللحظة: التُقطت فورًا، ثم يُختار الهدف (علامة/ملاحظة/فصل) ----
     val captureMoment = {
@@ -464,16 +475,25 @@ fun PlayerScreen(
                     contentBoxPosY = it.positionInRoot().y.roundToInt()
                 }
                 .graphicsLayer { translationY = collapseOffsetPx }
-                .pointerInput(rootHeightPx, timelineTopPx, timelineBottomPx, anyPopupOpen, editing, collapseAnimating) {
+                // FIX 1: مفاتيح مستقرة فقط — أُخرج timelineTopPx/BottomPx (كانا
+                // يتغيران من -1 مع أول قياس فيُعاد التشغيل mid-gesture ويُترك
+                // collapseOffsetPx عالقًا). تُقرأ الحدود من مرجع مستقر بالداخل.
+                .pointerInput(rootHeightPx, anyPopupOpen, editing, collapseAnimating) {
                     if (rootHeightPx <= 0 || anyPopupOpen || editing || collapseAnimating) return@pointerInput
                     var gestureOffsetY = 0f
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
-                        // لا تُطوى من فوق الشريط الزمني (يُترك للتعامل مع الفصول والتمرير).
-                        if (timelineBottomPx > 0) {
-                            val y = down.position.y
-                            if (y >= timelineTopPx && y <= timelineBottomPx) return@awaitEachGesture
-                        }
+                        // FIX 1: أي خروج غير مكتمل (إلغاء/إعادة تشغيل) يُعيد
+                        // الإزاحة للصفر فورًا — لا تجمّد بلا رجعة. المساران
+                        // الطبيعيان يعلّمان completed قبل إطلاق حركتيهما.
+                        var completed = false
+                        try {
+                            val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
+                            // لا تُطوى من فوق الشريط الزمني (يُترك للتعامل مع الفصول والتمرير).
+                            val (topPx, bottomPx) = latestTimelineBounds.value
+                            if (bottomPx > 0) {
+                                val y = down.position.y
+                                if (y >= topPx && y <= bottomPx) return@awaitEachGesture
+                            }
                         val startY = down.position.y
                         val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                             ?: return@awaitEachGesture
@@ -491,6 +511,7 @@ fun PlayerScreen(
                         if (gestureOffsetY >= threshold) {
                             collapseAnimating = true
                             Log.d(TAG, "collapse: threshold reached (${gestureOffsetY}px) — animating down then back")
+                            completed = true
                             scope.launch {
                                 try {
                                     collapseAnim.snapTo(collapseOffsetPx)
@@ -513,10 +534,14 @@ fun PlayerScreen(
                                 }
                             }
                         } else {
+                            completed = true
                             scope.launch {
                                 collapseAnim.snapTo(collapseOffsetPx)
                                 collapseAnim.animateTo(0f, tween(220)) { collapseOffsetPx = value }
                             }
+                        }
+                        } finally {
+                            if (!completed) collapseOffsetPx = 0f
                         }
                     }
                     Unit
@@ -953,7 +978,9 @@ internal fun playerForeground(gradient: PlayerGradient, mode: AppThemeMode): Pla
     val popupInk = if (isLightTheme && !lightText) Color(0xFF1D1B3B) else Color(0xFFEDF2FF)
     val popupSoft = if (isLightTheme && !lightText) Color(0xFF57537A) else Color(0xFFABB4CE)
     val popupOutline = if (isLightTheme) Color(0x4D000000) else Color(0x4DFFFFFF)
-    val popupSurface = if (isLightTheme) Color(0x1E000000) else Color(0x1EFFFFFF)
+    // FIX 6: سطح اللوحات 0x1E (~0.12) كان شفافًا لدرجة تُقرأ معه الخلفية
+    // كنص — رُفع إلى 0x33 (~0.20) مع بقاء الطابع الزجاجي (الحجاب خلفه صحيح).
+    val popupSurface = if (isLightTheme) Color(0x33000000) else Color(0x33FFFFFF)
     return PlayerFg(
         ink = ink,
         soft = soft,
@@ -1115,9 +1142,12 @@ private fun CurrentChapterChip(
     }
 }
 
-private fun speedLabel(speed: Float): String =
-    "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
-
+private fun speedLabel(speed: Float): String {
+    // FIX 3: explicit LTR embedding around the token.
+    // The app forces RTL; unwrapped digit+x runs reorder inconsistently.
+    val digits = "%.2f".format(speed).trimEnd('0').trimEnd('.')
+    return "‪$digits×‬"
+}
 /**
  * الشريط الزمني الموحّد: "أين أنا؟" (الفصل الحالي) ثم الخيط الذي يحمل
  * علامات الفصول والإشارات ورأس التشغيل + الوقت المنقضي والمتبقّي.
@@ -2172,11 +2202,16 @@ private fun GlassPillButton(
         verticalAlignment = Alignment.CenterVertically
     ) {
         icon()
+        // FIX 2: سطر واحد بلا التفاف — كان النص يلتف داخل الحبة بخطوط
+        // كبيرة فيبدو الصف مكسورًا على أسطر بصرية متعددة.
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,
             color = if (isActive) fg.colors.onAccent else fg.colors.popupSoft,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
     }
