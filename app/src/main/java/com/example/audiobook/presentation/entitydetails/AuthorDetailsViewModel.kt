@@ -49,6 +49,10 @@ data class AuthorDetailsUiState(
     val groups: List<AuthorBookGroup> = emptyList(),
     val seriesCards: List<AuthorSeriesCard> = emptyList(),
     val totalBooks: Int = 0,
+    /** REDESIGN: عدد الكتب قيد الاستماع + آخر كتاب مستمع + أول نسخة قابلة للتشغيل. */
+    val inProgressCount: Int = 0,
+    val continueRow: EntityBookRow? = null,
+    val firstEditionId: UUID? = null,
     val candidateBooks: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
     val allAuthors: List<AuthorEntity> = emptyList()
@@ -147,6 +151,9 @@ class AuthorDetailsViewModel @Inject constructor(
             groups = allGroups,
             seriesCards = seriesCards,
             totalBooks = rows.size,
+            inProgressCount = rows.count { it.hasProgress },
+            continueRow = rows.filter { it.hasProgress }.maxByOrNull { it.progressFraction },
+            firstEditionId = rows.firstNotNullOfOrNull { it.editionId },
             candidateBooks = candidateRows,
             coverColor = parseColor(author?.colorTheme, 0xFF356B68),
             allAuthors = authors.filter { it.id != authorId }

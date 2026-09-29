@@ -619,6 +619,7 @@ class MainActivity : ComponentActivity() {
                     onBack = { navController.popBackStack() },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
                     onAuthorSelected = { authorId -> navController.navigate("author_details/$authorId") },
+                    onPlayEdition = { editionId -> navController.navigate("player/$editionId") },
                     onBookOptions = onBookOptions
                 )
             }
@@ -630,6 +631,7 @@ class MainActivity : ComponentActivity() {
                     onBack = { navController.popBackStack() },
                     onBookSelected = { bookId -> navController.navigate("book_details/$bookId") },
                     onSeriesSelected = { seriesId -> navController.navigate("series_details/$seriesId") },
+                    onPlayEdition = { editionId -> navController.navigate("player/$editionId") },
                     onBookOptions = onBookOptions
                 )
             }

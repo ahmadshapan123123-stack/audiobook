@@ -76,6 +76,8 @@ fun MiniPlayer(
     mode: AppThemeMode,
     onClick: () -> Unit,
     onStopPlayback: () -> Unit = {},
+    /** GESTURE-UP: التوسعة للمشغّل الكامل — افتراضيًا نفس النقر. */
+    onExpand: () -> Unit = onClick,
     modifier: Modifier = Modifier,
     viewModel: MiniPlayerViewModel = hiltViewModel()
 ) {
@@ -96,6 +98,7 @@ fun MiniPlayer(
         appear.animateTo(1f, tween(260))
     }
     val latestOnStopPlayback = rememberUpdatedState(onStopPlayback)
+    val latestOnExpand = rememberUpdatedState(onExpand)
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playbackState by controller.state.collectAsStateWithLifecycle()
@@ -152,17 +155,22 @@ fun MiniPlayer(
             .graphicsLayer {
                 val slideInPx = (1f - appear.value) * 80.dp.toPx()
                 translationY = dismissOffsetPx + slideInPx
-                // تغذية بصرية حية أثناء السحب: يتقلّص قليلًا ويشحب كلما اقتربنا من عتبة الطي.
+                // تغذية بصرية حية أثناء السحب في الاتجاهين: لأسفل يتقلّص
+                // ويشحب، ولأعلى يكبر قليلًا — ينعكس قرب العتبة في الحالتين.
                 val thresholdPx = with(density) { miniPlayerDismissThresholdDp.toPx() }
-                val progress = (dismissOffsetPx / thresholdPx).coerceIn(0f, 1f)
+                val progress = (kotlin.math.abs(dismissOffsetPx) / thresholdPx).coerceIn(0f, 1f)
                 alpha = appear.value * (1f - 0.2f * progress)
-                val shrink = 1f - 0.05f * progress
+                val shrink = if (dismissOffsetPx >= 0f) 1f - 0.05f * progress else 1f + 0.05f * progress
                 scaleX = shrink
                 scaleY = shrink
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = true) ?: return@awaitEachGesture
+                    // requireUnconsumed=false عمدًا: زر التشغيل/الإيقاف يستهلك
+                    // الـdown تحته، فكان أي سحب يبدأ من الزر يُتجاهل تمامًا
+                    // (منطقة ميتة ~15% من المصغّر). النقر العادي لا يتأثر:
+                    // بلا سحب يبقى dragActive=false فيمر للنقر.
+                    val down = awaitFirstDown(requireUnconsumed = false) ?: return@awaitEachGesture
                     val startY = down.position.y
                     val startX = down.position.x
                     val slop = viewConfiguration.touchSlop
@@ -181,15 +189,14 @@ fun MiniPlayer(
                         if (!dragActive) {
                             // تحرّك أفقي طاغٍ (سحب من الحافة أو تمرير جانبي) → لا نخطف الإيماءة.
                             if (kotlin.math.abs(totalDx) > slop && kotlin.math.abs(totalDx) > kotlin.math.abs(totalDy)) break
-                            // تحرّك لأعلى (خارج نطاق السحب للأسفل) → عودة فورية.
-                            if (totalDy <= -slop) break
-                            if (totalDy >= slop && totalDy >= kotlin.math.abs(totalDx)) {
+                            // عمودي فوق العتبة في أي اتجاه → سحب نشط (سالب = لأعلى).
+                            if (kotlin.math.abs(totalDy) >= slop && kotlin.math.abs(totalDy) >= kotlin.math.abs(totalDx)) {
                                 dragActive = true
                                 change.consume()
                             }
                         }
                         if (dragActive) {
-                            offset = (change.position.y - startY).coerceAtLeast(0f)
+                            offset = change.position.y - startY
                             dismissOffsetPx = offset
                             change.consume()
                             if (change.uptimeMillis != lastTime) {
@@ -205,12 +212,20 @@ fun MiniPlayer(
                     val dtMs = lastTime - prevTime
                     val velocityPxPerSec = if (dtMs > 0L) (lastPos.y - prevPos.y) * 1000f / dtMs else 0f
                     val threshold = with(density) { miniPlayerDismissThresholdDp.toPx() }
-                    // عتبة المسافة، أو مسرعة سحب عالية (>500px/s) تطوي المشغّل حتى قبل تجاوز العتبة.
                     if (offset >= threshold || velocityPxPerSec > miniPlayerFlingVelocityPxPerSec) {
+                        // سحب لأسفل: إخفاء + إيقاف.
                         scope.launch {
                             dismissAnim.snapTo(dismissOffsetPx)
                             dismissAnim.animateTo(dismissOffsetPx + with(density) { 160.dp.toPx() }, tween(180)) { dismissOffsetPx = value }
                             latestOnStopPlayback.value()
+                        }
+                    } else if (offset <= -threshold || velocityPxPerSec < -miniPlayerFlingVelocityPxPerSec) {
+                        // سحب لأعلى: توسعة للمشغّل الكامل ثم إعادة الضبط.
+                        scope.launch {
+                            dismissAnim.snapTo(dismissOffsetPx)
+                            dismissAnim.animateTo(-with(density) { 120.dp.toPx() }, tween(180)) { dismissOffsetPx = value }
+                            latestOnExpand.value()
+                            dismissOffsetPx = 0f
                         }
                     } else {
                         scope.launch {

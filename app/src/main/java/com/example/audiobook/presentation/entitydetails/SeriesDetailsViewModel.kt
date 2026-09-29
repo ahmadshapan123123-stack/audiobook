@@ -31,6 +31,11 @@ data class SeriesDetailsUiState(
     val authorId: UUID? = null,
     val authorName: String = "",
     val books: List<EntityBookRow> = emptyList(),
+    /** REDESIGN: مدة كل كتاب (edition duration) + عدد المنتهية + التالية للمتابعة. */
+    val durationsMs: Map<UUID, Long> = emptyMap(),
+    val finishedCount: Int = 0,
+    val continueRow: EntityBookRow? = null,
+    val firstEditionId: UUID? = null,
     val candidateBooks: List<EntityBookRow> = emptyList(),
     val coverColor: Long = 0xFF356B68,
     val allSeries: List<SeriesEntity> = emptyList()
@@ -101,6 +106,17 @@ class SeriesDetailsViewModel @Inject constructor(
             authorId = author?.id,
             authorName = author?.name ?: "",
             books = rows,
+            durationsMs = rows.associate { row ->
+                row.bookId to (editions.filter { it.bookId == row.bookId }.firstOrNull()?.totalDurationMs ?: 0L)
+            },
+            finishedCount = rows.count { row ->
+                editions.filter { it.bookId == row.bookId }.any {
+                    progressList.firstOrNull { p -> p.editionId == it.id }?.status ==
+                        com.example.audiobook.data.room.entity.ProgressStatus.FINISHED
+                }
+            },
+            continueRow = rows.firstOrNull { it.hasProgress },
+            firstEditionId = rows.firstNotNullOfOrNull { it.editionId },
             candidateBooks = candidates,
             coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF356B68),
             allSeries = allSeries.filter { it.id != seriesId }

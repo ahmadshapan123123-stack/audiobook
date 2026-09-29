@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -114,11 +115,11 @@ internal fun EntitySortSelector(
 
 /** صورة رمزية ممتلئة بحرف أول لأسماء المؤلفين والسلاسل في القوائم. */
 @Composable
-private fun EntityAvatarBlock(title: String, color: Color, size: Int) {
+private fun EntityAvatarBlock(title: String, color: Color, size: Int, circle: Boolean = false) {
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(RoundedCornerShape(AppSpacing.sm))
+            .clip(if (circle) CircleShape else RoundedCornerShape(AppSpacing.sm))
             .background(color.copy(alpha = 0.85f)),
         contentAlignment = Alignment.Center
     ) {
@@ -134,6 +135,9 @@ private fun EntityAvatarBlock(title: String, color: Color, size: Int) {
 /**
  * صف عنصر في قائمة (مؤلف/سلسلة): صورة رمزية + عنوان + تعداد + قائمة "المزيد"
  * بإجراءات سياقية (فتح التفاصيل / إعادة تسمية / حذف).
+ *
+ * REDESIGN: أفاتار دائري/حجم اختياري + شريط تقدّم + شيفرون — كلها افتراضية
+ * مطفأة فلا تتأثر الشاشات القديمة.
  */
 @Composable
 internal fun EntityListRowCard(
@@ -144,7 +148,11 @@ internal fun EntityListRowCard(
     onClick: () -> Unit,
     menuActions: List<EntityMenuAction>,
     modifier: Modifier = Modifier,
-    onLongPress: (() -> Unit)? = null
+    onLongPress: (() -> Unit)? = null,
+    avatarSizeDp: Int = 48,
+    avatarCircle: Boolean = false,
+    progressFraction: Float? = null,
+    showChevron: Boolean = false
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -163,7 +171,7 @@ internal fun EntityListRowCard(
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        EntityAvatarBlock(title = avatarTitle, color = avatarColor, size = 48)
+        EntityAvatarBlock(title = avatarTitle, color = avatarColor, size = avatarSizeDp, circle = avatarCircle)
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
@@ -178,6 +186,25 @@ internal fun EntityListRowCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            if (progressFraction != null && progressFraction > 0f) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progressFraction.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+        }
+        if (showChevron) {
+            // شيفرون نصي صريح الاتجاه (‹ دائمًا لليسار = للأمام في RTL) —
+            // أيقونات الأسهم الأحادية غائبة عن نسخة icons المثبتة.
+            Text(
+                text = "‹",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
         }
         Box {
             IconButton(onClick = { menuOpen = true }, modifier = Modifier.minTouchTarget()) {

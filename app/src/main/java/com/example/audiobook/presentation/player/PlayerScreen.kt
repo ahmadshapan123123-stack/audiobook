@@ -467,7 +467,8 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .blur(
-                    radius = 21.dp * blurAmount,
+                    // MINI-FIX: 21 → 30dp — الخلفية كانت تُقرأ من خلال التمويه.
+                    radius = 30.dp * blurAmount,
                     edgeTreatment = BlurredEdgeTreatment.Unbounded
                 )
                 .onGloballyPositioned {
@@ -968,10 +969,12 @@ internal fun playerForeground(gradient: PlayerGradient, mode: AppThemeMode): Pla
         green = accent.green * SCRIM_ACCENT_REDUCE,
         blue = accent.blue * SCRIM_ACCENT_REDUCE,
         // FIX 3.4: حجاب أدكن (0.55 → 0.65 للوضعين الرئيسيين).
+        // MINI-FIX: حجاب أدكن قليلًا (0.60 / 0.72 / 0.78) — النص الخلفي
+        // كان يُقرأ من خلال الطبقة.
         alpha = when {
-            isAmoled -> 0.72f
-            isLightTheme -> 0.55f
-            else -> 0.65f
+            isAmoled -> 0.78f
+            isLightTheme -> 0.60f
+            else -> 0.72f
         }
     )
     val soft = ink.copy(alpha = if (isLightTheme && !lightText) 0.72f else 0.78f)

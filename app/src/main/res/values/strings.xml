@@ -25,6 +25,22 @@
     <string name="delete">حذف</string>
 
     <!-- ===== عدّاد الكتب (مصدر واحد) ===== -->
+    <plurals name="authors_count">
+        <item quantity="zero">لا مؤلفين</item>
+        <item quantity="one">مؤلف واحد</item>
+        <item quantity="two">مؤلفان</item>
+        <item quantity="few">%d مؤلفين</item>
+        <item quantity="many">%d مؤلفًا</item>
+        <item quantity="other">%d مؤلف</item>
+    </plurals>
+    <plurals name="series_count">
+        <item quantity="zero">لا سلاسل</item>
+        <item quantity="one">سلسلة واحدة</item>
+        <item quantity="two">سلسلتان</item>
+        <item quantity="few">%d سلاسل</item>
+        <item quantity="many">%d سلسلة</item>
+        <item quantity="other">%d سلسلة</item>
+    </plurals>
     <plurals name="book_count">
         <item quantity="zero">لا كتب</item>
         <item quantity="one">كتاب واحد</item>
@@ -293,12 +309,14 @@
     <string name="entity_not_found">غير موجود</string>
     <string name="entity_progress_remaining">بقي %1$s</string>
     <string name="entity_series_books_header">كتب السلسلة</string>
+    <string name="entity_series_finished_count">%1$d منتهي</string>
     <string name="entity_author_books_header">كتب المؤلف</string>
     <string name="entity_books_header">الكتب</string>
     <string name="entity_no_books">لا توجد كتب بعد.</string>
     <string name="entity_series_group_header">سلسلة %1$s</string>
     <string name="entity_standalone_header">كتب مستقلة</string>
     <string name="entity_author_series_header">السلاسل</string>
+    <string name="entity_in_progress_count">%1$d قيد الاستماع</string>
 
     <string name="entity_edit_button">تعديل</string>
     <string name="entity_edit_title">تعديل البيانات</string>
