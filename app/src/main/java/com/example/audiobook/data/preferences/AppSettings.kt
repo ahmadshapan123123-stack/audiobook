@@ -33,6 +33,13 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _autoResume = MutableStateFlow(prefs.getBoolean(KEY_AUTO_RESUME, true))
     val autoResume: StateFlow<Boolean> = _autoResume.asStateFlow()
 
+    /**
+     * FIX 8.3 — إيقاف مؤقت عند فصل السماعة (بلوتوث/سلكية): افتراضيًا ON.
+     * OFF = يواصل التشغيل على سماعة الهاتف.
+     */
+    private val _pauseOnAudioDisconnect = MutableStateFlow(prefs.getBoolean(KEY_PAUSE_ON_DISCONNECT, true))
+    val pauseOnAudioDisconnect: StateFlow<Boolean> = _pauseOnAudioDisconnect.asStateFlow()
+
     // ── Sleep timer ──
     private val _defaultSleepMinutes = MutableStateFlow(prefs.getInt(KEY_DEFAULT_SLEEP, DEFAULT_SLEEP))
     val defaultSleepMinutes: StateFlow<Int> = _defaultSleepMinutes.asStateFlow()
@@ -127,6 +134,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     fun setAutoResume(value: Boolean) {
         _autoResume.value = value
         prefs.edit().putBoolean(KEY_AUTO_RESUME, value).apply()
+    }
+
+    fun setPauseOnAudioDisconnect(value: Boolean) {
+        _pauseOnAudioDisconnect.value = value
+        prefs.edit().putBoolean(KEY_PAUSE_ON_DISCONNECT, value).apply()
     }
 
     fun setDefaultSleepMinutes(value: Int) {
@@ -265,6 +277,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
         const val KEY_DEFAULT_SPEED = "default_speed"
         const val KEY_AUTO_RESUME = "auto_resume"
+        const val KEY_PAUSE_ON_DISCONNECT = "pause_on_audio_disconnect"
         const val KEY_DEFAULT_SLEEP = "default_sleep_minutes"
         const val KEY_AUTO_EXTEND = "auto_extend_sleep"
         const val KEY_NOTIFICATIONS = "notifications_enabled"

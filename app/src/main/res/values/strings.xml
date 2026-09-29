@@ -389,6 +389,8 @@
     <string name="settings_default_speed">السرعة الافتراضية</string>
     <string name="settings_auto_resume">استئناف تلقائي</string>
     <string name="settings_auto_resume_desc">فتح التطبيق يستأنف آخر كتاب كنت تستمع إليه.</string>
+    <string name="settings_pause_on_disconnect">إيقاف عند فصل السماعة</string>
+    <string name="settings_pause_on_disconnect_desc">إيقاف التشغيل مؤقتًا عند فصل سماعة البلوتوث أو السلكية</string>
     <string name="settings_sleep_timer">مؤقت النوم</string>
     <string name="settings_default_duration">المدة الافتراضية</string>
     <string name="settings_auto_extend">تمديد تلقائي</string>

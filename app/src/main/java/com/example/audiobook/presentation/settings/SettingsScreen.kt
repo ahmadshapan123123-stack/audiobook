@@ -126,6 +126,7 @@ fun SettingsScreen(
     val level by viewModel.intelligenceLevel.collectAsStateWithLifecycle()
     val defaultSpeed by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val autoResume by viewModel.autoResume.collectAsStateWithLifecycle()
+    val pauseOnDisconnect by viewModel.pauseOnAudioDisconnect.collectAsStateWithLifecycle()
     val defaultSleep by viewModel.defaultSleepMinutes.collectAsStateWithLifecycle()
     val autoExtend by viewModel.autoExtendSleep.collectAsStateWithLifecycle()
     val notifications by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
@@ -318,6 +319,14 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_auto_resume_desc),
                     checked = autoResume,
                     onCheckedChange = { viewModel.setAutoResume(it) }
+                )
+                SettingsDivider()
+                // FIX 8.3: إيقاف مؤقت عند فصل السماعة (افتراضي ON).
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_pause_on_disconnect),
+                    subtitle = stringResource(R.string.settings_pause_on_disconnect_desc),
+                    checked = pauseOnDisconnect,
+                    onCheckedChange = { viewModel.setPauseOnAudioDisconnect(it) }
                 )
             }
 

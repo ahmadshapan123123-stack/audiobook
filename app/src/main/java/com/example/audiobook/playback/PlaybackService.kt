@@ -3,9 +3,13 @@
 package com.example.audiobook.playback
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.LruCache
 import androidx.media3.common.Player
@@ -87,9 +91,32 @@ class PlaybackService : MediaSessionService() {
     /** FIX 1 (B7): مخبأ الأغلفة المولّدة (bookId → صورة 128px). */
     private val fallbackArtworkCache = LruCache<java.util.UUID, Bitmap>(20)
 
+    /**
+     * FIX 8.1 — مستقبل فصل السماعة: بلوتوث/سلكية → إيقاف مؤقت فوري
+     * (وحفظ الموضع عبر pause نفسها). يُسجَّل في onCreate ويُحرَّر في onDestroy.
+     *
+     * FIX 8.2 — الاعتماد على ACTION_AUDIO_BECOMING_NOISY وحده عمدًا: النظام
+     * يبثّه عند فصل A2DP والسلكي معًا، فلا حاجة لمستقبل بلوتوث منفصل
+     * (كان سيتطلب إذن BLUETOOTH_CONNECT على API 31+ لمكسب صفري).
+     */
+    private val noisyHandler by lazy {
+        AudioNoisyHandler(
+            isEnabled = { appSettings.pauseOnAudioDisconnect.value },
+            onPause = { playbackController.pause() }
+        )
+    }
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                noisyHandler.onNoisy()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(provider)
+        registerReceiver(becomingNoisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
         observeNotificationMode()
     }
 
@@ -328,6 +355,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(becomingNoisyReceiver) }
         notificationCenter.cancelSleepTimer()
         scope.cancel()
         mediaSession?.release()

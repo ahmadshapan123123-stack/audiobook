@@ -69,6 +69,7 @@ class SettingsViewModel @Inject constructor(
 
     val defaultSpeed: StateFlow<Float> = appSettings.defaultSpeed
     val autoResume: StateFlow<Boolean> = appSettings.autoResume
+    val pauseOnAudioDisconnect: StateFlow<Boolean> = appSettings.pauseOnAudioDisconnect
     val defaultSleepMinutes: StateFlow<Int> = appSettings.defaultSleepMinutes
     val autoExtendSleep: StateFlow<Boolean> = appSettings.autoExtendSleep
     val notificationsEnabled: StateFlow<Boolean> = appSettings.notificationsEnabled
@@ -535,6 +536,7 @@ class SettingsViewModel @Inject constructor(
     fun setAutoSeriesClassification(enabled: Boolean) = appSettings.setAutoSeriesClassification(enabled)
     fun setDefaultSpeed(speed: Float) = appSettings.setDefaultSpeed(speed)
     fun setAutoResume(enabled: Boolean) = appSettings.setAutoResume(enabled)
+    fun setPauseOnAudioDisconnect(enabled: Boolean) = appSettings.setPauseOnAudioDisconnect(enabled)
     fun setDefaultSleepMinutes(minutes: Int) = appSettings.setDefaultSleepMinutes(minutes)
     fun setAutoExtendSleep(enabled: Boolean) = appSettings.setAutoExtendSleep(enabled)
     fun setNotificationsEnabled(enabled: Boolean) {
