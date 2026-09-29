@@ -19,7 +19,10 @@ import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.entity.AudioFileEntity
 import com.example.audiobook.data.room.entity.FileStatus
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
+import com.example.audiobook.data.room.entity.ListeningSessionEntity
 import com.example.audiobook.data.room.entity.ProgressStatus
+import com.example.audiobook.data.room.entity.SessionEndReason
+import com.example.audiobook.data.room.entity.SessionState
 import com.example.audiobook.notifications.BookCompletionNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +34,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
@@ -42,6 +47,11 @@ private const val CHAPTER_COMPLETION_CHECK_INTERVAL_MS = 2_000L
 private const val COMPLETION_TOLERANCE_MS = 2_000L
 /** حد التراجع الصريح (60 ثانية) الذي يُعيد الكتاب إلى حالة "قيد الاستماع" بعد إنهائه. */
 private const val UNFINISH_REWIND_THRESHOLD_MS = 60_000L
+/**
+ * FIX 6.2: shortest recordable session (2s) — buffering blips
+ * (flickering play/stop) must not pollute the history with zero rows.
+ */
+internal const val MIN_LISTENING_SESSION_MS = 2_000L
 
 @Singleton
 class ExoPlaybackController @Inject constructor(
@@ -66,6 +76,20 @@ class ExoPlaybackController @Inject constructor(
     private var mediaController: MediaController? = null
     /** اختزال فحص اكتمال الفصول: يُؤخذ عينة كل ثانيتين فقط بدل كل تحديث موضع (500ms). */
     private var lastChapterCompletionCheckAtMs = 0L
+    /**
+     * FIX 6.2 — session tracking: sessions were written only on sleep-timer
+     * expiry, so Statistics stayed zero for normal listening. Now a session
+     * starts on real playback start and ends (MANUAL_PAUSE) on every stop,
+     * with a 2s floor to ignore buffering blips.
+     */
+    private var sessionStartMs: Long? = null
+    private var sessionStartPositionMs: Long = 0L
+    private var sessionEditionId: UUID? = null
+    /**
+     * نطاق كتابة الجلسات: مستقل عن scope الرئيسي الذي يُلغى في release() —
+     * وإلا ضاعت جلسة الإغلاق نفسها.
+     */
+    private val sessionIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /**
      * علامة نقطة اكتمال الكتاب: ما دامت مُنصوبة لا يُعاد الكتاب صامتًا إلى
      * IN_PROGRESS بعد FINISHED، إلا إذا تراجع المستخدم تراجعًا صريحًا كبيرًا.
@@ -109,7 +133,11 @@ class ExoPlaybackController @Inject constructor(
                 if (isPlaying) {
                     ensureMediaServiceStarted()
                     startPeriodicSave()
-                } else saveProgress()
+                    beginListeningSession()
+                } else {
+                    saveProgress()
+                    endListeningSession(SessionEndReason.MANUAL_PAUSE)
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -222,6 +250,43 @@ class ExoPlaybackController @Inject constructor(
         }
     }
 
+    /** FIX 6.2: بداية جلسة — تُستدعى عند أول isPlaying=true فعلي. */
+    private fun beginListeningSession() {
+        if (sessionStartMs != null) return
+        sessionStartMs = System.currentTimeMillis()
+        sessionStartPositionMs = currentGlobalPosition()
+        sessionEditionId = editionId
+    }
+
+    /**
+     * FIX 6.2: نهاية جلسة — صف COMPLETED واحد لكل مقطع استماع حقيقي.
+     * الكتابة على IO (قاعدة الإنتاج تمنع الخيط الرئيسي).
+     */
+    private fun endListeningSession(reason: SessionEndReason) {
+        val startMs = sessionStartMs ?: return
+        val edition = sessionEditionId
+        val listenedMs = (currentGlobalPosition() - sessionStartPositionMs).coerceAtLeast(0L)
+        sessionStartMs = null
+        sessionEditionId = null
+        if (edition == null || listenedMs < MIN_LISTENING_SESSION_MS) return
+        val endedAt = System.currentTimeMillis()
+        sessionIoScope.launch {
+            runCatching {
+                database.listeningSessionDao().insert(
+                    ListeningSessionEntity(
+                        id = UUID.randomUUID(),
+                        editionId = edition,
+                        startedAt = startMs,
+                        endedAt = endedAt,
+                        durationListenedMs = listenedMs,
+                        endReason = reason,
+                        sessionState = SessionState.COMPLETED
+                    )
+                )
+            }
+        }
+    }
+
     override fun pause() {
         player.pause()
         saveProgress()
@@ -273,6 +338,9 @@ class ExoPlaybackController @Inject constructor(
     }
 
     override fun release() {
+        // FIX 6.2: تصفية الجلسة المفتوحة عند موت الخدمة (سبب: إغلاق التطبيق) —
+        // بنطاق مستقل لأن scope يُلغى أدناه مباشرة.
+        endListeningSession(SessionEndReason.APP_CLOSED)
         saveProgress()
         saveJob?.cancel()
         player.release()

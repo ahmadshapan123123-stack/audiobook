@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -154,9 +156,13 @@ private fun ListeningBarsSection(bars: List<ListeningBar>) {
         if (bars.isEmpty()) {
             Text(stringResource(R.string.stats_no_data), style = MaterialTheme.typography.bodySmall)
         } else {
+            // FIX 6.3: 12 عمودًا بعرض ~25dp يبتر "يناير" إلى "ينا…".
+            // فوق 7 أعمدة تُدار التسميات 45° (أسماء كاملة دائمًا، بلا بتر
+            // ولا اختصار غير متسق) مع حيّز عمودي مخصص للدوران.
+            val rotateLabels = bars.size > 7
             val maxValue = bars.maxOfOrNull { it.valueMs } ?: 0L
             Row(
-                modifier = Modifier.fillMaxWidth().height(140.dp),
+                modifier = Modifier.fillMaxWidth().height(if (rotateLabels) 196.dp else 140.dp),
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                 verticalAlignment = Alignment.Bottom
             ) {
@@ -184,13 +190,26 @@ private fun ListeningBarsSection(bars: List<ListeningBar>) {
                                 )
                         )
                         Spacer(Modifier.height(AppSpacing.xxs))
-                        Text(
-                            bar.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(if (rotateLabels) 56.dp else 20.dp),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Text(
+                                bar.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.graphicsLayer {
+                                    if (rotateLabels) {
+                                        rotationZ = -45f
+                                        transformOrigin = TransformOrigin(0.5f, 0f)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
