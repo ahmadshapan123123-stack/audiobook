@@ -104,24 +104,30 @@ class SleepTimerController @Inject constructor(
     private val sessionDao: ListeningSessionDao,
     private val appSettings: AppSettings,
     @ApplicationContext private val context: Context
-) {
+) : java.io.Closeable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
 
     /** يحمي حالة القرار من تنافس خيطي (حلقة الخلفية + استدعاءات الاختبار/الواجهة). */
     private val tickLock = Any()
 
-    private var phase = SleepTimerPhase.IDLE
-    private var deadlineMs = 0L
-    private var timerStartedMs = 0L
-    private var originalDurationMs = 0L
+    /**
+     * PART 6: رؤية خيطية مضمونة — حلقة runLoop على Default تقرأ هذه الحقول
+     * بينما خيط الاختبار/الواجهة يكتبها (extendBy/start). كانت plain vars
+     * فيُحتمل أن تنشر الحلقة لقطة قديمة (remaining قبل التمديد) فوق الحالة
+     * الجديدة — وهو الـflake العابر للاختبارات.
+     */
+    @Volatile private var phase = SleepTimerPhase.IDLE
+    @Volatile private var deadlineMs = 0L
+    @Volatile private var timerStartedMs = 0L
+    @Volatile private var originalDurationMs = 0L
     /**
      * FIX 4.5/4.6: مستوى الصوت المرجعي للخبو — يُلتقط عند دخول FADING_OUT
      * من الصوت الفعلي (لا يُفترض 1f). نبضات الـDuck الست حُذفت نهائيًا:
      * كانت تُقرأ «صوتًا غريبًا» عند التوقف، والمواصفة تمنع أي إشارة صوتية
      * قبل الخبو — لا ToneGenerator ولا MediaPlayer ولا خفض مؤقت في هذا المسار.
      */
-    private var fadeBaseVolume = 1f
+    @Volatile private var fadeBaseVolume = 1f
     /**
      * DOZE-HARDENING: partial wake lock held ONLY during the 30s fade so
      * Doze cannot stretch the 1s ticks into 2–3 visible steps (= "abrupt").
@@ -136,7 +142,7 @@ class SleepTimerController @Inject constructor(
     private val _messages = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
-    fun start(minutes: Int) {
+    fun start(minutes: Int, launchLoop: Boolean = true) {
         if (minutes <= 0) {
             cancel()
             return
@@ -149,16 +155,34 @@ class SleepTimerController @Inject constructor(
         releaseFadeLock()
         stopHandled.set(false)
         setPhase(SleepTimerPhase.RUNNING)
-        job = scope.launch { runLoop() }
+        // PART 6: إقلاع الحلقة اختياري — الإنتاج (الوقت الحقيقي) يحتاجها،
+        // والاختبارات (ساعة مزيفة مجمّدة + tickClock يدوي) تُعطّلها لأنها
+        // كانت مصدر السباق الوحيد: تُعيد نشر نفس اللحظة المجمّدة من خيط
+        // خلفي فيتسابق نشره مع قرارات خيط الاختبار.
+        if (launchLoop) job = scope.launch { runLoop() } else job = null
     }
 
     fun cancel() {
         job?.cancel()
+        // PART 6: تصفير المرجع — وظيفة ملغاة محفوظة كانت تُبقي runLoop حيًا
+        // في الاختبارات (بلا مالك يُنهي دورة حياته).
+        job = null
         if (phase == SleepTimerPhase.FADING_OUT) playback.setVolume(fadeBaseVolume)
         releaseFadeLock()
         deadlineMs = 0L
         stopHandled.set(false)
         setPhase(SleepTimerPhase.IDLE)
+    }
+
+    /**
+     * PART 6: نهاية دورة الحياة الصريحة — تُلغى حلقة runLoop. في الإنتاج
+     * النسخ مربوطة بعمر Activity/Service (MainActivity:196،
+     * PlaybackService:66) أي بعمر العملية فلا تسرّب؛ وفي الاختبارات
+     * تُستدعى من @After لكل متحكم مُنشأ.
+     */
+    override fun close() {
+        job?.cancel()
+        job = null
     }
 
     /** تمديد يدوي (+5/+10/+15/+30) من الإشعار/شاشة القفل أو من النافذة داخل التطبيق. */

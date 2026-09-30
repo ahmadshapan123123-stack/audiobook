@@ -45,6 +45,9 @@ class SleepTimerControllerTest {
     private lateinit var database: AppDatabase
     private lateinit var appSettings: AppSettings
     private lateinit var dbExecutor: java.util.concurrent.ExecutorService
+    /** PART 6: كل متحكم يُنشأ في اختبار تُغلق حلقته هنا — كانت runLoop
+     * تتسرب (while+delay على Default) وتتسابق على phase/deadlineMs. */
+    private val controllers = mutableListOf<SleepTimerController>()
 
     @Before
     fun setUp() {
@@ -62,6 +65,8 @@ class SleepTimerControllerTest {
 
     @After
     fun tearDown() {
+        controllers.forEach { runCatching { it.close() } }
+        controllers.clear()
         database.close()
         dbExecutor.shutdown()
     }
@@ -73,7 +78,15 @@ class SleepTimerControllerTest {
             database.listeningSessionDao(),
             appSettings,
             ApplicationProvider.getApplicationContext()
-        )
+        ).also { controllers += it }
+
+    /**
+     * PART 6: بدء حتمي بلا حلقة خلفية — كل اختبارات هذا الملف تقود الوقت
+     * يدويًا (clock.set + tickClock) والساعة المزيفة لا تتقدم وحدها، فالحلقة
+     * لا تضيف أي سلوك قابل للملاحظة هنا؛ تعطيلها يمحو السباق من الجذر.
+     * (المنتج يستدعي start(minutes) بالإطلاق الافتراضي — بلا تغيير.)
+     */
+    private fun SleepTimerController.startDeterministic(minutes: Int) = start(minutes, launchLoop = false)
 
     // ---- النقطة 1: آلة الحالات الصريحة IDLE → RUNNING → WARNING_WINDOW → FADING_OUT → STOPPED ----
 
@@ -87,7 +100,7 @@ class SleepTimerControllerTest {
 
         assertEquals(SleepTimerPhase.IDLE, controller.uiState.value.phase)
 
-        controller.start(15)
+        controller.startDeterministic(15)
         assertEquals(SleepTimerPhase.RUNNING, controller.uiState.value.phase)
 
         val deadline = FAKE_EPOCH + 15 * 60_000L
@@ -120,7 +133,7 @@ class SleepTimerControllerTest {
         val clock = FakeClock()
         val playback = FakePlayback(clock = clock)
         val controller = controller(clock, playback)
-        controller.start(15)
+        controller.startDeterministic(15)
         val deadline = FAKE_EPOCH + 15 * 60_000L
 
         // داخل نافذة الـ3 دقائق (حتى لحظة دخول الخبو): لا أي تغيير صوت.
@@ -161,7 +174,7 @@ class SleepTimerControllerTest {
         val clock = FakeClock()
         val playback = FakePlayback(clock = clock)
         val controller = controller(clock, playback)
-        controller.start(15)
+        controller.startDeterministic(15)
         val deadline = FAKE_EPOCH + 15 * 60_000L
 
         clock.set(deadline - SLEEP_WARNING_WINDOW_MS - 1)
@@ -188,7 +201,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(15)
+            controller.startDeterministic(15)
             clock.set(FAKE_EPOCH + 15 * 60_000L - 2 * 60_000L)
             controller.tickClock()
             assertTrue(controller.uiState.value.isExtendWindowVisible)
@@ -207,7 +220,7 @@ class SleepTimerControllerTest {
         val clock = FakeClock()
         val playback = FakePlayback(clock = clock)
         val controller = controller(clock, playback)
-        controller.start(15)
+        controller.startDeterministic(15)
         clock.set(FAKE_EPOCH + 15 * 60_000L - 2 * 60_000L)
         controller.tickClock()
         val collected = async { controller.messages.first() }
@@ -222,7 +235,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(15)
+            controller.startDeterministic(15)
             clock.set(FAKE_EPOCH + 15 * 60_000L - 2 * 60_000L)
             controller.tickClock()
             val before = controller.uiState.value.remainingMs!!
@@ -245,7 +258,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(15)
+            controller.startDeterministic(15)
             clock.set(FAKE_EPOCH + 15 * 60_000L - 2 * 60_000L)
             controller.tickClock()
             val before = controller.uiState.value.remainingMs!!
@@ -262,7 +275,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(minutes)
+            controller.startDeterministic(minutes)
             val deadline = FAKE_EPOCH + minutes * 60_000L
             clock.set(deadline - 2 * 60_000L)
             controller.tickClock()
@@ -309,7 +322,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(45)
+            controller.startDeterministic(45)
             clock.set(FAKE_EPOCH + 45 * 60_000L - 2 * 60_000L)
             controller.tickClock()
             val before = controller.uiState.value.remainingMs!!
@@ -330,7 +343,7 @@ class SleepTimerControllerTest {
             val clock = FakeClock()
             val playback = FakePlayback(clock = clock)
             val controller = controller(clock, playback)
-            controller.start(45)
+            controller.startDeterministic(45)
             clock.set(FAKE_EPOCH + 5 * 60_000L)
             controller.tickClock()
             val before = controller.uiState.value.remainingMs!!
@@ -342,7 +355,7 @@ class SleepTimerControllerTest {
         val clock = FakeClock()
         val playback = FakePlayback(clock = clock)
         val controller = controller(clock, playback)
-        controller.start(15)
+        controller.startDeterministic(15)
         clock.set(FAKE_EPOCH + 12 * 60_000L)
         controller.tickClock()
         controller.decreaseBy(100)
@@ -375,7 +388,7 @@ class SleepTimerControllerTest {
         val clock = FakeClock()
         val playback = FakePlayback(editionId = editionId, clock = clock)
         val controller = controller(clock, playback)
-        controller.start(15)
+        controller.startDeterministic(15)
         val deadline = FAKE_EPOCH + 15 * 60_000L
 
         clock.set(deadline)
