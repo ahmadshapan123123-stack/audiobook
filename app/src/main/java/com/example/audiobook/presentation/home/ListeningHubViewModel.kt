@@ -4,16 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audiobook.data.room.dao.AuthorDao
 import com.example.audiobook.data.room.dao.BookDao
-import com.example.audiobook.data.room.dao.ChapterDao
 import com.example.audiobook.data.room.dao.EditionDao
 import com.example.audiobook.data.room.dao.ProgressDao
 import com.example.audiobook.data.room.dao.SeriesDao
 import com.example.audiobook.data.room.entity.AuthorEntity
 import com.example.audiobook.data.room.entity.BookEntity
-import com.example.audiobook.data.room.entity.ChapterEntity
 import com.example.audiobook.data.room.entity.EditionEntity
 import com.example.audiobook.data.room.entity.ListeningProgressEntity
-import com.example.audiobook.data.room.entity.ProgressStatus
 import com.example.audiobook.data.room.entity.SeriesEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -24,65 +21,59 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * خيارات المدة المتاحة في مركز الاستماع: كتب متناهية الصغر ثم ممتدة.
+ * خيارات المدة في مركز الاستماع (PART 5 / Phase 5): ثلاث نوافذ + ساعة.
+ * "مفتوح" (بلا حد) يُمثَّل بـnull في [ListeningHubUiState.selectedMinutes].
  */
-internal val HUB_TIME_OPTIONS_MINUTES = listOf(15, 30, 45, 60, 90, 120)
+internal val HUB_TIME_OPTIONS_MINUTES = listOf(15, 30, 45, 60)
 
-/** الحد الأقصى لما تعتبره "جلسة نوم": 40 دقيقة. */
-private const val HUB_BEDTIME_MAX_REMAINING_MS = 40 * 60_000L
-
-/** الحد الأدنى لمدة الكتاب حتى يصلح قسم "جلسة طويلة": ساعتان. */
-private const val HUB_LONG_BOOK_MIN_MS = 2 * 60 * 60_000L
-
-/** حالة مركز الاستماع: كل أقسامه مبنية من بيانات المكتبة الفعلية لا تخمين. */
+/** حالة مركز الاستماع: ثلاثة أقسام فقط — وقتك، يناسب وقتك، أكمل ما بدأته. */
 data class ListeningHubUiState(
-    val selectedMinutes: Int = 30,
-    val featured: HomeContinue? = null,
+    /** النافذة المختارة بالدقائق؛ null = "مفتوح" (بلا حد زمني). */
+    val selectedMinutes: Int? = 30,
+    /** كتب قيد التقدّم يقلّ متبقيها عن النافذة (أو الكل إن كانت مفتوحة) — بحد 8. */
     val fitsWindow: List<HomeBook> = emptyList(),
-    val bedtime: List<HomeBook> = emptyList(),
-    val series: List<HomeSeries> = emptyList(),
-    val longSessions: List<HomeBook> = emptyList(),
+    /** بقية كتب قيد التقدّم غير المعروضة أعلاه — بحد 8. */
+    val rest: List<HomeBook> = emptyList(),
     val totalBooks: Int = 0,
     val isLoading: Boolean = true
 )
 
 /** مصادر مركز الاستماع المنزوعة الأنواع من دالة الجمع. */
 private data class HubSources(
-    val minutes: Int,
+    val minutes: Int?,
     val books: List<BookEntity>,
     val authors: List<AuthorEntity>,
     val editions: List<EditionEntity>,
     val progressList: List<ListeningProgressEntity>,
-    val series: List<SeriesEntity>,
-    val chapters: List<ChapterEntity>
+    /** تُمرَّر للمحوّل لأسماء السلاسل وألوانها فقط — لا قسم سلاسل بعد الآن. */
+    val series: List<SeriesEntity>
 )
 
-/** [استمع الآن] — أثير يجهّز لك جلسة بحسب الوقت المتاح من بيانات حقيقية. */
+/** [استمع الآن] — ثلاثة أقسام من كتب قيد التقدّم فقط (PART 5 / Phase 5). */
 @HiltViewModel
 class ListeningHubViewModel @Inject constructor(
     private val bookDao: BookDao,
     private val authorDao: AuthorDao,
     private val editionDao: EditionDao,
     private val progressDao: ProgressDao,
-    private val seriesDao: SeriesDao,
-    private val chapterDao: ChapterDao
+    private val seriesDao: SeriesDao
 ) : ViewModel() {
 
-    private val selectedMinutes = MutableStateFlow(HUB_TIME_OPTIONS_MINUTES[1])
+    private val selectedMinutes = MutableStateFlow<Int?>(HUB_TIME_OPTIONS_MINUTES[1])
 
-    fun selectTime(minutes: Int) {
-        if (minutes in HUB_TIME_OPTIONS_MINUTES) selectedMinutes.value = minutes
+    /** اختيار النافذة؛ null = "مفتوح". القيم الغريبة تُتجاهل. */
+    fun selectTime(minutes: Int?) {
+        if (minutes == null || minutes in HUB_TIME_OPTIONS_MINUTES) selectedMinutes.value = minutes
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun extract(values: Array<Any>): HubSources = HubSources(
-        minutes = values[0] as Int,
+    private fun extract(values: Array<Any?>): HubSources = HubSources(
+        minutes = values[0] as Int?,
         books = values[1] as List<BookEntity>,
         authors = values[2] as List<AuthorEntity>,
         editions = values[3] as List<EditionEntity>,
         progressList = values[4] as List<ListeningProgressEntity>,
-        series = values[5] as List<SeriesEntity>,
-        chapters = values[6] as List<ChapterEntity>
+        series = values[5] as List<SeriesEntity>
     )
 
     val uiState: StateFlow<ListeningHubUiState> = combine(
@@ -91,85 +82,34 @@ class ListeningHubViewModel @Inject constructor(
         authorDao.observeAll(),
         editionDao.observeAll(),
         progressDao.observeAll(),
-        seriesDao.observeAll(),
-        chapterDao.observeAll()
+        seriesDao.observeAll()
     ) { values ->
         val src = extract(values)
         val minutes = src.minutes
-        val books = src.books
-        val authors = src.authors
-        val editions = src.editions
-        val progressList = src.progressList
-        val series = src.series
-        val chapters = src.chapters
-        val authorById = authors.associateBy { it.id }
-        val homeBooks = HomeMapper.toHomeBooks(books, authors, editions, progressList, series)
-        val homeById = homeBooks.associateBy { it.bookId }
-        val editionById = editions.associateBy { it.id }
-        val windowMs = minutes * 60_000L
+        val homeBooks = HomeMapper.toHomeBooks(src.books, src.authors, src.editions, src.progressList, src.series)
+        val windowMs = minutes?.times(60_000L)
 
-        fun totalMs(book: HomeBook): Long = book.editionId?.let { editionById[it]?.totalDurationMs } ?: 0L
-
+        // كل كتب قيد التقدّم القابلة للتشغيل، بالأحدث استماعًا أولًا.
         val inProgress = homeBooks
             .filter { it.hasProgress && it.editionId != null && it.remainingMs > 0L }
             .sortedByDescending { it.lastPlayedAt }
 
-        val continuing = progressList
-            .filter { it.status == ProgressStatus.IN_PROGRESS }
-            .maxByOrNull { it.lastPlayedAt }
-
-        val featured = continuing?.let { progress ->
-            val edition = editions.firstOrNull { it.id == progress.editionId }
-            val book = edition?.let { homeById[it.bookId] } ?: return@let null
-            HomeContinue(
-                book = book,
-                totalMs = edition.totalDurationMs,
-                playedMs = progress.currentPositionMs,
-                currentChapterTitle = HomeMapper.chapterTitleAt(chapters, edition.id, progress.currentPositionMs)
-            )
-        }
-
-        val featuredId = featured?.book?.bookId
-
-        val fitsWindow = inProgress
-            .filter { it.bookId != featuredId && it.remainingMs <= windowMs }
-            .sortedBy { it.remainingMs }
+        // القسم 2 "يناسب وقتك": المتبقي ≤ النافذة (أو الكل في "مفتوح") — بحد 8.
+        val fitsWindow = (if (windowMs == null) inProgress
+            else inProgress.filter { it.remainingMs <= windowMs })
             .take(8)
 
-        val bedtime = inProgress
-            .filter { it.bookId != featuredId && it.remainingMs <= HUB_BEDTIME_MAX_REMAINING_MS }
-            .take(3)
-
-        val seriesSection = series
-            .map { s ->
-                val members = homeBooks.filter { it.seriesId == s.id }
-                HomeSeries(
-                    seriesId = s.id,
-                    name = s.name,
-                    authorName = authorById[s.authorId]?.name ?: "",
-                    colorTheme = s.colorTheme,
-                    books = members
-                )
-            }
-            .filter { s -> s.books.any { it.hasProgress } }
-            .sortedByDescending { s -> s.books.maxOf { it.lastPlayedAt } }
-            // FIX 2: سقف 6 كصف الرئيسية (كان بلا حد).
-            .take(6)
-
-        val longSessions = homeBooks
-            .filter { it.editionId != null && it.progressFraction < 1f && totalMs(it) >= HUB_LONG_BOOK_MIN_MS }
-            .sortedByDescending { it.hasProgress }
-            .sortedByDescending { totalMs(it) }
-            .take(6)
+        // القسم 3 "أكمل ما بدأته": الباقي غير المعروض أعلاه — بحد 8.
+        val shownIds = fitsWindow.map { it.bookId }.toSet()
+        val rest = inProgress
+            .filter { it.bookId !in shownIds }
+            .take(8)
 
         ListeningHubUiState(
             selectedMinutes = minutes,
-            featured = featured,
             fitsWindow = fitsWindow,
-            bedtime = bedtime,
-            series = seriesSection,
-            longSessions = longSessions,
-            totalBooks = books.size,
+            rest = rest,
+            totalBooks = src.books.size,
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListeningHubUiState())

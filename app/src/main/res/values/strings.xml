@@ -119,6 +119,12 @@
     <string name="listen_now_subtitle">أخبرنا بوقتك، ودع أثير يجهّز لك الجلسة</string>
     <string name="listen_now_open">ابدأ</string>
     <string name="listen_now_time_minutes">%1$d دقيقة</string>
+    <!-- PART 5 (Phase 5): عناوين الأقسام الثلاثة + رقائق الوقت الجديدة. -->
+    <string name="listen_now_time_title">كم من الوقت لديك؟</string>
+    <string name="listen_now_time_hour">ساعة</string>
+    <string name="listen_now_time_open">مفتوح</string>
+    <string name="listen_now_continue_title">أكمل ما بدأته</string>
+    <string name="listen_now_empty_progress">لا توجد كتب قيد الاستماع</string>
     <string name="listen_now_fits_title">يكمّل وقتك</string>
     <string name="listen_now_shelf_title">يناسب وقتك</string>
     <string name="listen_now_play_all">شغّلها كلها</string>
