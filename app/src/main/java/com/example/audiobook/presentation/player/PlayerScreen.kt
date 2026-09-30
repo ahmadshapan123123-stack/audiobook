@@ -22,6 +22,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
@@ -120,6 +121,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -183,6 +185,8 @@ fun PlayerScreen(
     /** PART 3: فواصل التخطي (ثوانٍ) من الإعدادات — التسميات والسلوك معًا. */
     skipForwardSeconds: Int = 15,
     skipBackwardSeconds: Int = 15,
+    /** PHASE 2: فتح لوحة النوم مباشرة (من زر النوم في القفل/الإشعار). */
+    initialSleepPanel: Boolean = false,
     /** إبقاء الشاشة مضاءة أثناء المشغل (من الإعدادات). */
     keepScreenOn: Boolean = false
 ) {
@@ -216,7 +220,9 @@ fun PlayerScreen(
     }
     var editing by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableStateOf(playback.speed) }
-    var expandedPanel by remember { mutableStateOf<PlayerControlPanel?>(null) }
+    var expandedPanel by remember(initialSleepPanel) {
+        mutableStateOf(if (initialSleepPanel) PlayerControlPanel.SLEEP else null)
+    }
     var saveMomentPosMs by remember { mutableStateOf<Long?>(null) }
     var noteComposerPosMs by remember { mutableStateOf<Long?>(null) }
     var chapterComposerPosMs by remember { mutableStateOf<Long?>(null) }
@@ -625,6 +631,9 @@ fun PlayerScreen(
                         title = title,
                         gradient = gradient,
                         fg = fg,
+                        // FIX C1: غلاف الكتاب المخصص/المضمّن — playerUi.book
+                        // يحمل coverImagePath محدّثًا عبر bookFlow.
+                        imagePath = playerUi.book?.coverImagePath,
                         modifier = Modifier.width(coverWidth).height(coverHeight)
                     )
                     Spacer(Modifier.height(AppSpacing.md))
@@ -1062,15 +1071,21 @@ private fun formatNoteTimestamp(ms: Long): String {
     else "%02d:%02d".format(minutes, seconds)
 }
 
-/** غلاف المشغّل: الحرف الأول فوق تدرج الكتاب. */
+/** غلاف المشغّل: صورة الغلاف (مخصص/مضمّن) عند وجودها، وإلا الحرف الأول فوق تدرج الكتاب. */
 @Composable
 private fun PlayerCoverBlock(
     title: String,
     gradient: PlayerGradient,
     fg: PlayerFg,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * FIX C1: مسار صورة الغلاف — يُفك ترميزه خارج الخيط الرئيسي مع
+     * downsample؛ null/مفقود/تالف = الحرف كما كان. لا استثناءات تصل للواجهة.
+     */
+    imagePath: String? = null
 ) {
     val shape = RoundedCornerShape(AppSpacing.lg)
+    val coverBitmap = com.example.audiobook.presentation.theme.coverImageBitmap(imagePath)
     Box(
         modifier = modifier
             .clip(shape)
@@ -1081,13 +1096,22 @@ private fun PlayerCoverBlock(
             .border(width = 1.dp, color = fg.colors.outline, shape = shape),
         contentAlignment = Alignment.Center
     ) {
-        val letter = title.trim().firstOrNull()?.toString() ?: "؟"
-        Text(
-            text = letter,
-            color = fg.ink,
-            style = MaterialTheme.typography.displayLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+        if (coverBitmap != null) {
+            Image(
+                bitmap = coverBitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            val letter = title.trim().firstOrNull()?.toString() ?: "؟"
+            Text(
+                text = letter,
+                color = fg.ink,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 

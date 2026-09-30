@@ -53,6 +53,8 @@ class AtherMediaNotificationProvider(
     @Volatile var contentAuthor: String = ""
     @Volatile var artwork: Bitmap? = null
     @Volatile var playing: Boolean = false
+    /** PHASE 2: نص عدّاد النوم للوحة الموسّعة (null = مخفي). */
+    @Volatile var sleepCountdownText: String? = null
     @Volatile var accentArgb: Int = AtherAccent.ambientAccentArgb(appSettings.currentThemeMode())
 
     /** تحديث ثيم الإشعار (عند تبديل الفصل/الوضع/اللون) يُعيد بناءه فورًا دون إيقاف الخدمة. */
@@ -191,6 +193,8 @@ class AtherMediaNotificationProvider(
         bindCover(views, R.id.ather_strip_cover)
         bindProgress(views, R.id.ather_strip_progress, p)
         bindPlayButton(views, R.id.ather_strip_play, actions[1], isPlaying, p)
+        bindIconButton(views, R.id.ather_strip_back15, actions[3], p)
+        bindIconButton(views, R.id.ather_strip_fwd15, actions[4], p)
         views.setOnClickPendingIntent(R.id.ather_strip_root, session.getSessionActivity())
         return views
     }
@@ -213,6 +217,15 @@ class AtherMediaNotificationProvider(
         views.setTextColor(R.id.ather_panel_title, p.ink)
         views.setTextColor(R.id.ather_panel_chapter, p.soft)
         views.setTextColor(R.id.ather_panel_author, p.soft)
+        // PHASE 2: صف عدّاد النوم — يظهر فقط أثناء فعالية المؤقت.
+        val sleepText = sleepCountdownText
+        if (sleepText != null) {
+            views.setViewVisibility(R.id.ather_panel_sleep, android.view.View.VISIBLE)
+            views.setTextViewText(R.id.ather_panel_sleep, sleepText)
+            views.setTextColor(R.id.ather_panel_sleep, p.accent)
+        } else {
+            views.setViewVisibility(R.id.ather_panel_sleep, android.view.View.GONE)
+        }
         bindCover(views, R.id.ather_panel_cover)
         bindProgress(views, R.id.ather_panel_progress, p)
         bindPlayButton(views, R.id.ather_panel_play, actions[1], isPlaying, p)

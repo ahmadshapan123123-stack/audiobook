@@ -83,6 +83,17 @@
                 android:ellipsize="end"
                 android:textColor="#A9B2CC"
                 android:textSize="12sp" />
+
+            <!-- PHASE 2: عدّاد النوم في اللوحة الموسّعة (يُدار إظهارُه من الكود). -->
+            <TextView
+                android:id="@+id/ather_panel_sleep"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="#A9B2CC"
+                android:textSize="12sp"
+                android:visibility="gone" />
         </LinearLayout>
     </LinearLayout>
 

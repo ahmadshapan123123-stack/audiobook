@@ -19,6 +19,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.example.audiobook.MainActivity
+import com.example.audiobook.R
 import com.example.audiobook.background.reminders.ReminderScheduler
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.dao.AuthorDao
@@ -182,6 +183,21 @@ class PlaybackService : MediaSessionService() {
                                 sleepTimer.cancel()
                                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                             }
+                            if (SleepTimerCommands.isSleepOpenAction(action)) {
+                                // PHASE 2: فتح المشغل على لوحة النوم عبر مسار
+                                // التنقل نفسه الذي تستخدمه نقرات الإشعار.
+                                openedEdition?.let { id ->
+                                    val intent = Intent(this@PlaybackService, MainActivity::class.java).apply {
+                                        putExtra(
+                                            AtherNotificationCenter.EXTRA_ROUTE,
+                                            "player/$id?panel=SLEEP"
+                                        )
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    }
+                                    runCatching { startActivity(intent) }
+                                }
+                                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                            }
                             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
                         }
                     }
@@ -299,6 +315,16 @@ class PlaybackService : MediaSessionService() {
         scope.launch {
             sleepTimer.uiState.collect { state ->
                 refreshLockScreenLayout()
+                // PHASE 2: عدّاد النوم في اللوحة الموسّعة — يُحدَّث مع كل نبضة.
+                val active = state.phase == SleepTimerPhase.RUNNING ||
+                    state.phase == SleepTimerPhase.WARNING_WINDOW ||
+                    state.phase == SleepTimerPhase.FADING_OUT
+                val remaining = state.remainingMs
+                provider.sleepCountdownText =
+                    if (active && remaining != null && remaining > 0L) {
+                        getString(R.string.notif_sleep_remaining, formatSleepClock(remaining))
+                    } else null
+                provider.refresh()
                 when (state.phase) {
                     SleepTimerPhase.RUNNING,
                     SleepTimerPhase.WARNING_WINDOW,
@@ -310,10 +336,16 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private fun formatSleepClock(ms: Long): String {
+        val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+        return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+    }
+
     /**
      * الأزرار الديناميكية لشاشة القفل/الإشعار: أثناء فعالية مؤقت النوم أو نافذة التحذير/الخبو
      * تُعطى أزرار المؤقّت الأولوية (تمديد +15/+30/+60 + إلغاء) ليصل المستخدم إليها فورًا،
-     * وإلا تظهر أزرار التشغيل الاعتيادية (±15 + الفصول). يُعاد تطبيقها حيًّا عند كل تغيّر طور.
+     * وإلا: النقل الأربعة + زر فتح لوحة النوم (هلال) خامسًا — والتشغيل/الإيقاف يضيفه النظام.
+     * يُعاد تطبيقها حيًّا عند كل تغيّر طور.
      */
     private fun customLockScreenLayout(): List<CommandButton> {
         val phase = sleepTimer.uiState.value.phase
@@ -324,7 +356,7 @@ class PlaybackService : MediaSessionService() {
         else PlaybackSessionCommands.notificationButtons(
             forwardSeconds = appSettings.skipForwardSeconds.value,
             backwardSeconds = appSettings.skipBackwardSeconds.value
-        )
+        ) + SleepTimerCommands.sleepOpenButton(R.drawable.ic_sleep)
     }
 
     /** إعادة تطبيق الأزرار الحيّة على الجلسة الدّوّارة دون إيقاف التشغيل. */
@@ -342,6 +374,7 @@ class PlaybackService : MediaSessionService() {
         androidx.media3.session.SessionCommands.Builder()
             .apply {
                 SleepTimerCommands.commands().forEach { add(it) }
+                add(androidx.media3.session.SessionCommand(SleepTimerCommands.ACTION_SLEEP_OPEN, Bundle()))
                 PlaybackSessionCommands.commands().forEach { add(it) }
             }
             .build()

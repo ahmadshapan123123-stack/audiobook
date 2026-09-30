@@ -66,9 +66,25 @@
         </LinearLayout>
 
         <ImageButton
+            android:id="@+id/ather_strip_back15"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@null"
+            android:scaleType="centerInside" />
+
+        <ImageButton
             android:id="@+id/ather_strip_play"
             android:layout_width="44dp"
             android:layout_height="44dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@null"
+            android:scaleType="centerInside" />
+
+        <ImageButton
+            android:id="@+id/ather_strip_fwd15"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:background="@android:color/transparent"
             android:contentDescription="@null"
             android:scaleType="centerInside" />

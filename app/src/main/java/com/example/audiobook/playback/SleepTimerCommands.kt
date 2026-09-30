@@ -23,6 +23,13 @@ object SleepTimerCommands {
     const val ACTION_DECREASE_15 = "com.example.audiobook.sleep.decrease.15"
     const val ACTION_CANCEL = "com.example.audiobook.sleep.cancel"
 
+    /**
+     * PHASE 2: فتح لوحة مؤقت النوم من شاشة القفل/الإشعار — الزر الخامس.
+     * خارج COMMANDS عمدًا (تلك للتحكم بالمؤقت نفسه وتُختبر بعدّها)؛ يُبنى
+     * عبر [sleepOpenButton] ويُعالَج في PlaybackService بفتح المشغل.
+     */
+    const val ACTION_SLEEP_OPEN = "com.example.audiobook.sleep.open_panel"
+
     private val COMMANDS = listOf(
         SessionCommand(ACTION_EXTEND_15, Bundle()),
         SessionCommand(ACTION_EXTEND_30, Bundle()),
@@ -53,6 +60,16 @@ object SleepTimerCommands {
     }
 
     fun isCancelAction(action: SessionCommand): Boolean = action.customAction == ACTION_CANCEL
+
+    fun isSleepOpenAction(action: SessionCommand): Boolean = action.customAction == ACTION_SLEEP_OPEN
+
+    /** زر فتح لوحة النوم (هلال) — الخامس في تخطيط القفل/الإشعار. */
+    fun sleepOpenButton(iconResId: Int): CommandButton = CommandButton.Builder()
+        .setSessionCommand(SessionCommand(ACTION_SLEEP_OPEN, Bundle()))
+        .setDisplayName("مؤقت النوم")
+        .setIconResId(iconResId)
+        .setEnabled(true)
+        .build()
 
     fun customButtons(): List<CommandButton> = COMMANDS.map { command ->
         val icon = when (command.customAction) {

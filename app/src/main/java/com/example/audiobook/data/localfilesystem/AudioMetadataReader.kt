@@ -17,7 +17,13 @@ data class AudioMetadata(
     val narratorName: String?,
     val genre: String?,
     val embeddedChapters: List<EmbeddedChapter>,
-    val album: String? = null
+    val album: String? = null,
+    /**
+     * FIX C2: مسار صورة الغلاف المضمّنة بعد حفظها في filesDir/covers —
+     * تُكتب مرة واحدة لكل محتوى فريد (باسم hash) أثناء القراءة نفسها،
+     * فلا تُحمل البايتات في الذاكرة بعد ذلك. null = بلا صورة/فشل الحفظ.
+     */
+    val embeddedArtworkPath: String? = null
 )
 
 interface AudioMetadataReader {
@@ -73,11 +79,29 @@ class MediaAudioMetadataReader(
                 } else {
                     emptyList()
                 },
-                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+                embeddedArtworkPath = persistEmbeddedArt(retriever.embeddedPicture)
             )
         } finally {
             retriever.release()
         }
+    }
+
+    /**
+     * FIX C2: حفظ الصورة المضمّنة في filesDir/covers باسم hash محتواها —
+     * نفس الصورة في N ملفًا تُكتب مرة واحدة (تخطٍّ عند الوجود)، والمرجع
+     * لا يُحتفظ به بعد الكتابة فلا ضغط على الذاكرة أثناء الفحص.
+     */
+    private fun persistEmbeddedArt(bytes: ByteArray?): String? {
+        if (bytes.isNullOrEmpty()) return null
+        return runCatching {
+            val digest = java.security.MessageDigest.getInstance("SHA-1").digest(bytes)
+            val hex = digest.joinToString("") { "%02x".format(it) }
+            val dir = java.io.File(context.filesDir, "covers").apply { mkdirs() }
+            val out = java.io.File(dir, "art_${hex}.jpg")
+            if (!out.exists()) out.writeBytes(bytes)
+            out.absolutePath.takeIf { out.exists() && out.length() > 0L }
+        }.getOrNull()
     }
 
     private fun mimeFor(extension: String) = when (extension) {

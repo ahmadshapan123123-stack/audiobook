@@ -160,7 +160,8 @@ class PlayerScreenAccessibilityTest {
             clock = object : SleepTimerClock { override fun nowMillis(): Long = 0L },
             playback = controller,
             sessionDao = database.listeningSessionDao(),
-            appSettings = AppSettings(ApplicationProvider.getApplicationContext())
+            appSettings = AppSettings(ApplicationProvider.getApplicationContext()),
+            context = ApplicationProvider.getApplicationContext()
         )
         val viewModel = PlayerViewModel(
             savedStateHandle = SavedStateHandle(mapOf("editionId" to editionId.toString())),

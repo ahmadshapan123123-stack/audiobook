@@ -178,6 +178,12 @@ class ExoPlaybackController @Inject constructor(
     }
 
     override suspend fun openEdition(editionId: UUID) {
+        // FIX 2: نفس النسخة تعمل فعلًا (نقرة إشعار أثناء التشغيل) — لا تعيد
+        // الضبط ولا تقفز لموضع القاعدة؛ أبقِ موضع ExoPlayer الحي. الحالة
+        // المعلنة محدّثة أصلًا، فلا شيء يُفعل هنا إطلاقًا.
+        if (editionId == this.editionId && player.playbackState != Player.STATE_IDLE) {
+            return
+        }
         this.editionId = editionId
         lastChapterCheckPositionMs = -1L
         PlaybackStateHolder.update(editionId)
@@ -375,6 +381,13 @@ class ExoPlaybackController @Inject constructor(
         lastOriginalIndex = originalIndex
         updateState()
     }
+
+    /**
+     * FIX 2: الموضع الحي من ExoPlayer مباشرة (لا قيمة مخزّنة قد تتقادم) —
+     * أي واجهة تقرأ الموضع تحصل على الفعلي لحظة القراءة.
+     */
+    val currentPositionMs: Long
+        get() = currentGlobalPosition()
 
     private fun currentGlobalPosition(): Long {
         val current = playableFiles.getOrNull(player.currentMediaItemIndex) ?: return mutableState.value.positionMs

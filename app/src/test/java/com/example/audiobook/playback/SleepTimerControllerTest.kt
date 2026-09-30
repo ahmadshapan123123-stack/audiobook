@@ -67,7 +67,13 @@ class SleepTimerControllerTest {
     }
 
     private fun controller(clock: FakeClock, playback: FakePlayback) =
-        SleepTimerController(clock, playback, database.listeningSessionDao(), appSettings)
+        SleepTimerController(
+            clock,
+            playback,
+            database.listeningSessionDao(),
+            appSettings,
+            ApplicationProvider.getApplicationContext()
+        )
 
     // ---- النقطة 1: آلة الحالات الصريحة IDLE → RUNNING → WARNING_WINDOW → FADING_OUT → STOPPED ----
 

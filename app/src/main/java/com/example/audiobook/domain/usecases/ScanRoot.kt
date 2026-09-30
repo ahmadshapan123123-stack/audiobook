@@ -589,7 +589,24 @@ class ScanRoot @Inject constructor(
         }
 
         attachFiles(root, unit, refreshed, report)
+        maybeApplyEmbeddedCover(
+            refreshed.bookId,
+            unit.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull()
+        )
         return signals
+    }
+
+    /**
+     * FIX C2: غلاف مضمّن → صف الكتاب — فقط إن لم يختر المستخدم غلافًا
+     * ولا يوجد مسار أصلًا (لا كتابة فوق اختيار المستخدم أبدًا).
+     */
+    private suspend fun maybeApplyEmbeddedCover(bookId: UUID, artPath: String?) {
+        if (artPath.isNullOrBlank()) return
+        val book = database.bookDao().getById(bookId) ?: return
+        if (book.isCoverUserSelected || !book.coverImagePath.isNullOrBlank()) return
+        database.bookDao().update(
+            book.copy(coverImagePath = artPath, coverSource = CoverSource.EMBEDDED)
+        )
     }
 
     /** إرفاق ملفات الكتاب بوحدته — نفس منطق الملفات القديم، لكن بحصة الكتاب لا المجلد. */
@@ -820,6 +837,11 @@ class ScanRoot @Inject constructor(
                         importedChapters.forEach { database.chapterDao().insert(it) }
                         report.importedChapters += importedChapters.size
                     }
+                    // FIX C2: نفس قاعدة المسار الصارم — غلاف مضمّن دون مساس باختيار المستخدم.
+                    maybeApplyEmbeddedCover(
+                        edition.bookId,
+                        folder.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull()
+                    )
                     result[folderPath] = signals
                     done++
                     onCreated(done, totalFolders, folderPath)

@@ -1,11 +1,14 @@
 package com.example.audiobook.playback
 
+import android.content.Context
+import android.os.PowerManager
 import android.util.Log
 import com.example.audiobook.data.preferences.AppSettings
 import com.example.audiobook.data.room.dao.ListeningSessionDao
 import com.example.audiobook.data.room.entity.ListeningSessionEntity
 import com.example.audiobook.data.room.entity.SessionEndReason
 import com.example.audiobook.data.room.entity.SessionState
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -99,7 +102,8 @@ class SleepTimerController @Inject constructor(
     private val clock: SleepTimerClock,
     private val playback: PlaybackController,
     private val sessionDao: ListeningSessionDao,
-    private val appSettings: AppSettings
+    private val appSettings: AppSettings,
+    @ApplicationContext private val context: Context
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
@@ -118,6 +122,12 @@ class SleepTimerController @Inject constructor(
      * قبل الخبو — لا ToneGenerator ولا MediaPlayer ولا خفض مؤقت في هذا المسار.
      */
     private var fadeBaseVolume = 1f
+    /**
+     * DOZE-HARDENING: partial wake lock held ONLY during the 30s fade so
+     * Doze cannot stretch the 1s ticks into 2–3 visible steps (= "abrupt").
+     * Non-reference-counted + 60s timeout safety net; released on stop/cancel.
+     */
+    private var fadeWakeLock: PowerManager.WakeLock? = null
     private val stopHandled = AtomicBoolean(false)
 
     private val _uiState = MutableStateFlow(SleepTimerUiState())
@@ -136,6 +146,7 @@ class SleepTimerController @Inject constructor(
         deadlineMs = now + minutes * 60_000L
         timerStartedMs = now
         originalDurationMs = minutes * 60_000L
+        releaseFadeLock()
         stopHandled.set(false)
         setPhase(SleepTimerPhase.RUNNING)
         job = scope.launch { runLoop() }
@@ -144,6 +155,7 @@ class SleepTimerController @Inject constructor(
     fun cancel() {
         job?.cancel()
         if (phase == SleepTimerPhase.FADING_OUT) playback.setVolume(fadeBaseVolume)
+        releaseFadeLock()
         deadlineMs = 0L
         stopHandled.set(false)
         setPhase(SleepTimerPhase.IDLE)
@@ -223,6 +235,7 @@ class SleepTimerController @Inject constructor(
             // FIX 4.5: التقاط المرجع عند دخول الخبو — لا يُفترض مستوى الصوت.
             if (nextPhase == SleepTimerPhase.FADING_OUT && phase != SleepTimerPhase.FADING_OUT) {
                 fadeBaseVolume = playback.getVolume().takeIf { it > 0f } ?: 1f
+                acquireFadeLock()
             }
             if (nextPhase != phase) setPhase(nextPhase)
             if (phase == SleepTimerPhase.FADING_OUT) {
@@ -238,14 +251,36 @@ class SleepTimerController @Inject constructor(
     /** توقف كامل عند الصفر + حفظ الموضع فورًا (عبر pause الحالية التي تحفظ) + تسجيل الجلسة. */
     private suspend fun finishStop() {
         if (!stopHandled.compareAndSet(false, true)) return
-        playback.setVolume(0f)
-        // FIX 4.5: إيقاف مؤقت فقط — لا إغلاق للتطبيق ولا إيقاف للخدمة ولا صوت.
-        playback.pause()
-        recordSession(endedAtMs = deadlineMs)
-        playback.setVolume(fadeBaseVolume)
+        try {
+            playback.setVolume(0f)
+            // FIX 4.5: إيقاف مؤقت فقط — لا إغلاق للتطبيق ولا إيقاف للخدمة ولا صوت.
+            playback.pause()
+            recordSession(endedAtMs = deadlineMs)
+            playback.setVolume(fadeBaseVolume)
+        } finally {
+            releaseFadeLock()
+        }
         deadlineMs = 0L
         phase = SleepTimerPhase.STOPPED
         _uiState.value = SleepTimerUiState(phase = SleepTimerPhase.STOPPED, remainingMs = 0L, isExtendWindowVisible = false)
+    }
+
+    private fun acquireFadeLock() {
+        if (fadeWakeLock?.isHeld == true) return
+        fadeWakeLock = runCatching {
+            val pm = context.getSystemService(PowerManager::class.java) ?: return@runCatching null
+            pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ather:sleep_fade").apply {
+                setReferenceCounted(false)
+                acquire(60_000L)
+            }
+        }.getOrNull()
+    }
+
+    private fun releaseFadeLock() {
+        runCatching {
+            if (fadeWakeLock?.isHeld == true) fadeWakeLock?.release()
+        }
+        fadeWakeLock = null
     }
 
     private suspend fun recordSession(endedAtMs: Long) {

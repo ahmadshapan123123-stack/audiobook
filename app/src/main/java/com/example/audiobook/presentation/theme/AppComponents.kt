@@ -156,7 +156,7 @@ fun AtherCoverBlock(
  * null عند غياب المسار أو فساد الملف.
  */
 @Composable
-private fun coverImageBitmap(imagePath: String?): ImageBitmap? {
+internal fun coverImageBitmap(imagePath: String?): ImageBitmap? {
     if (imagePath.isNullOrBlank()) return null
     val loaded = produceState<ImageBitmap?>(
         initialValue = null, key1 = imagePath

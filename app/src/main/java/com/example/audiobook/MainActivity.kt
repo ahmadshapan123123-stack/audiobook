@@ -180,6 +180,15 @@ interface SeederEntryPoint {
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    companion object {
+        /**
+         * FIX 1+3: هل عُرضت البداية في هذه العملية؟ static = يبقى عبر إعادة
+         * إنشاء النشاط، ويصفَّر مع موت العملية (= بداية باردة حقيقية).
+         */
+        @Volatile
+        var coldSplashShown: Boolean = false
+    }
+
     @Inject lateinit var recoverInterruptedSession: RecoverInterruptedSession
     @Inject lateinit var scanScheduler: ScanScheduler
     @Inject lateinit var reminderScheduler: ReminderScheduler
@@ -237,7 +246,11 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val navController = rememberNavController()
-            var showSplash by remember { mutableStateOf(true) }
+            // FIX 1+3: البداية الباردة فقط — علم على مستوى العملية يبقى بعد
+            // إعادة إنشاء النشاط (تدوير/عودة)، ويصفَّر بموت العملية نفسها
+            // (وهو تعريف البداية الباردة الحقيقية). مع singleTask تصل نقرات
+            // الإشعار إلى onNewIntent دون إعادة تركيب أصلًا.
+            var showSplash by remember { mutableStateOf(!coldSplashShown) }
             val hasOnboarded by appSettings.hasCompletedOnboarding.collectAsStateWithLifecycle()
             val hasSkippedOnboarding by appSettings.hasSkippedOnboarding.collectAsStateWithLifecycle()
             val mode by appSettings.themeMode.collectAsStateWithLifecycle()
@@ -252,7 +265,11 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         if (showSplash) {
-                            AtherSplash(onFinished = { showSplash = false }, themeMode = mode, logoColorMode = logoMode)
+                            AtherSplash(
+                                onFinished = { coldSplashShown = true; showSplash = false },
+                                themeMode = mode,
+                                logoColorMode = logoMode
+                            )
                         } else if (showOnboarding) {
                             OnboardingScreen(
                                 onFinish = { appSettings.setHasCompletedOnboarding(true) }
@@ -661,13 +678,15 @@ class MainActivity : ComponentActivity() {
                 )
             }
             composable(
-                route = "player/{editionId}?startMs={startMs}",
+                route = "player/{editionId}?startMs={startMs}&panel={panel}",
                 arguments = listOf(
                     navArgument("editionId") { type = NavType.StringType },
-                    navArgument("startMs") { type = NavType.LongType; defaultValue = -1L }
+                    navArgument("startMs") { type = NavType.LongType; defaultValue = -1L },
+                    navArgument("panel") { type = NavType.StringType; nullable = true; defaultValue = null }
                 )
             ) { entry ->
                 val startMs = entry.arguments?.getLong("startMs") ?: -1L
+                val openSleepPanel = entry.arguments?.getString("panel") == "SLEEP"
                 val skipFwd by appSettings.skipForwardSeconds.collectAsStateWithLifecycle()
                 val skipBack by appSettings.skipBackwardSeconds.collectAsStateWithLifecycle()
                 val keepAwake by appSettings.keepScreenOn.collectAsStateWithLifecycle()
@@ -686,6 +705,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     initialPositionMs = startMs,
+                    initialSleepPanel = openSleepPanel,
                     onBack = {
                         val popped = navController.popBackStack()
                         if (!popped) {
