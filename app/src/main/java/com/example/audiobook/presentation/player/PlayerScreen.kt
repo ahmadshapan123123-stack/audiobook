@@ -481,14 +481,15 @@ fun PlayerScreen(
     )
     Box(modifier = Modifier.fillMaxSize()) {
         // ---- الطبقة 1: كامل محتوى المشغّل (تُموَّه كطبقة واحدة خلف أي نافذة منبثقة) ----
-        // FIX 3.4: تمويه أقوى (+50%: 14 → 21dp). اللوحات نفسها (طبقة 2+)
+        // FIX 4.1 (Phase 4): تمويه 40dp. اللوحات نفسها (طبقة 2+)
         // خارج هذه الطبقة فلا يطالها التمويه.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .blur(
-                    // MINI-FIX: 21 → 30dp — الخلفية كانت تُقرأ من خلال التمويه.
-                    radius = 30.dp * blurAmount,
+                    // FIX 4.1 (Phase 4): 30 → 40dp — التمويه كان ضعيفًا والخلفية
+                    // تُقرأ من خلاله رغم الحجاب.
+                    radius = 40.dp * blurAmount,
                     edgeTreatment = BlurredEdgeTreatment.Unbounded
                 )
                 .onGloballyPositioned {
@@ -942,7 +943,7 @@ private const val SEEK_BACK_THRESHOLD_MS = 2_000L
  * [onAccent] → نص/أيقونة فوق [accent] (يُختار تلقائيًا حسب سطوع [accent])
  * [glassBg]  → سطح زجاجي شفاف للوحات والبطاقات
  * [outline]  → حدود/فواصل — أبيض عند 14% (الليل) أو أسود عند 12% (النهار)
- * [scrim]    → طبقة حجب خلف النوافذ — 65% (ليل) أو 55% (نهار)، 72% أمولد
+ * [scrim]    → طبقة حجب خلف النوافذ — 85% (ليل) أو 75% (نهار)، 90% أمولد
  *
  * [ink] و [soft] هما النص الأساسي والثانوي على التدرج مباشرة،
  * وهما متكيفان مع الوضع (فاتح/داكن).
@@ -993,13 +994,12 @@ internal fun playerForeground(gradient: PlayerGradient, mode: AppThemeMode): Pla
         red = accent.red * SCRIM_ACCENT_REDUCE,
         green = accent.green * SCRIM_ACCENT_REDUCE,
         blue = accent.blue * SCRIM_ACCENT_REDUCE,
-        // FIX 3.4: حجاب أدكن (0.55 → 0.65 للوضعين الرئيسيين).
-        // MINI-FIX: حجاب أدكن قليلًا (0.60 / 0.72 / 0.78) — النص الخلفي
-        // كان يُقرأ من خلال الطبقة.
+        // FIX 4.1 (Phase 4): حجاب أدكن (0.75 / 0.85 / 0.90) — شكوى متكررة:
+        // الخلفية كانت تُقرأ من خلال الطبقة رغم التمويه.
         alpha = when {
-            isAmoled -> 0.78f
-            isLightTheme -> 0.60f
-            else -> 0.72f
+            isAmoled -> 0.90f
+            isLightTheme -> 0.75f
+            else -> 0.85f
         }
     )
     val soft = ink.copy(alpha = if (isLightTheme && !lightText) 0.72f else 0.78f)
@@ -1930,11 +1930,18 @@ private fun UtilitiesDeck(
                         inactiveTickColor = Color.Transparent
                     )
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f).forEach { preset ->
-                        GlassPillButton(label = speedLabel(preset),
-                            selected = kotlin.math.abs(selectedSpeed - preset) < 0.01f,
-                            onClick = { onSpeedChange(preset) }, fg = fg, modifier = Modifier.weight(1f), compact = true)
+                // FIX 4.2 (Phase 4): 7 سرعات على صفّين (4+3) بدل 5 في صف واحد —
+                // الملصقات ("1.25×" وما فوق) كانت تُقطَّع ("1.2...") داخل الحبوب
+                // الضيقة (weight في صف واحد + Ellipsis). الصف الثاني يُملأ بفاصل
+                // شبح لتبقى الحبوب بعرض موحّد.
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).chunked(4).forEach { chunk ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                        chunk.forEach { preset ->
+                            GlassPillButton(label = speedLabel(preset),
+                                selected = kotlin.math.abs(selectedSpeed - preset) < 0.01f,
+                                onClick = { onSpeedChange(preset) }, fg = fg, modifier = Modifier.weight(1f), compact = true)
+                        }
+                        repeat(4 - chunk.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -2242,7 +2249,9 @@ private fun GlassPillButton(
             .border(1.dp, fg.colors.popupOutline, shape)
             .clickable(onClick = onClick)
             .minTouchTarget()
-            .padding(horizontal = if (compact) AppSpacing.xs else AppSpacing.md, vertical = 6.dp),
+            // FIX 4.2 (Phase 4): الحبوب المضغوطة (صفوف السرعة/النوم) بخط أصغر
+            // وحشوة أضيق — "1.25×" كان يُقطَّع داخل العرض المتاح.
+            .padding(horizontal = if (compact) AppSpacing.xxs else AppSpacing.md, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2251,7 +2260,7 @@ private fun GlassPillButton(
         // كبيرة فيبدو الصف مكسورًا على أسطر بصرية متعددة.
         Text(
             label,
-            style = MaterialTheme.typography.labelLarge,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
             color = if (isActive) fg.colors.onAccent else fg.colors.popupSoft,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -2572,12 +2581,13 @@ private fun NoteOverlay(
         exit = fadeOut(tween(320))
     ) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val shape = RoundedCornerShape(20.dp)
+            // FIX 4.5 (Phase 4): نفس نصف قطر اللوحات (24dp) — كان 20dp منحرفًا؛
+            // وأُزيلت طبقة .background(scrim) الميتة (كانت تُستبدل كليًا بالسطر التالي).
+            val shape = RoundedCornerShape(24.dp)
             Column(
                 modifier = Modifier
                     .widthIn(min = 240.dp, max = 460.dp)
                     .clip(shape)
-                    .background(fg.colors.scrim)
                     .background(fg.colors.popupSurface)
                     .border(1.dp, fg.colors.popupOutline, shape)
                     .padding(horizontal = AppSpacing.md, vertical = AppSpacing.sm),

@@ -33,10 +33,11 @@ class PlayerForegroundTest {
             val fg = playerForeground(g, mode)
             val sc = fg.colors.scrim
             val expectedAlpha = when (mode) {
-                // FIX 3.4: حجاب أدكن (0.55 → 0.65 للوضعين الرئيسيين).
-                AppThemeMode.LIGHT -> 0.60f
-                AppThemeMode.DARK -> 0.72f
-                AppThemeMode.AMOLED -> 0.78f
+                // FIX 4.1 (Phase 4): حجاب أدكن (0.75 / 0.85 / 0.90) — شكوى
+                // متكررة من شفافية الخلفية خلف النوافذ.
+                AppThemeMode.LIGHT -> 0.75f
+                AppThemeMode.DARK -> 0.85f
+                AppThemeMode.AMOLED -> 0.90f
             }
             assertEquals(expectedAlpha, sc.alpha, 0.01f)
             val expect = g.start.playerAccent(onLightBackground = mode == AppThemeMode.LIGHT)
