@@ -134,6 +134,8 @@ fun AuthorDetailsScreen(
                 avatarTitle = author.name,
                 avatarColor = Color(state.coverColor.toInt()),
                 name = author.name,
+                // FIX C3-display: عرض صورة المؤلف المختارة — null = الحرف كما كان.
+                imagePath = author.imagePath,
                 stats = listOf(
                     pluralStringResource(R.plurals.book_count, state.totalBooks, state.totalBooks),
                     pluralStringResource(R.plurals.series_count, state.seriesCards.size, state.seriesCards.size),

@@ -55,6 +55,8 @@ internal fun EntityHeaderBlock(
         AtherCoverBlock(
             title = coverTitle,
             coverColor = coverColor,
+            // FIX C3-display: تمرير صورة الكيان المخزّنة — null = الحرف كما كان.
+            imagePath = imagePath,
             modifier = Modifier.width(120.dp).aspectRatio(0.72f)
         )
         Column(

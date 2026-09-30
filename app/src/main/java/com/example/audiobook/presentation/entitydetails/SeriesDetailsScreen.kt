@@ -127,6 +127,8 @@ fun SeriesDetailsScreen(
                 avatarTitle = series.name,
                 avatarColor = Color(state.coverColor.toInt()),
                 name = series.name,
+                // FIX C3-display: عرض صورة السلسلة المختارة — null = الحرف كما كان.
+                imagePath = series.imagePath,
                 stats = listOf(
                     pluralStringResource(R.plurals.book_count, state.books.size, state.books.size),
                     stringResource(R.string.entity_series_finished_count, state.finishedCount)

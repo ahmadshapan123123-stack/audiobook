@@ -1,5 +1,6 @@
 package com.example.audiobook.presentation.entitydetails
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,12 +32,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.audiobook.R
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
+import com.example.audiobook.presentation.theme.coverImageBitmap
 import com.example.audiobook.presentation.theme.minTouchTarget
 
 /**
@@ -53,13 +56,19 @@ internal fun EntityHeroSection(
     stats: List<String>,
     primaryLabel: String?,
     onPrimary: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * FIX C3-display: مسار صورة الكيان (مؤلف/سلسلة) — تُعرض دائرية 80dp
+     * عند وجودها، وإلا الحرف الأول كما كان. لا استثناءات تصل للواجهة.
+     */
+    imagePath: String? = null
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        val avatarBitmap = coverImageBitmap(imagePath)
         Box(
             modifier = Modifier
                 .size(80.dp)
@@ -67,12 +76,21 @@ internal fun EntityHeroSection(
                 .background(avatarColor.copy(alpha = 0.9f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = avatarTitle.trim().take(1).takeIf { it.isNotEmpty() } ?: "؟",
-                style = MaterialTheme.typography.headlineLarge,
-                color = Color.White,
-                maxLines = 1
-            )
+            if (avatarBitmap != null) {
+                Image(
+                    bitmap = avatarBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize()
+                )
+            } else {
+                Text(
+                    text = avatarTitle.trim().take(1).takeIf { it.isNotEmpty() } ?: "؟",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White,
+                    maxLines = 1
+                )
+            }
         }
         Text(
             name,

@@ -93,7 +93,9 @@ class MediaAudioMetadataReader(
      * لا يُحتفظ به بعد الكتابة فلا ضغط على الذاكرة أثناء الفحص.
      */
     private fun persistEmbeddedArt(bytes: ByteArray?): String? {
-        if (bytes.isNullOrEmpty()) return null
+        // NOTE: stdlib لا يعرّف isNullOrEmpty لـByteArray? (للمصفوفات البدائية
+        // isEmpty فقط) — فحص صريح مكافئ سلوكيًا يُبقي الـsmart cast لأسفل.
+        if (bytes == null || bytes.isEmpty()) return null
         return runCatching {
             val digest = java.security.MessageDigest.getInstance("SHA-1").digest(bytes)
             val hex = digest.joinToString("") { "%02x".format(it) }
