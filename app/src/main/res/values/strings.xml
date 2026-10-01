@@ -632,6 +632,7 @@
     <string name="notif_action_pause">إيقاف مؤقت</string>
     <string name="notif_sleep_title">مؤقت النوم</string>
     <string name="notif_sleep_remaining">متبقّي %1$s</string>
+    <string name="notif_sleep_lock_countdown">النوم بعد %1$s</string>
     <string name="notif_sleep_extend_15">+15 دقيقة</string>
     <string name="notif_sleep_extend_30">+30 دقيقة</string>
     <string name="notif_sleep_cancel">إلغاء</string>

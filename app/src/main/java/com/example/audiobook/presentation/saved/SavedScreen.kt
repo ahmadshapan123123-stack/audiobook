@@ -287,7 +287,7 @@ private fun SavedGroup(
     onBookOptions: (UUID) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-        GroupHeader(bookTitle = group.bookTitle, authorName = group.authorName, seriesName = group.seriesName, coverColor = group.coverColor)
+        GroupHeader(bookTitle = group.bookTitle, authorName = group.authorName, seriesName = group.seriesName, coverColor = group.coverColor, coverImagePath = group.coverImagePath)
         group.items.forEach { item ->
             SavedItemRow(
                 item = item,
@@ -307,7 +307,7 @@ private fun ChapterGroup(
     onDelete: (SavedChapter) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-        GroupHeader(bookTitle = group.bookTitle, authorName = group.authorName, seriesName = group.seriesName, coverColor = group.coverColor)
+        GroupHeader(bookTitle = group.bookTitle, authorName = group.authorName, seriesName = group.seriesName, coverColor = group.coverColor, coverImagePath = group.coverImagePath)
         group.chapters.forEach { chapter ->
             ChapterRow(
                 chapter = chapter,
@@ -324,7 +324,8 @@ private fun GroupHeader(
     bookTitle: String,
     authorName: String,
     seriesName: String?,
-    coverColor: Long
+    coverColor: Long,
+    coverImagePath: String? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = AppSpacing.sm),
@@ -334,6 +335,7 @@ private fun GroupHeader(
         AtherCoverBlock(
             title = bookTitle,
             coverColor = Color(coverColor.toInt()),
+            imagePath = coverImagePath,
             modifier = Modifier.size(44.dp)
         )
         Column {

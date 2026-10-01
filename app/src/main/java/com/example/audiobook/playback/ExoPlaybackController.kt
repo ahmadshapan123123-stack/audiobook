@@ -206,14 +206,22 @@ class ExoPlaybackController @Inject constructor(
         // (أندرويد 13+) تقرأ بيانات الجلسة مباشرة فكانت فارغة حتى الـrebuild
         // المتأخر. قراءة واحدة متزامنة (الدالة suspend أصلًا) ثم يُغنيها
         // الـrebuild لاحقًا بالفصل/المؤلف/الغلاف.
-        val openTitle = runCatching {
+        // FIX-N1: الفنان = المؤلف (لا العنوان مكررًا — كان setArtist(title)
+        // فيُظهر القالب النظامي العنوان سطرين). غياب المؤلف = بلا سطر ثانٍ.
+        val openBook = runCatching {
             database.editionDao().getById(editionId)?.let { ed ->
-                database.bookDao().getById(ed.bookId)?.title?.takeIf { it.isNotBlank() }
-                    ?: ed.label.takeIf { it.isNotBlank() }
+                database.bookDao().getById(ed.bookId)?.let { book -> book to ed }
             }
+        }.getOrNull()
+        val openTitle = openBook?.first?.title?.takeIf { it.isNotBlank() }
+            ?: openBook?.second?.label?.takeIf { it.isNotBlank() }
+        val openAuthor = runCatching {
+            openBook?.first?.authorId?.let { database.authorDao().getById(it)?.name }
         }.getOrNull()?.takeIf { !it.isNullOrBlank() }
         val openMetadata = openTitle?.let {
-            MediaMetadata.Builder().setTitle(it).setArtist(it).setDisplayTitle(it).build()
+            MediaMetadata.Builder().setTitle(it).setDisplayTitle(it)
+                .also { b -> if (openAuthor != null) b.setArtist(openAuthor) }
+                .build()
         }
         player.setMediaItems(playableFiles.map {
             val builder = MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString())
@@ -249,7 +257,8 @@ class ExoPlaybackController @Inject constructor(
      * (الألبوم) + الغلاف. تُعاد القائمة نفسها بنفس الموضع حتى لا تنقطع الجلسة.
      * أندرويد 13+ يقرأ هذه البيانات مباشرة من MediaSession (NotificationSeat).
      */
-    suspend fun rebuildQueueWithMetadata(bookTitle: String, albumTitle: String?, artworkBytes: ByteArray?) {
+    // FIX-N1: authorName للسطر الثاني في القالب النظامي (المؤلف لا العنوان مكررًا).
+    suspend fun rebuildQueueWithMetadata(bookTitle: String, albumTitle: String?, artworkBytes: ByteArray?, authorName: String? = null) {
         if (playableFiles.isEmpty()) return
         if (player.isReleased) return
         val currentEdition = editionId ?: return
@@ -260,14 +269,16 @@ class ExoPlaybackController @Inject constructor(
             val chapter = chapters.lastOrNull {
                 it.startPositionMs >= fileStart && it.startPositionMs < fileStart + file.durationMs
             }
+            // FIX-N1: السطر الثاني = المؤلف (لا العنوان مكررًا)؛ وعند تطابق
+            // عنوان الفصل مع الكتاب يُترك العنوان وحده بلا تكرار.
+            val chapterTitle = chapter?.title?.takeIf { it.isNotBlank() }
+            val artistLine = authorName?.takeIf { it.isNotBlank() } ?: bookTitle
             val metadataBuilder = MediaMetadata.Builder()
-                .setTitle(chapter?.title?.takeIf { it.isNotBlank() } ?: "الفصل ${fileIndex + 1}")
-                .setArtist(bookTitle)
+                .setTitle(chapterTitle ?: bookTitle.ifBlank { "الفصل ${fileIndex + 1}" })
+                .setArtist(artistLine)
                 .setAlbumTitle(albumTitle?.takeIf { it.isNotBlank() } ?: "")
-                .setSubtitle(chapter?.title?.takeIf { it.isNotBlank() } ?: "")
-                .setDisplayTitle(bookTitle ?: "")
-                .setSubtitle(chapter?.title?.takeIf { it.isNotBlank() } ?: "")
-                .setDisplayTitle(bookTitle ?: "")
+                .setSubtitle(chapterTitle ?: "")
+                .setDisplayTitle(bookTitle.ifBlank { chapterTitle ?: "" })
             if (artworkBytes != null) metadataBuilder.setArtworkData(artworkBytes)
             MediaItem.Builder()
                 .setUri(Uri.parse(file.fileUri))

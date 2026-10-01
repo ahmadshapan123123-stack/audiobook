@@ -26,7 +26,10 @@ data class MiniPlayerUiState(
     val authorName: String = "",
     val seriesColor: Color? = null,
     val authorColor: Color? = null,
-    val coverColor: Color = Cosmic.Teal,
+    // FIX-VIOLET: احتياطي بنفسجي بدل التركواز.
+    val coverColor: Color = Cosmic.VioletDeep,
+    // FIX-C4: مسار الغلاف للعرض المصغّر.
+    val coverImagePath: String? = null,
     val isLoading: Boolean = true
 )
 
@@ -66,7 +69,8 @@ class MiniPlayerViewModel @Inject constructor(
                     authorName = author?.name ?: "",
                     seriesColor = parseColor(bookSeries?.colorTheme),
                     authorColor = parseColor(author?.colorTheme),
-                    coverColor = book?.let { deterministicColor(it.id) } ?: Cosmic.Teal,
+                    coverColor = book?.let { deterministicColor(it.id) } ?: Cosmic.VioletDeep,
+                    coverImagePath = book?.coverImagePath,
                     isLoading = false
                 )
             }

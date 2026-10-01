@@ -32,10 +32,14 @@ object Cosmic {
     val InkTop = Color(0xFF05060F)
     val InkBottom = Color(0xFF0B0F24)
     val NavBarBlue = Color(0xFF16306B)
+    // FIX-VIOLET: البنفسجي الكوني هو لهجة أثير (الخيار A) — ثوابت Teal
+    // باقية للتوافق فقط ولا تُستخدم في أي مسار عرض.
     val Teal = Color(0xFF2DD4BF)
     val TealDeep = Color(0xFF0B6E63)
     val TealBright = Color(0xFF45E0CC)
     val StardustViolet = Color(0xFF7C3AED)
+    val VioletDeep = Color(0xFF6D28D9)
+    val VioletSoft = Color(0xFFA78BFA)
     val StardustMagenta = Color(0xFFD946EF)
     val StardustAmber = Color(0xFFF59E0B)
     val MoonIce = Color(0xFFEDF2FF)
@@ -66,10 +70,11 @@ val SpaceGroteskFamily = FontFamily(
 
 // ===== سديم (فاتح كوني) =====
 private fun nebulaScheme() = lightColorScheme(
-    primary = Color(0xFF0B6E63),
+    // FIX-VIOLET: عائلة البنفسجي بدل التركواز في الوضع الفاتح.
+    primary = Color(0xFF6D28D9),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFB7F0E3),
-    onPrimaryContainer = Color(0xFF003831),
+    primaryContainer = Color(0xFFE8DAFF),
+    onPrimaryContainer = Color(0xFF25075A),
     secondary = Color(0xFF945E00),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFFFDEA5),
@@ -95,10 +100,11 @@ private fun nebulaScheme() = lightColorScheme(
 
 // ===== ليل (الافتراضي، كوني) =====
 private fun nightScheme(amoled: Boolean) = darkColorScheme(
-    primary = Cosmic.Teal,
-    onPrimary = Color(0xFF043A34),
-    primaryContainer = Color(0xFF0D4B44),
-    onPrimaryContainer = Color(0xFF9FF0E2),
+    // FIX-VIOLET: البنفسجي الكوني أساسي الليل (تباين الأبيض عليه ≥4.5:1).
+    primary = Cosmic.StardustViolet,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF3B1D7A),
+    onPrimaryContainer = Color(0xFFDCCBFF),
     secondary = Color(0xFFF5B942),
     onSecondary = Color(0xFF3E2A00),
     secondaryContainer = Color(0xFF5C4300),
@@ -148,9 +154,10 @@ private val CosmicTypography = Typography(
 data class AppAccent(val accent: Color, val onAccent: Color)
 
 fun appAccentFor(mode: AppThemeMode): AppAccent = when (mode) {
-    AppThemeMode.LIGHT -> AppAccent(accent = Cosmic.TealDeep, onAccent = Color(0xFFFFFFFF))
-    AppThemeMode.DARK -> AppAccent(accent = Cosmic.TealBright, onAccent = Color(0xFF04302B))
-    AppThemeMode.AMOLED -> AppAccent(accent = Cosmic.TealBright, onAccent = Color(0xFF04302B))
+    // FIX-VIOLET: لهجة بنفسجية بتباين مضمون (أبيض على العميق، بنفسج داكن على الفاتح).
+    AppThemeMode.LIGHT -> AppAccent(accent = Cosmic.VioletDeep, onAccent = Color(0xFFFFFFFF))
+    AppThemeMode.DARK -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF241245))
+    AppThemeMode.AMOLED -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF241245))
 }
 
 val LocalAppAccent = staticCompositionLocalOf { AppAccent(Color.Unspecified, Color.Unspecified) }

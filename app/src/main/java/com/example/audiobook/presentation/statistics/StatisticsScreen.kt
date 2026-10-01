@@ -143,7 +143,7 @@ private fun ListeningHero(overview: PeriodOverview) {
             Text(
                 stringResource(R.string.stats_delta_previous, "$sign${formatLongDuration(kotlin.math.abs(overview.deltaMs))}"),
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (overview.deltaMs > 0L) Cosmic.Teal else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (overview.deltaMs > 0L) Cosmic.VioletSoft else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -185,7 +185,7 @@ private fun ListeningBarsSection(bars: List<ListeningBar>) {
                                 .height((if (fraction > 0f) (14 + fraction * 80).dp else 3.dp))
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(
-                                    if (fraction > 0f) Cosmic.TealBright.copy(alpha = 0.75f)
+                                    if (fraction > 0f) Cosmic.VioletSoft.copy(alpha = 0.75f)
                                     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 )
                         )
@@ -262,7 +262,7 @@ private fun TopBookRow(book: BookListeningStat, onOpenBook: (UUID) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AtherCoverBlock(title = book.title, coverColor = coverColorOf(book.coverColorTheme), modifier = Modifier.size(52.dp))
+        AtherCoverBlock(title = book.title, coverColor = coverColorOf(book.coverColorTheme), imagePath = book.coverImagePath, modifier = Modifier.size(52.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
             Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val subtitle = listOfNotNull(book.authorName, book.seriesName).joinToString(" · ")
@@ -289,7 +289,7 @@ private fun InProgressSection(books: List<InProgressStat>, onOpenBook: (UUID) ->
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-                    AtherCoverBlock(title = book.title, coverColor = coverColorOf(book.coverColorTheme), modifier = Modifier.size(52.dp))
+                    AtherCoverBlock(title = book.title, coverColor = coverColorOf(book.coverColorTheme), imagePath = book.coverImagePath, modifier = Modifier.size(52.dp))
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                         Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(stringResource(R.string.stats_remaining, formatShortDuration(book.remainingMs)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -299,7 +299,7 @@ private fun InProgressSection(books: List<InProgressStat>, onOpenBook: (UUID) ->
                 LinearProgressIndicator(
                     progress = { book.fraction },
                     modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = Cosmic.TealBright,
+                    color = Cosmic.VioletSoft,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
@@ -342,7 +342,7 @@ private fun HabitsSection(habits: List<HabitStat>, favoriteTime: String?) {
                     Box(
                         modifier = Modifier.fillMaxHeight().fillMaxWidth(fraction)
                             .clip(RoundedCornerShape(5.dp))
-                            .background(Cosmic.TealBright.copy(alpha = 0.75f))
+                            .background(Cosmic.VioletSoft.copy(alpha = 0.75f))
                     )
                 }
                 Text(formatShortDuration(habit.listenedMs), style = MaterialTheme.typography.bodySmall)
@@ -423,7 +423,7 @@ private fun HistorySection(rows: List<ListeningHistoryRow>, onShowHistory: () ->
 
 private fun coverColorOf(colorTheme: String?): Color {
     val parsed = runCatching { android.graphics.Color.parseColor(colorTheme) }.getOrNull()
-    return if (parsed != null) Color(parsed.toLong() or 0xFF000000) else Color(0xFF356B68)
+    return if (parsed != null) Color(parsed.toLong() or 0xFF000000) else Color(0xFF6D28D9)
 }
 
 @Composable

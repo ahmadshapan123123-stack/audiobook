@@ -55,6 +55,8 @@ class AtherMediaNotificationProvider(
     @Volatile var playing: Boolean = false
     /** PHASE 2: نص عدّاد النوم للوحة الموسّعة (null = مخفي). */
     @Volatile var sleepCountdownText: String? = null
+    /** FIX-N2: تجاوز سطر subText في القالب النظامي بعدّاد النوم (null = المؤلف). */
+    @Volatile var subTextOverride: String? = null
     @Volatile var accentArgb: Int = AtherAccent.ambientAccentArgb(appSettings.currentThemeMode())
 
     /** تحديث ثيم الإشعار (عند تبديل الفصل/الوضع/اللون) يُعيد بناءه فورًا دون إيقاف الخدمة. */
@@ -131,7 +133,8 @@ class AtherMediaNotificationProvider(
             .setSmallIcon(R.drawable.ic_stat_ather)
             .setContentTitle(contentTitle.ifBlank { context.getString(R.string.channel_playback_full_name) })
             .setContentText(contentChapter.ifBlank { contentAuthor })
-            .setSubText(contentAuthor)
+            // FIX-N2: أثناء النوم يعرض القفل العدّاد بدل المؤلف.
+            .setSubText(subTextOverride ?: contentAuthor)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setOngoing(session.player.playWhenReady)

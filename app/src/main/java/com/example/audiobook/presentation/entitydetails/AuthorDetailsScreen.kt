@@ -239,6 +239,7 @@ fun AuthorDetailsScreen(
                     title = row.title,
                     coverColor = Color(row.coverColor.toInt()),
                     progressFraction = row.progressFraction,
+                    imagePath = row.coverImagePath,
                     onContinue = { row.editionId?.let(onPlayEdition) },
                     onOpenBook = { onBookSelected(row.bookId) }
                 )
@@ -258,7 +259,8 @@ fun AuthorDetailsScreen(
                                 countText = pluralStringResource(R.plurals.book_count, card.bookCount, card.bookCount),
                                 coverColor = Color(state.coverColor.toInt()),
                                 onClick = { onSeriesSelected(card.seriesId) },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                imagePath = card.imagePath
                             )
                         }
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -362,7 +364,9 @@ private fun SeriesGridCell(
     countText: String,
     coverColor: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** FIX-C4: صورة السلسلة. */
+    imagePath: String? = null
 ) {
     Column(
         modifier = modifier
@@ -376,6 +380,7 @@ private fun SeriesGridCell(
         AtherCoverBlock(
             title = name,
             coverColor = coverColor,
+            imagePath = imagePath,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -414,6 +419,7 @@ private fun BookGridCell(
         AtherCoverBlock(
             title = row.title,
             coverColor = Color(row.coverColor.toInt()),
+            imagePath = row.coverImagePath,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)

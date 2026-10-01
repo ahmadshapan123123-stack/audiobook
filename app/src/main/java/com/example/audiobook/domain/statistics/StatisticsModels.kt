@@ -31,6 +31,8 @@ data class BookListeningStat(
     val authorName: String?,
     val seriesName: String?,
     val coverColorTheme: String?,
+    /** FIX-C4: مسار الغلاف. */
+    val coverImagePath: String? = null,
     val sessionCount: Int
 )
 
@@ -42,6 +44,8 @@ data class InProgressStat(
     val authorName: String?,
     val seriesName: String?,
     val coverColorTheme: String?,
+    /** FIX-C4: مسار الغلاف. */
+    val coverImagePath: String? = null,
     val totalDurationMs: Long,
     val currentPositionMs: Long
 ) {

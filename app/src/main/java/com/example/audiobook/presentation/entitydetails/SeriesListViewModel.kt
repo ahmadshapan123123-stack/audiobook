@@ -55,7 +55,7 @@ class SeriesListViewModel @Inject constructor(
                     series = s,
                     authorName = authorById[s.authorId]?.name ?: "",
                     bookCount = counts[s.id] ?: 0,
-                    coverColor = parseColor(s.colorTheme, 0xFF356B68)
+                    coverColor = parseColor(s.colorTheme, 0xFF6D28D9)
                 )
             }
         )

@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -125,12 +126,12 @@ fun AtherCoverBlock(
                     )
                 )
             )
-            val letter = title.trim().firstOrNull()?.toString() ?: "؟"
-            Text(
-                text = letter,
-                color = Color.White,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
+            // FIX-ICON: أيقونة كتاب بدل الحرف الأول — موحّدة لكل الأغلفة بلا صورة.
+            Icon(
+                imageVector = Icons.Outlined.MenuBook,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.fillMaxSize(0.45f)
             )
         }
         if (showMissingBadge) {
@@ -182,14 +183,17 @@ fun AtherCoverBlockSquare(
     coverColor: Color,
     modifier: Modifier = Modifier,
     showMissingBadge: Boolean = false,
-    missingFileDescription: String? = null
+    missingFileDescription: String? = null,
+    /** FIX-C4: مسار الغلاف. */
+    imagePath: String? = null
 ) {
     AtherCoverBlock(
         title = title,
         coverColor = coverColor,
         modifier = modifier.aspectRatio(0.72f),
         showMissingBadge = showMissingBadge,
-        missingFileDescription = missingFileDescription
+        missingFileDescription = missingFileDescription,
+        imagePath = imagePath
     )
 }
 
@@ -201,7 +205,9 @@ fun AppContinueListeningCard(
     remainingLabel: String,
     coverColor: Color,
     modifier: Modifier = Modifier,
-    onContinue: () -> Unit = {}
+    onContinue: () -> Unit = {},
+    /** FIX-C4: مسار الغلاف. */
+    imagePath: String? = null
 ) {
     Card(
         modifier = modifier,
@@ -210,7 +216,7 @@ fun AppContinueListeningCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(AppSpacing.md), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md), verticalAlignment = Alignment.CenterVertically) {
-            AtherCoverBlock(title = title, coverColor = coverColor, modifier = Modifier.size(96.dp))
+            AtherCoverBlock(title = title, coverColor = coverColor, imagePath = imagePath, modifier = Modifier.size(96.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(stringResource(R.string.continue_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2)

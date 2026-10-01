@@ -116,6 +116,7 @@ internal fun EntityBookRowItem(
             AtherCoverBlock(
                 title = row.title,
                 coverColor = Color(row.coverColor.toInt()),
+                imagePath = row.coverImagePath,
                 modifier = Modifier.size(52.dp)
             )
             Column(

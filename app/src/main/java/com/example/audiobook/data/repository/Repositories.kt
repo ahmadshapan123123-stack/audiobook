@@ -303,6 +303,7 @@ class LocalOnlyStatisticsRepository(
                     authorName = first.authorName,
                     seriesName = first.seriesName,
                     coverColorTheme = first.seriesColorTheme ?: first.authorColorTheme,
+                    coverImagePath = first.coverImagePath,
                     sessionCount = rows.size
                 )
             }
@@ -319,6 +320,7 @@ class LocalOnlyStatisticsRepository(
                 authorName = row.authorName,
                 seriesName = row.seriesName,
                 coverColorTheme = row.seriesColorTheme ?: row.authorColorTheme,
+                coverImagePath = row.coverImagePath,
                 totalDurationMs = row.totalDurationMs,
                 currentPositionMs = row.currentPositionMs
             )

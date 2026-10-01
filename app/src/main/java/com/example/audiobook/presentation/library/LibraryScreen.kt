@@ -750,6 +750,7 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
         AtherCoverBlock(
             title = cleanDisplayTitle(book.book.title),
             coverColor = Color(book.coverColor.toInt()),
+            imagePath = book.book.coverImagePath,
             modifier = Modifier.width(64.dp).aspectRatio(0.72f),
             showMissingBadge = book.hasMissingFile,
             missingFileDescription = stringResource(R.string.missing_file)

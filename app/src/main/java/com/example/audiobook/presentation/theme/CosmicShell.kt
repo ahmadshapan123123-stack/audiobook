@@ -127,7 +127,8 @@ fun navLogoGlassStyle(
     blurRadius: Dp = 22.dp
 ): HazeStyle = HazeStyle(
     backgroundColor = Cosmic.InkBottom.copy(alpha = 0.55f),
-    tint = HazeTint(Cosmic.TealBright.copy(alpha = tintAlpha)),
+    // FIX-VIOLET: توهج بنفسجي بدل التركواز.
+    tint = HazeTint(Cosmic.VioletSoft.copy(alpha = tintAlpha)),
     blurRadius = blurRadius
 )
 

@@ -38,6 +38,8 @@ data class HomeBook(
     val authorName: String,
     val seriesName: String?,
     val coverColor: Long,
+    /** FIX-C4: مسار الغلاف للتمرير إلى AtherCoverBlock. */
+    val coverImagePath: String? = null,
     val genre: String?,
     val progressFraction: Float,
     val remainingMs: Long,
@@ -150,10 +152,12 @@ class HomeViewModel @Inject constructor(
         }
 
         // PART 3: حتى 3 كتب IN_PROGRESS (الأحدث أولًا) لقسم المتابعة الموسّع.
+        // FIX-HOME-CRASH: عنصر واحد لكل كتاب — نسختان قيد الاستماع لكتاب واحد
+        // (بعد الدمج) كانتا تنتجان مفتاحين متطابقين في LazyRow فيتعطل التطبيق.
+        // الترتيب تنازلي مسبقًا فيُبقي distinctBy الأحدث.
         val continueList = progressList
             .filter { it.status == ProgressStatus.IN_PROGRESS }
             .sortedByDescending { it.lastPlayedAt }
-            .take(3)
             .mapNotNull { progress ->
                 val edition = editions.firstOrNull { it.id == progress.editionId } ?: return@mapNotNull null
                 val book = homeById[edition.bookId] ?: return@mapNotNull null
@@ -164,6 +168,8 @@ class HomeViewModel @Inject constructor(
                     currentChapterTitle = HomeMapper.chapterTitleAt(chapters, edition.id, progress.currentPositionMs)
                 )
             }
+            .distinctBy { it.book.bookId }
+            .take(3)
 
         val recentlyListened = homeBooks
             .filter { it.hasProgress && it.editionId != null }

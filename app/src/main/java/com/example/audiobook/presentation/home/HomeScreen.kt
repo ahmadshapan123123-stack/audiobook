@@ -129,7 +129,9 @@ fun HomeScreen(
                             contentPadding = PaddingValues(end = AppSpacing.lg),
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
                         ) {
-                            items(state.continueList, key = { it.book.bookId }) { cont ->
+                            // FIX-HOME-CRASH: مفتاح مركّب دفاعي (الكتاب+النسخة) —
+                            // حتى لو عاد تكرار ما يمنع distinctBy، لا يتعطل التركيب.
+                            items(state.continueList, key = { "${it.book.bookId}_${it.book.editionId}" }) { cont ->
                                 HomeBookCard(
                                     cont.book,
                                     Modifier.width(132.dp),
@@ -353,6 +355,7 @@ internal fun HomeBookCard(
         AtherCoverBlock(
             title = book.title,
             coverColor = Color(book.coverColor.toInt()),
+            imagePath = book.coverImagePath,
             modifier = Modifier.fillMaxWidth().aspectRatio(0.72f)
         )
         Text(
@@ -418,7 +421,7 @@ internal fun ContinueFeaturedCard(
                     Brush.linearGradient(
                         colors = listOf(
                             Cosmic.StardustViolet.copy(alpha = 0.24f),
-                            Cosmic.Teal.copy(alpha = 0.14f),
+                            Cosmic.VioletSoft.copy(alpha = 0.14f),
                             Color.Transparent
                         )
                     )
@@ -432,6 +435,7 @@ internal fun ContinueFeaturedCard(
             AtherCoverBlock(
                 title = book.title,
                 coverColor = Color(book.coverColor.toInt()),
+                imagePath = book.coverImagePath,
                 modifier = Modifier.width(116.dp).aspectRatio(0.72f)
             )
             Column(
@@ -590,6 +594,7 @@ internal fun HomeSeriesCard(series: HomeSeries, onClick: () -> Unit, onOptions: 
                         AtherCoverBlock(
                             title = b.title,
                             coverColor = Color(b.coverColor.toInt()),
+                            imagePath = b.coverImagePath,
                             modifier = Modifier.weight(1f).aspectRatio(1.05f)
                         )
                     }
@@ -650,6 +655,7 @@ private fun HomeAuthorCard(author: HomeAuthor, onClick: () -> Unit, onOptions: (
                 AtherCoverBlock(
                     title = b.title,
                     coverColor = Color(b.coverColor.toInt()),
+                    imagePath = b.coverImagePath,
                     modifier = Modifier.weight(1f).aspectRatio(0.9f)
                 )
             }
@@ -701,6 +707,7 @@ private fun HomeCollectionCard(collection: HomeCollection, onClick: () -> Unit, 
                     AtherCoverBlock(
                         title = b.title,
                         coverColor = Color(b.coverColor.toInt()),
+                        imagePath = b.coverImagePath,
                         modifier = Modifier.height(132.dp)
                             .aspectRatio(0.72f)
                             .offset(x = 22.dp * (i - (covers.size - 1) / 2f))

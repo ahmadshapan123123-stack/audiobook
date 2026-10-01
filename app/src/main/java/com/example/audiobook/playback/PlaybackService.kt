@@ -255,7 +255,11 @@ class PlaybackService : MediaSessionService() {
                     val start = current?.startPositionMs ?: 0L
                     if (start != currentChapterStart) {
                         currentChapterStart = start
-                        provider.contentChapter = chapterLabel(current, chapters.indexOf(current))
+                        // FIX-N1: عنوان فصل يطابق الكتاب = فراغ (الشريط يعرض
+                        // المؤلف بديلًا) حتى لا يتكرر العنوان سطرين.
+                        val label = chapterLabel(current, chapters.indexOf(current))
+                        provider.contentChapter =
+                            if (label.isNotBlank() && label == provider.contentTitle) "" else label
                         provider.refresh()
                     }
                 }
@@ -305,7 +309,9 @@ class PlaybackService : MediaSessionService() {
         (playbackController as ExoPlaybackController).rebuildQueueWithMetadata(
             bookTitle = provider.contentTitle,
             albumTitle = latestAlbumName ?: provider.contentAuthor,
-            artworkBytes = artworkBytes
+            artworkBytes = artworkBytes,
+            // FIX-N1: المؤلف للسطر الثاني في القالب النظامي.
+            authorName = provider.contentAuthor.ifBlank { null }
         )
         // FIX 2.1+2.2: التحديث بعد حقن البيانات — الإشعار كان يُنشر باكرًا
         // بحقول فارغة ولا يُحدَّث بعد وصول البيانات (الدوري يعمل أثناء
@@ -340,6 +346,12 @@ class PlaybackService : MediaSessionService() {
                 provider.sleepCountdownText =
                     if (active && remaining != null && remaining > 0L) {
                         getString(R.string.notif_sleep_remaining, formatSleepClock(remaining))
+                    } else null
+                // FIX-N2: عدّاد القفل في subText النظامي — يُحدَّث مع كل نبضة
+                // (النبضة كل ثانية أثناء النوم) ويُمسح عند التوقف.
+                provider.subTextOverride =
+                    if (active && remaining != null && remaining > 0L) {
+                        getString(R.string.notif_sleep_lock_countdown, formatSleepClock(remaining))
                     } else null
                 provider.refresh()
                 when (state.phase) {

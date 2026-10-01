@@ -18,6 +18,8 @@ data class EntityBookRow(
     val title: String,
     val editionId: UUID?,
     val coverColor: Long,
+    /** FIX-C4: مسار الغلاف. */
+    val coverImagePath: String? = null,
     val progressFraction: Float,
     val remainingMs: Long,
     val hasProgress: Boolean,
@@ -56,8 +58,9 @@ internal fun buildEntityBookRows(
             editionId = edition?.id,
             coverColor = parseColor(
                 seriesById[book.seriesId]?.colorTheme ?: book.authorId?.let { authorById[it]?.colorTheme },
-                0xFF356B68
+                0xFF6D28D9
             ),
+            coverImagePath = book.coverImagePath,
             progressFraction = fraction,
             remainingMs = (total - played).coerceAtLeast(0L),
             hasProgress = progress != null && played > 0L,

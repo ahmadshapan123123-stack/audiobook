@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -84,11 +86,12 @@ internal fun EntityHeroSection(
                     modifier = Modifier.matchParentSize()
                 )
             } else {
-                Text(
-                    text = avatarTitle.trim().take(1).takeIf { it.isNotEmpty() } ?: "؟",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = Color.White,
-                    maxLines = 1
+                // FIX-ICON: أيقونة كتاب بدل الحرف الأول لبطل الكيان.
+                Icon(
+                    imageVector = Icons.Outlined.MenuBook,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.fillMaxSize(0.45f)
                 )
             }
         }
@@ -170,6 +173,8 @@ internal fun ContinueListeningCard(
     title: String,
     coverColor: Color,
     progressFraction: Float,
+    /** FIX-C4: مسار الغلاف. */
+    imagePath: String? = null,
     continueLabel: String = stringResource(R.string.home_continue_play),
     onContinue: () -> Unit,
     onOpenBook: () -> Unit,
@@ -191,6 +196,7 @@ internal fun ContinueListeningCard(
             AtherCoverBlock(
                 title = title,
                 coverColor = coverColor,
+                imagePath = imagePath,
                 modifier = Modifier.size(52.dp)
             )
             Column(

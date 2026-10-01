@@ -37,7 +37,7 @@ data class SeriesDetailsUiState(
     val continueRow: EntityBookRow? = null,
     val firstEditionId: UUID? = null,
     val candidateBooks: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF356B68,
+    val coverColor: Long = 0xFF6D28D9,
     val allSeries: List<SeriesEntity> = emptyList()
 )
 
@@ -118,7 +118,7 @@ class SeriesDetailsViewModel @Inject constructor(
             continueRow = rows.firstOrNull { it.hasProgress },
             firstEditionId = rows.firstNotNullOfOrNull { it.editionId },
             candidateBooks = candidates,
-            coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF356B68),
+            coverColor = parseColor(series?.colorTheme ?: author?.colorTheme, 0xFF6D28D9),
             allSeries = allSeries.filter { it.id != seriesId }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SeriesDetailsUiState())

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -123,11 +125,12 @@ private fun EntityAvatarBlock(title: String, color: Color, size: Int, circle: Bo
             .background(color.copy(alpha = 0.85f)),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = title.trim().take(1).takeIf { it.isNotEmpty() } ?: "؟",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-            maxLines = 1
+        // FIX-ICON: أيقونة كتاب بدل الحرف الأول لأفاتار المؤلف/السلسلة.
+        Icon(
+            imageVector = Icons.Outlined.MenuBook,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.fillMaxSize(0.55f)
         )
     }
 }
@@ -274,6 +277,7 @@ internal fun PickBookDialog(
                                 AtherCoverBlock(
                                     title = row.title,
                                     coverColor = Color(row.coverColor.toInt()),
+                                    imagePath = row.coverImagePath,
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Column(
@@ -350,6 +354,7 @@ internal fun ReorderBooksDialog(
                         AtherCoverBlock(
                             title = row.title,
                             coverColor = Color(row.coverColor.toInt()),
+                            imagePath = row.coverImagePath,
                             modifier = Modifier.size(40.dp)
                         )
                         Text(

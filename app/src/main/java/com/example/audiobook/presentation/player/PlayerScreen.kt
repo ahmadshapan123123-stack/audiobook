@@ -75,6 +75,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -1132,12 +1133,12 @@ private fun PlayerCoverBlock(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            val letter = title.trim().firstOrNull()?.toString() ?: "؟"
-            Text(
-                text = letter,
-                color = fg.ink,
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.SemiBold
+            // FIX-ICON: أيقونة كتاب بدل الحرف الأول.
+            Icon(
+                imageVector = Icons.Outlined.MenuBook,
+                contentDescription = null,
+                tint = fg.ink,
+                modifier = Modifier.fillMaxSize(0.4f)
             )
         }
     }

@@ -35,6 +35,10 @@ class EditionMerge @Inject constructor(private val database: AppDatabase) {
                     progress.copy(id = UUID.randomUUID(), editionId = subject.id, remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY)
                 )
             }
+            // FIX-HOME-CRASH: حذف صريح لتقدّم المرشح فور نسخه — الاعتماد على
+            // CASCADE عند حذف النسخة وحده كان يترك نافذة بصفّي IN_PROGRESS
+            // لكتاب واحد (مفاتيح مكررة في قائمة المتابعة بالرئيسية).
+            database.progressDao().delete(progress)
         }
         database.bookmarkDao().getByParent(candidate.id).forEach { bookmark ->
             database.bookmarkDao().insert(

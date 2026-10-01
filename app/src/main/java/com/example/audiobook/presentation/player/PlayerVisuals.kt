@@ -28,10 +28,11 @@ object PlayerGradientResolver {
         return base.adjustForLightReadability(mode)
     }
 
+    // FIX-VIOLET: التدرج الافتراضي بنفسجي الصبغة (كان تركوازيًا داكنًا).
     private fun defaultGradient(mode: AppThemeMode) = when (mode) {
         AppThemeMode.LIGHT -> PlayerGradient(Color(0xFFE4D7C6), Color(0xFFF5F1EA), GradientSource.DEFAULT)
-        AppThemeMode.DARK -> PlayerGradient(Color(0xFF243B45), Color(0xFF18242B), GradientSource.DEFAULT)
-        AppThemeMode.AMOLED -> PlayerGradient(Color(0xFF123B38), Color.Black, GradientSource.DEFAULT)
+        AppThemeMode.DARK -> PlayerGradient(Color(0xFF2B2350), Color(0xFF1B1533), GradientSource.DEFAULT)
+        AppThemeMode.AMOLED -> PlayerGradient(Color(0xFF191233), Color.Black, GradientSource.DEFAULT)
     }
 
     private fun PlayerGradient.adjustForLightReadability(mode: AppThemeMode): PlayerGradient {

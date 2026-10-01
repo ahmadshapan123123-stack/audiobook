@@ -74,7 +74,7 @@ class AuthorsListViewModel @Inject constructor(
                     author = author,
                     bookCount = authorBooks.size,
                     seriesCount = seriesCountByAuthor[author.id] ?: 0,
-                    coverColor = parseColor(author.colorTheme, 0xFF356B68),
+                    coverColor = parseColor(author.colorTheme, 0xFF6D28D9),
                     progressFraction = bestFraction,
                     hasProgress = bestFraction > 0f
                 )

@@ -36,6 +36,8 @@ data class SavedBookmark(
     val authorName: String,
     val seriesName: String?,
     val coverColor: Long,
+    /** FIX-C4: مسار الغلاف لرأس المجموعة. */
+    val coverImagePath: String? = null,
     val positionMs: Long,
     val createdAt: Long,
     val noteText: String?,
@@ -49,6 +51,7 @@ data class SavedBookGroup(
     val authorName: String,
     val seriesName: String?,
     val coverColor: Long,
+    val coverImagePath: String? = null,
     val items: List<SavedBookmark>
 )
 
@@ -61,6 +64,7 @@ data class SavedChapter(
     val authorName: String,
     val seriesName: String?,
     val coverColor: Long,
+    val coverImagePath: String? = null,
     val title: String?,
     val startPositionMs: Long,
     val orderIndex: Int
@@ -72,6 +76,7 @@ data class SavedChapterGroup(
     val authorName: String,
     val seriesName: String?,
     val coverColor: Long,
+    val coverImagePath: String? = null,
     val chapters: List<SavedChapter>
 )
 
@@ -125,7 +130,7 @@ class SavedViewModel @Inject constructor(
         fun coverColor(book: BookEntity): Long {
             val theme = book.seriesId?.let { seriesById[it]?.colorTheme }
                 ?: book.authorId?.let { authorById[it]?.colorTheme }
-            return parseColor(theme, 0xFF356B68)
+            return parseColor(theme, 0xFF6D28D9)
         }
 
         /** الفصل المنطبق على موضع (أقرب فصل يبدأ قبل الموضع). */
@@ -148,6 +153,7 @@ class SavedViewModel @Inject constructor(
                 authorName = book.authorId?.let { authorById[it]?.name } ?: "",
                 seriesName = book.seriesId?.let { seriesById[it]?.name },
                 coverColor = coverColor(book),
+                coverImagePath = book.coverImagePath,
                 positionMs = b.positionMs,
                 createdAt = b.createdAt,
                 noteText = b.noteText,
@@ -164,6 +170,7 @@ class SavedViewModel @Inject constructor(
                     authorName = first.authorName,
                     seriesName = first.seriesName,
                     coverColor = first.coverColor,
+                    coverImagePath = first.coverImagePath,
                     items = groupItems.sortedByDescending { it.createdAt }
                 )
             }.sortedByDescending { it.items.maxOf { it.createdAt } }
@@ -197,6 +204,7 @@ class SavedViewModel @Inject constructor(
                     authorName = book.authorId?.let { authorById[it]?.name } ?: "",
                     seriesName = book.seriesId?.let { seriesById[it]?.name },
                     coverColor = coverColor(book),
+                    coverImagePath = book.coverImagePath,
                     title = chapter.title,
                     startPositionMs = chapter.startPositionMs,
                     orderIndex = chapter.orderIndex
@@ -225,6 +233,7 @@ class SavedViewModel @Inject constructor(
                         authorName = first.authorName,
                         seriesName = first.seriesName,
                         coverColor = first.coverColor,
+                        coverImagePath = first.coverImagePath,
                         chapters = groupItems.sortedBy { it.orderIndex }
                     )
                 }

@@ -133,8 +133,8 @@ class StatisticsViewModelTest {
         )
 
         override suspend fun topListenedBooks(range: DateRange, limit: Int): List<BookListeningStat> = listOf(
-            BookListeningStat(UUID.randomUUID(), UUID.randomUUID(), "كتاب أول", "مؤلف", "سلسلة", null, 3),
-            BookListeningStat(UUID.randomUUID(), UUID.randomUUID(), "كتاب ثانٍ", "مؤلف", "سلسلة", null, 1)
+            BookListeningStat(bookId = UUID.randomUUID(), editionId = UUID.randomUUID(), title = "كتاب أول", authorName = "مؤلف", seriesName = "سلسلة", coverColorTheme = null, sessionCount = 3),
+            BookListeningStat(bookId = UUID.randomUUID(), editionId = UUID.randomUUID(), title = "كتاب ثانٍ", authorName = "مؤلف", seriesName = "سلسلة", coverColorTheme = null, sessionCount = 1)
         )
 
         override suspend fun inProgressBooks(): List<InProgressStat> = listOf(

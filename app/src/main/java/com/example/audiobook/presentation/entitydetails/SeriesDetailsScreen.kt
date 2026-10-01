@@ -345,6 +345,7 @@ private fun SeriesBookRow(
             AtherCoverBlock(
                 title = row.title,
                 coverColor = Color(row.coverColor.toInt()),
+                imagePath = row.coverImagePath,
                 modifier = Modifier.size(48.dp)
             )
             Column(modifier = Modifier.weight(1f)) {

@@ -41,7 +41,9 @@ data class AuthorBookGroup(
 data class AuthorSeriesCard(
     val seriesId: UUID,
     val seriesName: String,
-    val bookCount: Int
+    val bookCount: Int,
+    /** FIX-C4: صورة السلسلة. */
+    val imagePath: String? = null
 )
 
 data class AuthorDetailsUiState(
@@ -54,7 +56,7 @@ data class AuthorDetailsUiState(
     val continueRow: EntityBookRow? = null,
     val firstEditionId: UUID? = null,
     val candidateBooks: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF356B68,
+    val coverColor: Long = 0xFF6D28D9,
     val allAuthors: List<AuthorEntity> = emptyList()
 )
 
@@ -142,7 +144,8 @@ class AuthorDetailsViewModel @Inject constructor(
                 AuthorSeriesCard(
                     seriesId = series.id,
                     seriesName = series.name,
-                    bookCount = rows.count { it.seriesId == series.id }
+                    bookCount = rows.count { it.seriesId == series.id },
+                    imagePath = series.imagePath
                 )
             }
 
@@ -155,7 +158,7 @@ class AuthorDetailsViewModel @Inject constructor(
             continueRow = rows.filter { it.hasProgress }.maxByOrNull { it.progressFraction },
             firstEditionId = rows.firstNotNullOfOrNull { it.editionId },
             candidateBooks = candidateRows,
-            coverColor = parseColor(author?.colorTheme, 0xFF356B68),
+            coverColor = parseColor(author?.colorTheme, 0xFF6D28D9),
             allAuthors = authors.filter { it.id != authorId }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuthorDetailsUiState())

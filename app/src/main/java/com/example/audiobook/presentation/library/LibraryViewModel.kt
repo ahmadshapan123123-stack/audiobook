@@ -160,7 +160,7 @@ class LibraryViewModel @Inject constructor(
                     book = book,
                     authorName = authorName(book.authorId),
                     seriesName = book.seriesId?.let { seriesById[it]?.name },
-                    coverColor = parseColor(seriesColor(book.seriesId) ?: authors.firstOrNull { it.id == book.authorId }?.colorTheme, 0xFF356B68),
+                    coverColor = parseColor(seriesColor(book.seriesId) ?: authors.firstOrNull { it.id == book.authorId }?.colorTheme, 0xFF6D28D9),
                     effectiveEditionId = edition?.id,
                     hasMissingFile = book.id in booksWithMissingFile,
                     progressFraction = fraction,

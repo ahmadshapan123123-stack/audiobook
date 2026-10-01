@@ -309,6 +309,7 @@ data class SessionBookRow(
     val authorColorTheme: String?,
     val seriesName: String?,
     val seriesColorTheme: String?,
+    val coverImagePath: String?,
     val editionId: UUID?,
     val startedAt: Long,
     val durationListenedMs: Long
@@ -323,6 +324,7 @@ data class InProgressRow(
     val authorColorTheme: String?,
     val seriesName: String?,
     val seriesColorTheme: String?,
+    val coverImagePath: String?,
     val totalDurationMs: Long,
     val currentPositionMs: Long,
     val lastPlayedAt: Long
@@ -370,6 +372,7 @@ interface StatisticsDao {
         "SELECT s.editionId AS editionId, b.id AS bookId, b.title AS bookTitle, " +
             "a.name AS authorName, a.colorTheme AS authorColorTheme, " +
             "sy.name AS seriesName, sy.colorTheme AS seriesColorTheme, " +
+            "b.coverImagePath AS coverImagePath, " +
             "s.startedAt AS startedAt, s.durationListenedMs AS durationListenedMs " +
             "FROM listening_sessions s " +
             "LEFT JOIN editions e ON e.id = s.editionId " +
@@ -393,6 +396,7 @@ interface StatisticsDao {
         "SELECT p.editionId AS editionId, b.id AS bookId, b.title AS bookTitle, " +
             "a.name AS authorName, a.colorTheme AS authorColorTheme, " +
             "sy.name AS seriesName, sy.colorTheme AS seriesColorTheme, " +
+            "b.coverImagePath AS coverImagePath, " +
             "e.totalDurationMs AS totalDurationMs, p.currentPositionMs AS currentPositionMs, p.lastPlayedAt AS lastPlayedAt " +
             "FROM listening_progress p " +
             "LEFT JOIN editions e ON e.id = p.editionId " +
