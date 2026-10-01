@@ -47,13 +47,16 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Settings
+import android.widget.Toast
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -121,7 +124,13 @@ private sealed interface BulkOp {
     data class MoveSeries(val seriesId: UUID?, val count: Int, val name: String) : BulkOp
     data class AddCollection(val collectionId: UUID, val count: Int, val name: String) : BulkOp
     data class Favorite(val count: Int) : BulkOp
+    data class Unfavorite(val count: Int) : BulkOp
+    data class RemoveCollection(val collectionId: UUID, val count: Int, val name: String) : BulkOp
+    data class MarkFinished(val count: Int) : BulkOp
 }
+
+/** PHASE 2 — نوعا الدمج الجماعي (معرّف واجهي محلي). */
+private enum class BulkMergeType { EDITIONS, CHAPTERS }
 
 @Composable
 fun LibraryScreen(
@@ -161,6 +170,12 @@ fun LibraryScreen(
     var selectedIds by remember { mutableStateOf<Set<UUID>>(emptySet()) }
     var movePickerTab by remember { mutableStateOf<MoveBookTab?>(null) }
     var pendingBulkOp by remember { mutableStateOf<BulkOp?>(null) }
+    // PHASE 2/5 — حالة الدمج الجماعي ومنتقي الإزالة من مجموعة.
+    var mergeMenuOpen by remember { mutableStateOf(false) }
+    var mergePrimaryPicker by remember { mutableStateOf<BulkMergeType?>(null) }
+    var mergePrimaryId by remember { mutableStateOf<UUID?>(null) }
+    var removeCollectionPicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val exitSelection: () -> Unit = {
         selectionMode = false
@@ -173,11 +188,14 @@ fun LibraryScreen(
             onBookSelected(id)
         }
     }
+    // FIX-SEL-UX: الضغطة المطوّلة تدخل وضع التحديد (التوقع الطبيعي) —
+    // ورقة الخيارات بقيت عبر زر ⋮ على البطاقة نفسها.
     val onCardLongPress: (UUID) -> Unit = { id ->
         if (selectionMode) {
             selectedIds = selectedIds + id
         } else {
-            onBookOptions(id)
+            selectionMode = true
+            selectedIds = setOf(id)
         }
     }
 
@@ -426,15 +444,19 @@ fun LibraryScreen(
                 items(sectionBooks, key = { it.book.id }) { book ->
                     val isSelected = book.book.id in selectedIds
                     if (layout == LibraryLayout.GRID) {
-                        BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onCardLongPress(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
+                        BookGridCard(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onBookOptions(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
                     } else {
-                        BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onCardLongPress(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
+                        BookListRow(book, isFavorite = book.isFavorite, onBookSelected = { onCardClicked(book.book.id) }, onFavoriteToggle = { viewModel.toggleFavorite(book.book.id) }, onBookOptions = { onBookOptions(book.book.id) }, selectionMode = selectionMode, selected = isSelected)
                     }
                 }
             }
         }
         if (selectionMode) {
-        AnimatedVisibility(visible = selectedIds.isNotEmpty()) {
+        // FIX-SEL-UX: الشريط يظهر فور دخول الوضع (لا بعد أول تحديد)؛ الأزرار
+        // معطّلة مع صفر محدد. دمج + ⋮ للبقية (لا يتسع الصف لتسعة أزرار).
+        val hasSelection = selectedIds.isNotEmpty()
+        var barOverflow by remember { mutableStateOf(false) }
+        AnimatedVisibility(visible = true) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -445,13 +467,65 @@ fun LibraryScreen(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { pendingBulkOp = BulkOp.Delete(selectedIds.size) }, modifier = Modifier.minTouchTarget()) {
+                Text(
+                    stringResource(R.string.bulk_selection_count, selectedIds.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppSpacing.sm)
+                )
+                TextButton(onClick = { pendingBulkOp = BulkOp.Delete(selectedIds.size) }, enabled = hasSelection, modifier = Modifier.minTouchTarget()) {
                     Text(stringResource(R.string.bulk_action_delete), color = MaterialTheme.colorScheme.error)
                 }
-                AssistChip(onClick = { movePickerTab = MoveBookTab.AUTHOR }, label = { Text(stringResource(R.string.bulk_action_move_author)) }, modifier = Modifier.minTouchTarget())
-                AssistChip(onClick = { movePickerTab = MoveBookTab.SERIES }, label = { Text(stringResource(R.string.bulk_action_move_series)) }, modifier = Modifier.minTouchTarget())
-                AssistChip(onClick = { movePickerTab = MoveBookTab.COLLECTION }, label = { Text(stringResource(R.string.bulk_action_add_collection)) }, modifier = Modifier.minTouchTarget())
-                AssistChip(onClick = { pendingBulkOp = BulkOp.Favorite(selectedIds.size) }, label = { Text(stringResource(R.string.bulk_action_favorite)) }, modifier = Modifier.minTouchTarget())
+                AssistChip(
+                    onClick = {
+                        // PHASE 5 — حد أدنى كتابين للدمج.
+                        if (selectedIds.size < 2) {
+                            Toast.makeText(context, context.getString(R.string.bulk_action_merge_min_two), Toast.LENGTH_SHORT).show()
+                        } else mergeMenuOpen = true
+                    },
+                    enabled = hasSelection,
+                    label = { Text(stringResource(R.string.bulk_action_merge)) },
+                    modifier = Modifier.minTouchTarget()
+                )
+                AssistChip(onClick = { pendingBulkOp = BulkOp.Favorite(selectedIds.size) }, enabled = hasSelection, label = { Text(stringResource(R.string.bulk_action_favorite)) }, modifier = Modifier.minTouchTarget())
+                AssistChip(onClick = { movePickerTab = MoveBookTab.SERIES }, enabled = hasSelection, label = { Text(stringResource(R.string.bulk_action_move_series)) }, modifier = Modifier.minTouchTarget())
+                Box {
+                    IconButton(onClick = { barOverflow = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.library_menu_more))
+                    }
+                    DropdownMenu(expanded = barOverflow, onDismissRequest = { barOverflow = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_action_move_author)) },
+                            enabled = hasSelection,
+                            onClick = { barOverflow = false; movePickerTab = MoveBookTab.AUTHOR },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_action_add_collection)) },
+                            enabled = hasSelection,
+                            onClick = { barOverflow = false; movePickerTab = MoveBookTab.COLLECTION },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_action_unfavorite)) },
+                            enabled = hasSelection,
+                            onClick = { barOverflow = false; pendingBulkOp = BulkOp.Unfavorite(selectedIds.size) },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_action_remove_collection)) },
+                            enabled = hasSelection,
+                            onClick = { barOverflow = false; removeCollectionPicker = true },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.bulk_action_mark_finished)) },
+                            enabled = hasSelection,
+                            onClick = { barOverflow = false; pendingBulkOp = BulkOp.MarkFinished(selectedIds.size) },
+                            modifier = Modifier.minTouchTarget()
+                        )
+                    }
+                }
             }
         }
         }
@@ -504,6 +578,9 @@ fun LibraryScreen(
             is BulkOp.MoveSeries -> stringResource(R.string.bulk_action_confirm_move_series, op.count, op.name)
             is BulkOp.AddCollection -> stringResource(R.string.bulk_action_confirm_add_collection, op.count, op.name)
             is BulkOp.Favorite -> stringResource(R.string.bulk_action_confirm_favorite, op.count)
+            is BulkOp.Unfavorite -> stringResource(R.string.bulk_action_confirm_unfavorite, op.count)
+            is BulkOp.RemoveCollection -> stringResource(R.string.bulk_action_confirm_remove_collection, op.count, op.name)
+            is BulkOp.MarkFinished -> stringResource(R.string.bulk_action_confirm_mark_finished, op.count)
         }
     }
     if (confirmMessage != null) {
@@ -520,6 +597,9 @@ fun LibraryScreen(
                     is BulkOp.MoveSeries -> manager.bulkMoveToSeries(ids, op.seriesId)
                     is BulkOp.AddCollection -> manager.bulkAddToCollection(op.collectionId, ids)
                     is BulkOp.Favorite -> manager.bulkSetFavorite(ids, true)
+                    is BulkOp.Unfavorite -> manager.bulkSetFavorite(ids, false)
+                    is BulkOp.RemoveCollection -> manager.bulkRemoveFromCollection(ids, op.collectionId)
+                    is BulkOp.MarkFinished -> manager.bulkMarkFinished(ids)
                     null -> {}
                 }
                 pendingBulkOp = null
@@ -528,7 +608,142 @@ fun LibraryScreen(
             onDismiss = { pendingBulkOp = null }
         )
     }
+    // PHASE 2 — قائمة الدمج الفرعية: النوع + شرح.
+    if (mergeMenuOpen) {
+        AlertDialog(
+            onDismissRequest = { mergeMenuOpen = false },
+            title = { Text(stringResource(R.string.bulk_action_merge)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    TextButton(
+                        onClick = { mergeMenuOpen = false; mergePrimaryId = null; mergePrimaryPicker = BulkMergeType.EDITIONS },
+                        modifier = Modifier.minTouchTarget()
+                    ) {
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text(stringResource(R.string.bulk_action_merge_editions))
+                            Text(
+                                stringResource(R.string.bulk_action_merge_editions_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { mergeMenuOpen = false; mergePrimaryId = null; mergePrimaryPicker = BulkMergeType.CHAPTERS },
+                        modifier = Modifier.minTouchTarget()
+                    ) {
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text(stringResource(R.string.bulk_action_merge_chapters))
+                            Text(
+                                stringResource(R.string.bulk_action_merge_chapters_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { mergeMenuOpen = false }, modifier = Modifier.minTouchTarget()) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
     }
+    // PHASE 2 — اختيار الكتاب الأساسي من المحدد + معاينة + تأكيد.
+    val mergeType = mergePrimaryPicker
+    if (mergeType != null) {
+        val candidates = uiState.books.filter { it.book.id in selectedIds }
+        // الافتراضي: الأول في القائمة.
+        val effectivePrimary = mergePrimaryId?.takeIf { id -> candidates.any { it.book.id == id } }
+            ?: candidates.firstOrNull()?.book?.id
+        AlertDialog(
+            onDismissRequest = { mergePrimaryPicker = null },
+            title = { Text(stringResource(R.string.bulk_action_merge_pick_primary)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
+                    candidates.forEach { item ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().minTouchTarget().clickable { mergePrimaryId = item.book.id }
+                        ) {
+                            RadioButton(
+                                selected = effectivePrimary == item.book.id,
+                                onClick = { mergePrimaryId = item.book.id }
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.book.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    item.authorName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val primary = effectivePrimary ?: return@TextButton
+                        val rest = candidates.map { it.book.id }.filter { it != primary }
+                        if (mergeType == BulkMergeType.EDITIONS) manager.bulkMergeAsEditions(primary, rest)
+                        else manager.bulkMergeAsChapters(primary, rest)
+                        mergePrimaryPicker = null
+                        exitSelection()
+                    },
+                    modifier = Modifier.minTouchTarget()
+                ) { Text(stringResource(R.string.btn_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { mergePrimaryPicker = null }, modifier = Modifier.minTouchTarget()) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+    // PHASE 1 — منتقي الإزالة من مجموعة: المجموعات الحاوية لأي كتاب محدد.
+    if (removeCollectionPicker) {
+        val memberCollections = uiState.collections.filter { collection ->
+            val members = uiState.collectionMembers[collection.name].orEmpty()
+            selectedIds.any { it in members }
+        }
+        AlertDialog(
+            onDismissRequest = { removeCollectionPicker = false },
+            title = { Text(stringResource(R.string.bulk_action_remove_collection_pick)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
+                    if (memberCollections.isEmpty()) {
+                        Text(
+                            stringResource(R.string.entity_no_books),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    memberCollections.forEach { collection ->
+                        TextButton(
+                            onClick = {
+                                removeCollectionPicker = false
+                                pendingBulkOp = BulkOp.RemoveCollection(collection.id, selectedIds.size, collection.name)
+                            },
+                            modifier = Modifier.minTouchTarget()
+                        ) { Text(collection.name) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { removeCollectionPicker = false }, modifier = Modifier.minTouchTarget()) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+    } // FIX-BRACE: إغلاق if(selectionMode) لكتلة المدير (سقط أثناء إدراج حوارات الدمج).
     if (showCollectionDialog) {
         AlertDialog(
             onDismissRequest = { showCollectionDialog = false },
@@ -685,6 +900,32 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
                 )
+            } else {
+                // FIX-SEL-UX: زر ⋮ فوق الغلاف (ورقة الخيارات بعد نقلها من المطوّلة).
+                IconButton(
+                    onClick = onBookOptions,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.30f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.MoreVert,
+                            // FIX-A11Y: وصف مميز لزر خيارات البطاقة (لا يشارك
+                            // وصف زر قائمة الشريط العلوي فينفرد به الاختبار).
+                            contentDescription = stringResource(R.string.book_options_title),
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
             // FIX 6 (Phase 7): الإعجاب فوق الغلاف (TopEnd) بدل حجز 48dp من
             // سطر العنوان — كان يقطع العناوين في الخلايا الضيقة.
@@ -761,6 +1002,15 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
             if (book.book.isDemo) DemoBadge()
         }
         Text(stringResource(R.string.progress_percent, (book.progressFraction * 100).toInt()), style = MaterialTheme.typography.labelLarge)
+        // FIX-SEL-UX: زر ⋮ في الصف (ورقة الخيارات بعد نقلها من المطوّلة).
+        IconButton(onClick = onBookOptions, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+            Icon(
+                Icons.Outlined.MoreVert,
+                contentDescription = stringResource(R.string.book_options_title),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
         IconButton(onClick = onFavoriteToggle, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(
                 if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,

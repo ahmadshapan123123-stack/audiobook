@@ -22,6 +22,7 @@ import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.CollectionBookCrossRef
 import com.example.audiobook.data.room.entity.CollectionEntity
 import com.example.audiobook.data.room.entity.EditionEntity
+import com.example.audiobook.domain.usecases.EditionMerge
 import com.example.audiobook.domain.usecases.LibraryManagement
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -91,7 +92,8 @@ class BookManagerViewModel @Inject constructor(
     private val crossRefDao: CollectionBookCrossRefDao,
     private val audioFileDao: AudioFileDao,
     private val chapterDao: ChapterDao,
-    private val audioMetadataReader: AudioMetadataReader
+    private val audioMetadataReader: AudioMetadataReader,
+    private val editionMerge: EditionMerge
 ) : ViewModel() {
 
     private val selectedBookId = MutableStateFlow<UUID?>(null)
@@ -271,6 +273,15 @@ class BookManagerViewModel @Inject constructor(
         }
     }
 
+    /** FIX-MERGE-UX: دمج نسختين في واحدة من ورقة الخيارات (بلا تراجع — الحذف نهائي). */
+    fun mergeEditionsInto(subjectId: UUID, comparedId: UUID) {
+        viewModelScope.launch {
+            runCatching { editionMerge.merge(subjectId, comparedId, userInitiated = true) }
+            selectedBookId.value = null
+            _messages.value = OpMessage(R.string.merge_editions_done, undolable = false)
+        }
+    }
+
     fun addAudioFile(opts: BookOptionsContext, editionId: UUID, uri: Uri) {
         viewModelScope.launch {
             // FIX-URI: إذن دائم للقراءة — بدونه يموت الـURI بعد إعادة التشغيل
@@ -394,6 +405,46 @@ class BookManagerViewModel @Inject constructor(
             if (bookIds.isEmpty()) return@launch
             management.setBooksFavorite(bookIds, favorite)
             _messages.value = OpMessage(R.string.bulk_done, undolable = false)
+        }
+    }
+
+    fun bulkRemoveFromCollection(bookIds: List<UUID>, collectionId: UUID) {
+        viewModelScope.launch {
+            if (bookIds.isEmpty()) return@launch
+            management.removeBooksFromCollection(collectionId, bookIds)
+            _messages.value = OpMessage(R.string.bulk_done_simple, undolable = false)
+        }
+    }
+
+    fun bulkMarkFinished(bookIds: List<UUID>) {
+        viewModelScope.launch {
+            if (bookIds.isEmpty()) return@launch
+            management.markBooksFinished(bookIds)
+            _messages.value = OpMessage(R.string.bulk_done_simple, undolable = false)
+        }
+    }
+
+    /** PHASE 5 — دمج جماعي كإصدارات في الكتاب الأساسي. */
+    fun bulkMergeAsEditions(primaryId: UUID, bookIds: List<UUID>) {
+        viewModelScope.launch {
+            val result = runCatching { management.mergeBooksAsEditions(primaryId, bookIds) }.getOrNull()
+            if (result == null || result.mergedCount == 0) {
+                _messages.value = OpMessage(R.string.bulk_action_merge_failed, undolable = false)
+            } else {
+                _messages.value = OpMessage(R.string.bulk_action_merge_done, listOf(result.mergedCount), undolable = false)
+            }
+        }
+    }
+
+    /** PHASE 5 — دمج جماعي كفصول في الكتاب الأساسي. */
+    fun bulkMergeAsChapters(primaryId: UUID, bookIds: List<UUID>) {
+        viewModelScope.launch {
+            val result = runCatching { management.mergeBooksAsChapters(primaryId, bookIds) }.getOrNull()
+            if (result == null || result.mergedCount == 0) {
+                _messages.value = OpMessage(R.string.bulk_action_merge_failed, undolable = false)
+            } else {
+                _messages.value = OpMessage(R.string.bulk_action_merge_done, listOf(result.mergedCount), undolable = false)
+            }
         }
     }
 

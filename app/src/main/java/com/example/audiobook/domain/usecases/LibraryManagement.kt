@@ -2,7 +2,9 @@ package com.example.audiobook.domain.usecases
 
 import android.net.Uri
 import android.util.Log
+import androidx.room.withTransaction
 import com.example.audiobook.data.localfilesystem.AudioMetadata
+import com.example.audiobook.data.room.AppDatabase
 import com.example.audiobook.data.room.DEMO_AUTHOR_IDS
 import com.example.audiobook.data.room.dao.*
 import com.example.audiobook.data.room.entity.*
@@ -38,7 +40,9 @@ class LibraryManagement @Inject constructor(
      */
     private val scanCheckpointDao: ScanCheckpointDao,
     private val pendingDiscoveryDao: PendingDiscoveryDao,
-    private val onboardingEditDao: OnboardingEditDao
+    private val onboardingEditDao: OnboardingEditDao,
+    /** PHASE 3/4: للمعاملات الذرية في الدمج الجماعي. */
+    private val database: AppDatabase
 ) {
 
     // ── Author Operations ──
@@ -391,6 +395,140 @@ class LibraryManagement @Inject constructor(
         bookDao.insert(snapshot.source.book)
     }
 
+    /** حصيلة دمج جماعي: عدد الكتب المدمجة + النسخ المتأثرة + تحذيرات. */
+    data class MergeResult(
+        val mergedCount: Int,
+        val affectedEditionIds: List<UUID>,
+        val warnings: List<String>
+    )
+
+    /**
+     * PHASE 3 — دمج كتب كإصدارات في كتاب أساسي: تُنقل صفوف النسخ كما هي
+     * (رواة وجودات متعددة محفوظة)، ثم الروابط والمفضّلة، ثم يُحذف المصدر.
+     * معاملة ذرية واحدة. لا تُمسّ بنية الفحص.
+     */
+    suspend fun mergeBooksAsEditions(primaryId: UUID, sourceIds: List<UUID>): MergeResult =
+        database.withTransaction {
+            val primary = bookDao.getById(primaryId) ?: throw IllegalStateException("Primary book not found")
+            val affected = mutableListOf<UUID>()
+            val warnings = mutableListOf<String>()
+            var merged = 0
+            val refs = crossRefDao.observeAll().first()
+            for (sourceId in sourceIds.distinct().filter { it != primaryId }) {
+                val source = bookDao.getById(sourceId) ?: continue
+                for (edition in editionDao.getByParent(sourceId)) {
+                    editionDao.update(edition.copy(bookId = primaryId))
+                    affected += edition.id
+                }
+                for (ref in refs.filter { it.bookId == sourceId }) {
+                    if (crossRefDao.getById(ref.collectionId, primaryId) == null) {
+                        crossRefDao.insert(CollectionBookCrossRef(ref.collectionId, primaryId))
+                    }
+                }
+                if (favoriteBookDao.getById(sourceId) != null && favoriteBookDao.getById(primaryId) == null) {
+                    favoriteBookDao.insert(FavoriteBook(primaryId, System.currentTimeMillis()))
+                }
+                inheritCoverForBook(primaryId, source)
+                bookDao.delete(source)
+                merged++
+            }
+            val remaining = editionDao.getByParent(primaryId)
+            val freshPrimary = bookDao.getById(primaryId) ?: primary
+            if (remaining.isNotEmpty() &&
+                (freshPrimary.defaultEditionId == null || remaining.none { it.id == freshPrimary.defaultEditionId })
+            ) {
+                bookDao.update(freshPrimary.copy(defaultEditionId = remaining.first().id))
+            }
+            if (remaining.isEmpty()) warnings += "primary has no editions"
+            MergeResult(merged, affected, warnings)
+        }
+
+    /**
+     * PHASE 4 — دمج كتب كفصول في نسخة واحدة: ملفات المصادر تُنقل للنسخة
+     * الهدف بترتيب متسلسل، والفصول/العلامات تُزاح بالإزاحة المتراكمة، والتقدّم
+     * يُحفظ للأساسي (أو يُستعار عند غيابه)، ثم تُحذف الكتب المصدر (CASCADE
+     * ينظّف نسخها وفصولها القديمة). الغلاف يُورَّث بالأولوية المعتادة.
+     */
+    suspend fun mergeBooksAsChapters(primaryId: UUID, sourceIds: List<UUID>): MergeResult =
+        database.withTransaction {
+            val primary = bookDao.getById(primaryId) ?: throw IllegalStateException("Primary book not found")
+            val warnings = mutableListOf<String>()
+            val primaryEditions = editionDao.getByParent(primaryId)
+            if (primaryEditions.isEmpty()) throw IllegalStateException("Primary book has no edition")
+            if (primaryEditions.size > 1) warnings += "primary has multiple editions; using default/first"
+            val target = primary.defaultEditionId?.let { id -> primaryEditions.firstOrNull { it.id == id } }
+                ?: primaryEditions.first()
+            val affected = mutableListOf(target.id)
+            var runningOffsetMs = audioFileDao.getByParent(target.id).sumOf { it.durationMs }
+            var nextOrder = (audioFileDao.getByParent(target.id).maxOfOrNull { it.orderIndex } ?: -1) + 1
+            var nextChapterOrder = (chapterDao.getByParent(target.id).maxOfOrNull { it.orderIndex } ?: -1) + 1
+            var merged = 0
+            for (sourceId in sourceIds.distinct().filter { it != primaryId }) {
+                val source = bookDao.getById(sourceId) ?: continue
+                for (edition in editionDao.getByParent(sourceId).sortedBy { it.label }) {
+                    val editionBase = runningOffsetMs
+                    for (file in audioFileDao.getByParent(edition.id).sortedBy { it.orderIndex }) {
+                        audioFileDao.update(file.copy(editionId = target.id, orderIndex = nextOrder++))
+                        runningOffsetMs += file.durationMs
+                    }
+                    for (chapter in chapterDao.getByParent(edition.id).sortedBy { it.startPositionMs }) {
+                        chapterDao.insert(
+                            chapter.copy(
+                                id = UUID.randomUUID(),
+                                editionId = target.id,
+                                startPositionMs = (chapter.startPositionMs + editionBase).coerceAtLeast(0L),
+                                orderIndex = nextChapterOrder++
+                            )
+                        )
+                    }
+                    for (bookmark in bookmarkDao.getByParent(edition.id)) {
+                        bookmarkDao.insert(
+                            bookmark.copy(
+                                id = UUID.randomUUID(),
+                                editionId = target.id,
+                                positionMs = (bookmark.positionMs + editionBase).coerceAtLeast(0L),
+                                remoteId = null,
+                                syncStatus = SyncStatus.LOCAL_ONLY
+                            )
+                        )
+                    }
+                    if (progressDao.getByParent(target.id) == null) {
+                        progressDao.getByParent(edition.id)?.let { progress ->
+                            progressDao.insert(
+                                progress.copy(
+                                    id = UUID.randomUUID(),
+                                    editionId = target.id,
+                                    remoteId = null,
+                                    syncStatus = SyncStatus.LOCAL_ONLY
+                                )
+                            )
+                        }
+                    }
+                    affected += edition.id
+                }
+                inheritCoverForBook(primaryId, source)
+                bookDao.delete(source)
+                merged++
+            }
+            val finalDuration = audioFileDao.getByParent(target.id).sumOf { it.durationMs }
+            editionDao.getById(target.id)?.let { editionDao.update(it.copy(totalDurationMs = finalDuration)) }
+            MergeResult(merged, affected, warnings)
+        }
+
+    /** وراثة الغلاف بالأولوية (مختار-المستخدم > أي غلاف > لا شيء) — لا كتابة فوق اختيار المستخدم. */
+    private suspend fun inheritCoverForBook(primaryId: UUID, source: BookEntity) {
+        val primary = bookDao.getById(primaryId) ?: return
+        if (!primary.coverImagePath.isNullOrBlank() || primary.isCoverUserSelected) return
+        if (source.coverImagePath.isNullOrBlank()) return
+        bookDao.update(
+            primary.copy(
+                coverImagePath = source.coverImagePath,
+                coverSource = source.coverSource,
+                isCoverUserSelected = source.isCoverUserSelected
+            )
+        )
+    }
+
     /** حذف عدة كتب مع لقطة قابلة للاستعادة. */
     data class DeletedBooksSnapshot(val books: List<BookSnapshot>)
 
@@ -432,6 +570,36 @@ class LibraryManagement @Inject constructor(
 
     suspend fun addBooksToCollection(collectionId: UUID, bookIds: List<UUID>) {
         for (id in bookIds) addBookToCollection(collectionId, id)
+    }
+
+    suspend fun removeBooksFromCollection(collectionId: UUID, bookIds: List<UUID>) {
+        for (id in bookIds) removeBookFromCollection(collectionId, id)
+    }
+
+    /** تعليم كتب كمنتهية: تقدّم FINISHED عند نهاية النسخة الفعّالة لكل كتاب. */
+    suspend fun markBooksFinished(bookIds: List<UUID>): Int {
+        var marked = 0
+        for (bookId in bookIds) {
+            val book = bookDao.getById(bookId) ?: continue
+            val editions = editionDao.getByParent(bookId)
+            if (editions.isEmpty()) continue
+            val edition = book.defaultEditionId?.let { id -> editions.firstOrNull { it.id == id } }
+                ?: editions.firstOrNull() ?: continue
+            val existing = progressDao.getByParent(edition.id)
+            val finished = com.example.audiobook.data.room.entity.ListeningProgressEntity(
+                id = existing?.id ?: UUID.randomUUID(),
+                editionId = edition.id,
+                currentPositionMs = edition.totalDurationMs,
+                lastPlayedAt = System.currentTimeMillis(),
+                status = com.example.audiobook.data.room.entity.ProgressStatus.FINISHED,
+                playbackSpeed = existing?.playbackSpeed ?: 1f,
+                remoteId = existing?.remoteId,
+                syncStatus = com.example.audiobook.data.room.entity.SyncStatus.LOCAL_ONLY
+            )
+            if (existing == null) progressDao.insert(finished) else progressDao.update(finished)
+            marked++
+        }
+        return marked
     }
 
     suspend fun setBooksFavorite(bookIds: List<UUID>, favorite: Boolean) {

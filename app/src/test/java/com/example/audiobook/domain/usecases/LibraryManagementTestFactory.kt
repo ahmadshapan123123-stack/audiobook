@@ -31,7 +31,8 @@ fun libraryManagementFor(database: AppDatabase): LibraryManagement = LibraryMana
     libraryRootDao = database.libraryRootDao(),
     scanCheckpointDao = database.scanCheckpointDao(),
     pendingDiscoveryDao = database.pendingDiscoveryDao(),
-    onboardingEditDao = database.onboardingEditDao()
+    onboardingEditDao = database.onboardingEditDao(),
+    database = database
 )
 
 /** File source that reports an empty library (used when a test never scans). */

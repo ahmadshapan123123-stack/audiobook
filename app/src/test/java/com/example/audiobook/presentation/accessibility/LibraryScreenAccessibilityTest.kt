@@ -180,7 +180,8 @@ class LibraryScreenAccessibilityTest {
                     genre = null,
                     embeddedChapters = emptyList()
                 )
-        }
+        },
+        editionMerge = com.example.audiobook.domain.usecases.EditionMerge(database)
     )
 
     @Test

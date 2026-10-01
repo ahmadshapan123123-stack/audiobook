@@ -83,6 +83,10 @@ fun BookOptionsSheet(
     var mergeDialog by remember(context.bookId) { mutableStateOf(false) }
     var pickEditionForFile by remember(context.bookId) { mutableStateOf(false) }
     var pickEditionForDefault by remember(context.bookId) { mutableStateOf(false) }
+    // FIX-MERGE-UX: حالة منتقي دمج الإصدارات (المحتفَظ بها = الافتراضية أولًا).
+    var mergeEditionsPicker by remember(context.bookId) { mutableStateOf(false) }
+    var mergeEditionsRetained by remember(context.bookId) { mutableStateOf<UUID?>(null) }
+    var confirmedMergeEditions by remember(context.bookId) { mutableStateOf<Pair<UUID, UUID>?>(null) }
     var removeSeriesDialog by remember(context.bookId) { mutableStateOf(false) }
     var deleteDialog by remember(context.bookId) { mutableStateOf(false) }
     var pendingAddEdition by remember(context.bookId) { mutableStateOf<UUID?>(null) }
@@ -204,10 +208,24 @@ fun BookOptionsSheet(
                 BookOptionRow(
                     icon = Icons.Outlined.MergeType,
                     title = stringResource(R.string.book_options_merge),
-                    description = "",
+                    description = stringResource(R.string.book_options_merge_desc),
                     onClick = { mergeDialog = true },
                     tint = MaterialTheme.colorScheme.primary
                 )
+                // FIX-MERGE-UX: دمج الإصدارات هنا أيضًا (لا في تبويب الإصدارات فقط).
+                if (context.editions.size > 1) {
+                    BookOptionRow(
+                        icon = Icons.Outlined.MergeType,
+                        title = stringResource(R.string.book_options_merge_editions),
+                        description = stringResource(R.string.book_options_merge_editions_desc),
+                        onClick = {
+                            mergeEditionsRetained = context.defaultEditionId
+                                ?: context.editions.first().id
+                            mergeEditionsPicker = true
+                        },
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 if (context.editions.size > 1) {
                     BookOptionRow(
                         icon = Icons.Outlined.Star,
@@ -294,6 +312,35 @@ fun BookOptionsSheet(
             editions = context.editions,
             onSelect = { id -> pickEditionForDefault = false; viewModel.setDefaultEdition(context.bookId, id) },
             onDismiss = { pickEditionForDefault = false }
+        )
+    }
+
+    // FIX-MERGE-UX: اختيار النسخة المرشحة (تُحذف وتُنقل ملفاتها للمحتفَظ بها) ثم تأكيد.
+    if (mergeEditionsPicker) {
+        val retainedId = mergeEditionsRetained
+        EditionPickerDialog(
+            title = stringResource(R.string.merge_editions_pick),
+            editions = context.editions.filter { it.id != retainedId },
+            onSelect = { id ->
+                mergeEditionsPicker = false
+                retainedId?.let { confirmedMergeEditions = it to id }
+            },
+            onDismiss = { mergeEditionsPicker = false }
+        )
+    }
+
+    val pendingEditionsMerge = confirmedMergeEditions
+    if (pendingEditionsMerge != null) {
+        val retainedLabel = context.editions.firstOrNull { it.id == pendingEditionsMerge.first }?.label.orEmpty()
+        val candidateLabel = context.editions.firstOrNull { it.id == pendingEditionsMerge.second }?.label.orEmpty()
+        ConfirmMergeDialog(
+            title = stringResource(R.string.merge_editions_confirm_title),
+            message = stringResource(R.string.merge_editions_confirm, retainedLabel, candidateLabel),
+            onConfirm = {
+                viewModel.mergeEditionsInto(pendingEditionsMerge.first, pendingEditionsMerge.second)
+                confirmedMergeEditions = null
+            },
+            onDismiss = { confirmedMergeEditions = null }
         )
     }
 

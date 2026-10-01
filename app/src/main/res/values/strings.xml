@@ -194,6 +194,7 @@
     <string name="bd_progress_percent">%1$d٪ مكتمل</string>
     <string name="bd_progress_start">لم تبدأ بعد</string>
     <string name="bd_editions_header">إدارة الإصدارات</string>
+    <string name="bd_editions_hint">هنا تُدار نسخ الكتاب (أصوات مختلفة لنفس الكتاب). لدمج نسختين في مشغّل واحد استخدم «دمج في نسخة واحدة». أما نقل النسخ إلى كتاب آخر فمن خيارات الكتاب (⋮).</string>
     <string name="bd_edition_narrator">راوٍ غير محدد</string>
     <string name="bd_edition_rename">إعادة تسمية</string>
     <string name="bd_edition_narrator_change">تغيير الرواي</string>
@@ -865,7 +866,14 @@
     <string name="book_options_collections">إضافة إلى المجموعات</string>
     <string name="book_options_add_file">إضافة ملف صوتي</string>
     <string name="book_options_add_file_desc">إلحاق ملف بالنسخة الحالية</string>
-    <string name="book_options_merge">دمج مع كتاب آخر</string>
+    <string name="book_options_merge">نقل النسخ إلى كتاب آخر</string>
+    <string name="book_options_merge_desc">نقل كل نسخ هذا الكتاب إلى كتاب آخر وحذفه</string>
+    <string name="book_options_merge_editions">دمج الإصدارات في نسخة واحدة</string>
+    <string name="book_options_merge_editions_desc">دمج ملفات النسخ في نسخة واحدة تُشغَّل متواصلة</string>
+    <string name="merge_editions_pick">اختر النسخة التي تُحذف وتُنقل ملفاتها</string>
+    <string name="merge_editions_confirm_title">دمج الإصدارين في نسخة واحدة؟</string>
+    <string name="merge_editions_confirm">ستُنقل ملفات \"%2$s\" وتقدّمها وعلاماتها إلى \"%1$s\"، ثم تُحذف \"%2$s\". لن تُفقد: التقدّم، العلامات، الفصول.</string>
+    <string name="merge_editions_done">تم دمج النسخ في نسخة واحدة</string>
     <string name="book_options_default_edition">تحديد كإصدار افتراضي</string>
     <string name="book_options_remove_series">إزالة من السلسلة</string>
     <string name="book_options_delete">حذف الكتاب</string>
@@ -895,9 +903,9 @@
     <string name="add_file_chapters_imported">تمت الإضافة — %1$d فصلًا مستورد</string>
 
     <!-- ===== دمج كتابين ===== -->
-    <string name="merge_book_title">دمج مع كتاب آخر</string>
+    <string name="merge_book_title">نقل النسخ إلى كتاب آخر؟</string>
     <string name="merge_book_search_hint">ابحث عن الكتاب الهدف</string>
-    <string name="merge_book_confirm">هل تريد دمج \"%1$s\" في \"%2$s\"؟ ستنتقل جميع إصدارات \"%1$s\" إلى \"%2$s\" وتبقى التقدّمات والعلامات.</string>
+    <string name="merge_book_confirm">ستنتقل جميع نسخ \"%1$s\" إلى \"%2$s\"، ثم يُحذف \"%1$s\". لن تُفقد: التقدّم، العلامات، الفصول.</string>
     <string name="merge_book_undo">تم الدمج — تراجع</string>
 
     <!-- ===== النسخة الافتراضية ===== -->
@@ -924,12 +932,31 @@
     <string name="bulk_action_move_series">نقل إلى سلسلة</string>
     <string name="bulk_action_add_collection">إضافة إلى مجموعة</string>
     <string name="bulk_action_favorite">مفضلة</string>
+    <string name="bulk_action_unfavorite">إزالة من المفضلة</string>
+    <string name="bulk_action_remove_collection">إزالة من مجموعة</string>
+    <string name="bulk_action_remove_collection_pick">اختر المجموعة للإزالة منها</string>
+    <string name="bulk_action_mark_finished">تعليم كمنتهٍ</string>
+    <string name="bulk_action_merge">دمج</string>
+    <string name="bulk_action_merge_editions">دمج كإصدارات</string>
+    <string name="bulk_action_merge_editions_desc">نسخ متعددة لنفس الكتاب بأصوات مختلفة</string>
+    <string name="bulk_action_merge_chapters">دمج كفصول</string>
+    <string name="bulk_action_merge_chapters_desc">ملفات الكتب في كتاب واحد بفصول متتالية</string>
+    <string name="bulk_action_merge_pick_primary">اختر الكتاب الأساسي</string>
+    <string name="bulk_action_merge_min_two">اختر كتابين على الأقل للدمج</string>
+    <string name="bulk_action_merge_confirm_editions">سيتم دمج %1$d كتابًا كإصدارات في: \"%2$s\". تبقى النسخ والتقدّمات والعلامات.</string>
+    <string name="bulk_action_merge_confirm_chapters">سيتم دمج ملفات %1$d كتابًا كفصول في: \"%2$s\". لن تُفقد: التقدّم، العلامات، الفصول.</string>
+    <string name="bulk_action_merge_done">تم دمج %1$d كتابًا</string>
+    <string name="bulk_action_merge_failed">تعذّر الدمج</string>
     <string name="bulk_action_confirm_delete">هل تريد حذف %1$d كتابًا مع جميع إصداراتها؟ ملفاتك على الجهاز لن تُحذف.</string>
     <string name="bulk_action_confirm_move_author">نقل %1$d كتابًا إلى \"%2$s\"؟</string>
     <string name="bulk_action_confirm_move_series">نقل %1$d كتابًا إلى \"%2$s\"؟</string>
     <string name="bulk_action_confirm_add_collection">إضافة %1$d كتابًا إلى المجموعة \"%2$s\"؟</string>
     <string name="bulk_action_confirm_favorite">تحديد %1$d كتابًا كمفضلة؟</string>
+    <string name="bulk_action_confirm_unfavorite">إزالة %1$d كتابًا من المفضلة؟</string>
+    <string name="bulk_action_confirm_remove_collection">إزالة %1$d كتابًا من المجموعة \"%2$s\"؟</string>
+    <string name="bulk_action_confirm_mark_finished">تعليم %1$d كتابًا كمنتهٍ؟</string>
     <string name="bulk_done">تم تنفيذ العملية — تراجع</string>
+    <string name="bulk_done_simple">تم تنفيذ العملية</string>
 
     <!-- ===== المرحلة 5: الإعداد مع معاينة التصنيف واعتماده ===== -->
     <string name="onboarding_welcome_title">مرحبًا بك في أثير</string>
