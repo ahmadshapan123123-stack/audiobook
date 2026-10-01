@@ -59,6 +59,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -1208,7 +1209,15 @@ private fun SettingsOptionGrid(
     onSelect: (Int) -> Unit
 ) {
     SettingsRowContent(title = label)
-    val columns = if (options.size <= 6) 3 else 4
+    // FIX-GRID: أعمدة ديناميكية حسب العدد — خياران طويلان في 3 أعمدة
+    // كانا يُقطعان إلى "إشعار…" (maxLines=1). الآن: 2→عمودان، 3→ثلاثة،
+    // 4→عمودان (2×2)، وأكثر→ثلاثة كما كان.
+    val columns = when (options.size) {
+        2 -> 2
+        3 -> 3
+        4 -> 2
+        else -> 3
+    }
     options.chunked(columns).forEachIndexed { rowIndex, rowOptions ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.md, vertical = AppSpacing.xxs),
@@ -1256,7 +1265,9 @@ private fun SettingsOptionCell(
             label,
             style = MaterialTheme.typography.labelLarge,
             color = content,
-            maxLines = 1,
+            // FIX-GRID: سطران كحد أقصى أمانًا للنصوص الطويلة.
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )

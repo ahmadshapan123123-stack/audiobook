@@ -202,7 +202,24 @@ class ExoPlaybackController @Inject constructor(
             mutableState.value = PlaybackState(editionId = editionId, durationMs = timeline.durationMs, speed = resolvedSpeed, missingFileMessage = "لا توجد ملفات صوتية متاحة لهذا الإصدار")
             return
         }
-        player.setMediaItems(playableFiles.map { MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString()).build() })
+        // FIX 2.3: عنوان الكتاب في عناصر الوسائط منذ الفتح — شاشة القفل
+        // (أندرويد 13+) تقرأ بيانات الجلسة مباشرة فكانت فارغة حتى الـrebuild
+        // المتأخر. قراءة واحدة متزامنة (الدالة suspend أصلًا) ثم يُغنيها
+        // الـrebuild لاحقًا بالفصل/المؤلف/الغلاف.
+        val openTitle = runCatching {
+            database.editionDao().getById(editionId)?.let { ed ->
+                database.bookDao().getById(ed.bookId)?.title?.takeIf { it.isNotBlank() }
+                    ?: ed.label.takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()?.takeIf { !it.isNullOrBlank() }
+        val openMetadata = openTitle?.let {
+            MediaMetadata.Builder().setTitle(it).setArtist(it).setDisplayTitle(it).build()
+        }
+        player.setMediaItems(playableFiles.map {
+            val builder = MediaItem.Builder().setUri(Uri.parse(it.fileUri)).setMediaId(it.id.toString())
+            if (openMetadata != null) builder.setMediaMetadata(openMetadata)
+            builder.build()
+        })
         player.prepare()
         player.setPlaybackSpeed(resolvedSpeed)
         player.volume = 1f

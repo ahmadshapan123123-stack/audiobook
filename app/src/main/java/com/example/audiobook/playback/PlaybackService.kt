@@ -307,6 +307,10 @@ class PlaybackService : MediaSessionService() {
             albumTitle = latestAlbumName ?: provider.contentAuthor,
             artworkBytes = artworkBytes
         )
+        // FIX 2.1+2.2: التحديث بعد حقن البيانات — الإشعار كان يُنشر باكرًا
+        // بحقول فارغة ولا يُحدَّث بعد وصول البيانات (الدوري يعمل أثناء
+        // التشغيل فقط). مرة واحدة لكل نسخة: بلا إزعاج، ويعمل حتى متوقفًا.
+        provider.refresh()
         scope.launch {
             chapterDao.observeByParent(editionId).collect { updated ->
                 chapters = updated
