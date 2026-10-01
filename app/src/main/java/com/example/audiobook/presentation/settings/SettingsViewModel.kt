@@ -70,6 +70,8 @@ class SettingsViewModel @Inject constructor(
     val pauseOnAudioDisconnect: StateFlow<Boolean> = appSettings.pauseOnAudioDisconnect
     val autoNextChapter: StateFlow<Boolean> = appSettings.autoNextChapter
     val keepScreenOn: StateFlow<Boolean> = appSettings.keepScreenOn
+    /** FIX 5: التشغيل التلقائي عند فتح المشغّل. */
+    val autoPlayOnOpen: StateFlow<Boolean> = appSettings.autoPlayOnOpen
     /** PART 3: فاصلا التقديم/التأخير (ثوانٍ) — القيم: 10/15/20/30/45/60. */
     val skipForwardSeconds: StateFlow<Int> = appSettings.skipForwardSeconds
     val skipBackwardSeconds: StateFlow<Int> = appSettings.skipBackwardSeconds
@@ -498,6 +500,7 @@ class SettingsViewModel @Inject constructor(
     fun setPauseOnAudioDisconnect(enabled: Boolean) = appSettings.setPauseOnAudioDisconnect(enabled)
     fun setAutoNextChapter(enabled: Boolean) = appSettings.setAutoNextChapter(enabled)
     fun setKeepScreenOn(enabled: Boolean) = appSettings.setKeepScreenOn(enabled)
+    fun setAutoPlayOnOpen(enabled: Boolean) = appSettings.setAutoPlayOnOpen(enabled)
     fun setDefaultSleepMinutes(minutes: Int) = appSettings.setDefaultSleepMinutes(minutes)
     fun setAutoExtendSleep(enabled: Boolean) = appSettings.setAutoExtendSleep(enabled)
     fun setNotificationsEnabled(enabled: Boolean) {

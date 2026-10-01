@@ -690,6 +690,7 @@ class MainActivity : ComponentActivity() {
                 val skipFwd by appSettings.skipForwardSeconds.collectAsStateWithLifecycle()
                 val skipBack by appSettings.skipBackwardSeconds.collectAsStateWithLifecycle()
                 val keepAwake by appSettings.keepScreenOn.collectAsStateWithLifecycle()
+                val showTotal by appSettings.showTotalTimeOnPlayer.collectAsStateWithLifecycle()
                 PlayerScreen(
                     controller = playbackController,
                     themeMode = mode,
@@ -699,6 +700,11 @@ class MainActivity : ComponentActivity() {
                     skipForwardSeconds = skipFwd,
                     skipBackwardSeconds = skipBack,
                     keepScreenOn = keepAwake,
+                    showTotalTime = showTotal,
+                    onToggleTimeDisplay = { appSettings.setShowTotalTimeOnPlayer(!showTotal) },
+                    onBookClick = { bookId -> navController.navigate("book_details/$bookId") },
+                    onSeriesClick = { seriesId -> navController.navigate("series_details/$seriesId") },
+                    onAuthorClick = { authorId -> navController.navigate("author_details/$authorId") },
                     onFirstPlaybackPermissionRequest = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

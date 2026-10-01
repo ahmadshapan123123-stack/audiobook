@@ -144,6 +144,7 @@ fun SettingsScreen(
     val pauseOnDisconnect by viewModel.pauseOnAudioDisconnect.collectAsStateWithLifecycle()
     val autoNextChapter by viewModel.autoNextChapter.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
+    val autoPlayOnOpen by viewModel.autoPlayOnOpen.collectAsStateWithLifecycle()
     val skipForwardSeconds by viewModel.skipForwardSeconds.collectAsStateWithLifecycle()
     val skipBackwardSeconds by viewModel.skipBackwardSeconds.collectAsStateWithLifecycle()
     val defaultSleep by viewModel.defaultSleepMinutes.collectAsStateWithLifecycle()
@@ -360,6 +361,14 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_keep_screen_on_desc),
                     checked = keepScreenOn,
                     onCheckedChange = { viewModel.setKeepScreenOn(it) }
+                )
+                SettingsDivider()
+                // FIX 5: التشغيل التلقائي عند فتح المشغّل (افتراضي ON).
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_auto_play_on_open),
+                    subtitle = stringResource(R.string.settings_auto_play_on_open_desc),
+                    checked = autoPlayOnOpen,
+                    onCheckedChange = { viewModel.setAutoPlayOnOpen(it) }
                 )
                 SettingsDivider()
                 SettingsOptionGrid(

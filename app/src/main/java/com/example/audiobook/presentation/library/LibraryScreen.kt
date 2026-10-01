@@ -669,6 +669,8 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
             AtherCoverBlock(
                 title = cleanDisplayTitle(book.book.title),
                 coverColor = Color(book.coverColor.toInt()),
+                // FIX 3 (Phase 7): تمرير الغلاف المخزّن — كان حرفًا فقط دائمًا.
+                imagePath = book.book.coverImagePath,
                 modifier = Modifier.fillMaxWidth().aspectRatio(0.72f),
                 showMissingBadge = book.hasMissingFile,
                 missingFileDescription = stringResource(R.string.missing_file)
@@ -684,23 +686,40 @@ private fun BookGridCard(book: LibraryBookUi, isFavorite: Boolean, onBookSelecte
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
                 )
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                cleanDisplayTitle(book.book.title),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            IconButton(onClick = onFavoriteToggle, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                Icon(
-                    if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = stringResource(if (isFavorite) R.string.favorite_remove else R.string.favorite_add),
-                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // FIX 6 (Phase 7): الإعجاب فوق الغلاف (TopEnd) بدل حجز 48dp من
+            // سطر العنوان — كان يقطع العناوين في الخلايا الضيقة.
+            IconButton(
+                onClick = onFavoriteToggle,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    // FIX 2: هدف اللمس 48dp يبقى على الزر نفسه؛ القرص المرئي
+                    // أصغر وأخف (32dp + شفافية أقل) والأيقونة 18dp.
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.30f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = stringResource(if (isFavorite) R.string.favorite_remove else R.string.favorite_add),
+                        tint = if (isFavorite) Color(0xFFFF8A95) else Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
+        Text(
+            cleanDisplayTitle(book.book.title),
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
         Text(
             book.authorName,
             style = MaterialTheme.typography.bodySmall,
@@ -745,7 +764,9 @@ private fun BookListRow(book: LibraryBookUi, isFavorite: Boolean, onBookSelected
             Icon(
                 if (isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
                 contentDescription = stringResource(if (isFavorite) R.string.favorite_remove else R.string.favorite_add),
-                tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                // FIX 2 (قائمة): توحيد مع البطاقة — أيقونة أصغر مع بقاء هدف 48dp.
+                modifier = Modifier.size(20.dp)
             )
         }
     }

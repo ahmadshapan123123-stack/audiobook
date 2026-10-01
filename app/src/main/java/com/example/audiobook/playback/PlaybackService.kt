@@ -224,6 +224,10 @@ class PlaybackService : MediaSessionService() {
     private fun observePlayback() {
         var wasPlaying = false
         var lastPlaying = false
+        // FIX 1 (Phase 7): شريط تقدم الإشعار المخصص يُبنى من الموضع لحظة
+        // البناء فقط — فكان يتجمد داخل الفصل الواحد ("الإشعار لا يتغير").
+        // الحالة تتدفق كل 500ms أثناء التشغيل، فنُعيد البناء مرة كل ثانية.
+        var lastProgressSec = -1L
         scope.launch {
             playbackController.state.collect { state ->
                 if (wasPlaying && !state.isPlaying) reminderScheduler.rearmResumeReminder()
@@ -236,7 +240,16 @@ class PlaybackService : MediaSessionService() {
                     loadEditionContext(id)
                 }
                 provider.playing = state.isPlaying
-                if (playingToggled) provider.refresh()
+                if (playingToggled) {
+                    provider.refresh()
+                    // إعادة ضبط عتبة الثانية عند التبديل حتى يتحدث الشريط فورًا.
+                    lastProgressSec = if (state.isPlaying) state.positionMs / 1000L else -1L
+                }
+                val positionSec = state.positionMs / 1000L
+                if (state.isPlaying && positionSec != lastProgressSec) {
+                    lastProgressSec = positionSec
+                    provider.refresh()
+                }
                 if (id != null && chapters.isNotEmpty()) {
                     val current = chapters.lastOrNull { it.startPositionMs <= state.positionMs }
                     val start = current?.startPositionMs ?: 0L
@@ -336,9 +349,14 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /** MINI-FIX: ساعة ذكية لعدّاد النوم في الإشعار/القفل — أقل من ساعة "MM:SS"، وساعة فأكثر "H:MM:SS". */
     private fun formatSleepClock(ms: Long): String {
         val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
-        return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+        val hours = totalSeconds / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
+        else "%02d:%02d".format(minutes, seconds)
     }
 
     /**

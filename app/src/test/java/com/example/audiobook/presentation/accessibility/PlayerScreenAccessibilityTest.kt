@@ -212,7 +212,11 @@ class PlayerScreenAccessibilityTest {
     }
 
     private fun openChaptersPanel() {
-        composeRule.onNodeWithContentDescription("الفصل الحالي").performClick()
+        // FIX 5 (Phase 7): شريحة الفصل للعرض فقط — تُفتح اللوحة عبر
+        // "قائمة المشغّل" ← "الفصول".
+        composeRule.onNodeWithContentDescription("قائمة المشغّل").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("الفصول").performClick()
         composeRule.waitForIdle()
     }
 

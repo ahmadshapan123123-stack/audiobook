@@ -62,7 +62,9 @@ class ScanRootTest {
         assertEquals(0, first.cacheHits)
         assertEquals(0, second.metadataReads)
         assertEquals(1, second.cacheHits)
-        assertEquals(1, reader.readCount)
+        // FIX 4 (Phase 7): الفحص الثاني لملف بلا غلاف يُجري قراءة تعبئة
+        // واحدة (لمرة واحدة — العلم يُرفع بنهايته). الكاش نفسه سليم أعلاه.
+        assertEquals(2, reader.readCount)
 
         val edition = database.editionDao().getByRootAndFolder(root.id, "Book")!!
         val bookmark = BookmarkEntity(editionId = edition.id, positionMs = 50, createdAt = 1, type = BookmarkType.NOTE, noteText = "Keep", remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY)
@@ -85,7 +87,33 @@ class ScanRootTest {
         assertEquals(FileStatus.AVAILABLE, database.audioFileDao().getByUri(file.uri.toString())?.fileStatus)
         assertNotNull(database.bookmarkDao().getById(bookmark.id))
         assertNotNull(database.progressDao().getByParent(edition.id))
-        assertEquals(1, reader.readCount)
+        // FIX 4 (Phase 7): انظر أعلاه — قراءة التعبئة الوحيدة حدثت في الفحص الثاني.
+        assertEquals(2, reader.readCount)
+    }
+
+    @Test
+    fun backfillAssignsEmbeddedCoverToPreC2LibraryOnce() = runBlocking {
+        // FIX 4 (Phase 7): مكتبة ممسوحة قبل C2 — ملفات غير متغيّرة بلا فن.
+        val file = ScanFile(Uri.parse("content://audio/9.m4b"), "Book/Part.m4b", "Book", "Part.m4b", 100, 10)
+        source.files = listOf(file)
+        scanRoot(root.id)
+        val edition = database.editionDao().getByRootAndFolder(root.id, "Book")!!
+        val bookId = edition.bookId
+        assertNull(database.bookDao().getById(bookId)?.coverImagePath)
+
+        // C2 "يُثبَّت": القارئ صار يعيد فنًا، والملفات لم تتغيّر (cache hits).
+        reader.metadataByUri[file.uri.toString()] =
+            AudioMetadata(1000, "audio/mp4", "Book", null, null, emptyList(), embeddedArtworkPath = "/cover/art.jpg")
+        val second = scanRoot(root.id)
+        assertEquals(0, second.metadataReads)
+        assertEquals("/cover/art.jpg", database.bookDao().getById(bookId)?.coverImagePath)
+        assertEquals(CoverSource.EMBEDDED, database.bookDao().getById(bookId)?.coverSource)
+        assertTrue(appSettings.coverArtBackfillDone)
+
+        // فحص ثالث: العلم مُستنفد — بلا قراءات إضافية إطلاقًا.
+        val readsAfterSecond = reader.readCount
+        scanRoot(root.id)
+        assertEquals(readsAfterSecond, reader.readCount)
     }
 
     // ---- R1: بنية أحمد خالد توفيق — مؤلف تحته 3 مجلدات تحمل صوتًا مباشرًا ----

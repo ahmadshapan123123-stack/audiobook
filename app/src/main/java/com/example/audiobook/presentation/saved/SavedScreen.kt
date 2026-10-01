@@ -60,7 +60,15 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-private fun formatPosition(ms: Long): String = "%02d:%02d".format(ms / 60_000, (ms / 1_000) % 60)
+/** MINI-FIX: ساعة ذكية — أقل من ساعة "MM:SS"، وساعة فأكثر "H:MM:SS". */
+private fun formatPosition(ms: Long): String {
+    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
+}
 
 private fun formatDate(millis: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(millis))

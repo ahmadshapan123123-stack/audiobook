@@ -255,6 +255,7 @@
     <string name="player_chapters_header">الفصول (%1$d)</string>
     <string name="player_save_moment">حفظ اللحظة</string>
     <string name="player_remaining">باقٍ %1$s</string>
+    <string name="player_total">الإجمالي %1$s</string>
     <string name="player_sleep_with_remaining">النوم · %1$s</string>
     <string name="player_mark_bookmark">إشارة</string>
     <string name="player_mark_chapter">فصل جديد</string>
@@ -421,6 +422,8 @@
     <string name="settings_auto_next_chapter_desc">عند نهاية الفصل يبدأ التالي، وإلا يتوقف التشغيل</string>
     <string name="settings_keep_screen_on">إبقاء الشاشة مضاءة</string>
     <string name="settings_keep_screen_on_desc">منع إطفاء الشاشة أثناء الاستماع في المشغل</string>
+    <string name="settings_auto_play_on_open">التشغيل التلقائي عند فتح المشغّل</string>
+    <string name="settings_auto_play_on_open_desc">يبدأ التشغيل مباشرة عند فتح المشغّل</string>
     <string name="settings_skip_forward">تقديم</string>
     <string name="settings_skip_backward">تأخير</string>
     <string name="settings_skip_seconds">%1$d ثا</string>

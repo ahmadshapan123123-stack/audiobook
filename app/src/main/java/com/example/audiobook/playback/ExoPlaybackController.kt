@@ -213,6 +213,10 @@ class ExoPlaybackController @Inject constructor(
             speed = resolvedSpeed,
             missingFileMessage = if (missingFirst) "الجزء الأول مفقود؛ بدأ التشغيل من أول ملف متاح" else null
         )
+        // FIX 5: التشغيل التلقائي عند فتح المشغّل (افتراضي ON) — يُطبَّق على
+        // كل مسارات الفتح (المكتبة/الإشعار/الاستئناف) لأنها كلها تمرّ هنا.
+        // OFF = يبقى متوقفًا كما كان.
+        if (appSettings.autoPlayOnOpen.value) play()
     }
 
     override fun play() {

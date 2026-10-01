@@ -266,18 +266,29 @@ class AtherMediaNotificationProvider(
         action.actionIntent?.let { views.setOnClickPendingIntent(buttonId, it) }
     }
 
-    private fun buildMinimal(session: MediaSession, actionFactory: MediaNotification.ActionFactory): android.app.Notification =
-        NotificationCompat.Builder(context, NotificationChannels.PLAYBACK_MINIMAL)
+    private fun buildMinimal(session: MediaSession, actionFactory: MediaNotification.ActionFactory): android.app.Notification {
+        // FIX 8 (Phase 7): تخطيط عنوان-فقط مخصص بدل الخام — بلا أزرار ولا تقدّم.
+        val p = palette()
+        val views = RemoteViews(context.packageName, R.layout.notification_ather_minimal)
+        views.setInt(R.id.ather_minimal_root, "setBackgroundColor", p.bg)
+        views.setInt(R.id.ather_minimal_bar, "setBackgroundColor", p.accent)
+        views.setTextViewText(R.id.ather_minimal_title, contentTitle.ifBlank { context.getString(R.string.channel_playback_full_name) })
+        views.setTextColor(R.id.ather_minimal_title, p.ink)
+        views.setOnClickPendingIntent(R.id.ather_minimal_root, session.getSessionActivity())
+        return NotificationCompat.Builder(context, NotificationChannels.PLAYBACK_MINIMAL)
             .setSmallIcon(R.drawable.ic_stat_ather)
-            .setContentTitle(context.getString(R.string.notif_playback_minimal_title))
+            .setContentTitle(contentTitle.ifBlank { context.getString(R.string.channel_playback_full_name) })
             .setContentText(context.getString(R.string.notif_playback_minimal_text))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setOngoing(true)
-            .setColor(AtherAccent.ambientAccentArgb(appSettings.currentThemeMode()))
+            .setColor(p.accent)
+            .setColorized(true)
             .setContentIntent(session.getSessionActivity())
             .setDeleteIntent(actionFactory.createNotificationDismissalIntent(session))
+            .setCustomContentView(views)
             .build()
+    }
 
     private fun actionFor(button: CommandButton, actionFactory: MediaNotification.ActionFactory) =
         actionFactory.createCustomActionFromCustomCommandButton(requireNotNull(session), button)

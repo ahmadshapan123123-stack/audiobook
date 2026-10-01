@@ -81,6 +81,8 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.ZoomIn
+import androidx.compose.material.icons.outlined.ZoomOut
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -181,6 +183,12 @@ fun PlayerScreen(
     onFirstPlaybackPermissionRequest: () -> Unit = {},
     initialPositionMs: Long = -1L,
     onBack: () -> Boolean = { true },
+    onBookClick: (UUID) -> Unit = {},
+    onSeriesClick: (UUID) -> Unit = {},
+    onAuthorClick: (UUID) -> Unit = {},
+    /** FIX 3: عرض الإجمالي بدل المتبقي (يُبدَّل بالنقر على الوقت) — الافتراضي من الإعدادات. */
+    showTotalTime: Boolean = true,
+    onToggleTimeDisplay: () -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel(),
     /** PART 3: فواصل التخطي (ثوانٍ) من الإعدادات — التسميات والسلوك معًا. */
     skipForwardSeconds: Int = 15,
@@ -598,7 +606,6 @@ fun PlayerScreen(
                 }
                 CurrentChapterChip(
                     chapterLabel = currentChapterLabel,
-                    onClick = { expandedPanel = if (expandedPanel == PlayerControlPanel.CHAPTERS) null else PlayerControlPanel.CHAPTERS },
                     fg = fg,
                     modifier = Modifier.weight(1f)
                 )
@@ -642,7 +649,13 @@ fun PlayerScreen(
                         title = title,
                         authorName = playerUi.authorName,
                         seriesName = playerUi.seriesName,
-                        fg = fg
+                        fg = fg,
+                        bookId = playerUi.book?.id,
+                        seriesId = playerUi.book?.seriesId,
+                        authorId = playerUi.book?.authorId,
+                        onBookClick = onBookClick,
+                        onSeriesClick = onSeriesClick,
+                        onAuthorClick = onAuthorClick
                     )
                 }
             }
@@ -678,6 +691,12 @@ fun PlayerScreen(
                 onPreviewNote = { text, pos ->
                     noteAlerts.trySend(NoteAlert(text, pos))
                 },
+                onLevelChange = { level ->
+                    timeline = if (level == TimelineLevel.ZOOMED) PlayerTimelineEditor.zoom(timeline, playback.positionMs)
+                    else PlayerTimelineEditor.overview(timeline)
+                },
+                showTotalTime = showTotalTime,
+                onToggleTimeDisplay = onToggleTimeDisplay,
                 modifier = Modifier
                     .padding(start = AppSpacing.md, end = AppSpacing.md)
                     .onGloballyPositioned { coords ->
@@ -1059,7 +1078,15 @@ private fun sleepStatusLabel(sleepUi: SleepTimerUiState): String {
     }
 }
 
-private fun formatTime(ms: Long): String = "%02d:%02d".format(ms / 60_000, (ms / 1_000) % 60)
+/** MINI-FIX: ساعة ذكية — أقل من ساعة "MM:SS"، وساعة فأكثر "H:MM:SS" (كانت "94:47" تُعرض لدقائق طويلة). */
+private fun formatTime(ms: Long): String {
+    val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
+}
 
 /** ختم زمني للملاحظة: س:د:ث عند تجاوز الساعة، وإلا د:ث. */
 private fun formatNoteTimestamp(ms: Long): String {
@@ -1121,12 +1148,24 @@ private fun PlayerTitleBlock(
     title: String,
     authorName: String,
     seriesName: String,
-    fg: PlayerFg
+    fg: PlayerFg,
+    /** FIX 1: معرّفات التنقل — null = العنصر مخفي/غير قابل للنقر. */
+    bookId: UUID? = null,
+    seriesId: UUID? = null,
+    authorId: UUID? = null,
+    onBookClick: (UUID) -> Unit = {},
+    onSeriesClick: (UUID) -> Unit = {},
+    onAuthorClick: (UUID) -> Unit = {}
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)
     ) {
+        // FIX 1: العنوان قابل للنقر → تفاصيل الكتاب.
+        val titleModifier = if (bookId != null) {
+            Modifier.fillMaxWidth().minTouchTarget().clip(RoundedCornerShape(AppSpacing.xs))
+                .clickable(onClick = { onBookClick(bookId) })
+        } else Modifier.fillMaxWidth()
         Text(
             text = title,
             style = MaterialTheme.typography.displaySmall,
@@ -1135,32 +1174,62 @@ private fun PlayerTitleBlock(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = titleModifier
         )
-        val subtitle = when {
-            authorName.isNotEmpty() && seriesName.isNotEmpty() ->
-                stringResource(R.string.player_author_series, authorName, seriesName)
-            else -> authorName
-        }
-        if (subtitle.isNotEmpty()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = fg.soft,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // FIX 1: السطر الثاني مقسّم — السلسلة والمؤلف عنصران مستقلان قابلا للنقر.
+        if (authorName.isNotEmpty() || seriesName.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (seriesName.isNotEmpty()) {
+                    val seriesModifier = if (seriesId != null) {
+                        Modifier.minTouchTarget().clip(RoundedCornerShape(AppSpacing.xs))
+                            .clickable(onClick = { onSeriesClick(seriesId) })
+                    } else Modifier
+                    Text(
+                        text = seriesName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = fg.soft,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = seriesModifier
+                    )
+                }
+                if (authorName.isNotEmpty() && seriesName.isNotEmpty()) {
+                    Text(
+                        text = " · ",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = fg.soft,
+                        maxLines = 1
+                    )
+                }
+                if (authorName.isNotEmpty()) {
+                    val authorModifier = if (authorId != null) {
+                        Modifier.minTouchTarget().clip(RoundedCornerShape(AppSpacing.xs))
+                            .clickable(onClick = { onAuthorClick(authorId) })
+                    } else Modifier
+                    Text(
+                        text = authorName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = fg.soft,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = authorModifier
+                    )
+                }
+            }
         }
     }
 }
 
-/** اسم الفصل الحالي في الرأس — نص فقط بلا شارة/خلفية/حدود: ينفتح لوحة الفصول عند النقر. */
+/** اسم الفصل الحالي في الرأس — نص فقط للعرض (FIX 5: النقر أُزيل بطلب المستخدم). */
 @Composable
 private fun CurrentChapterChip(
     chapterLabel: String,
-    onClick: () -> Unit,
     fg: PlayerFg,
     modifier: Modifier = Modifier
 ) {
@@ -1169,7 +1238,6 @@ private fun CurrentChapterChip(
         modifier = modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(AppSpacing.sm))
-            .clickable(onClick = onClick)
             .minTouchTarget()
             .semantics { this.contentDescription = description }
             .padding(vertical = 6.dp),
@@ -1226,6 +1294,10 @@ private fun PlayerTimelineSection(
     onChapterMoved: (UUID, Long) -> Unit,
     onSeekToChapter: (Long) -> Unit,
     onPreviewNote: (String, Long) -> Unit,
+    onLevelChange: (TimelineLevel) -> Unit,
+    /** FIX 3: true = عرض الإجمالي، false = عرض المتبقي (يُبدَّل بالنقر). */
+    showTotalTime: Boolean = true,
+    onToggleTimeDisplay: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val positionFraction = if (visibleWindow.last <= visibleWindow.first) 0f
@@ -1270,7 +1342,8 @@ private fun PlayerTimelineSection(
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xs),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             val displayMs = scrubFraction?.let { mkWindowTime(latestWindow.value, it) } ?: positionMs
             Text(
@@ -1278,10 +1351,37 @@ private fun PlayerTimelineSection(
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
                 color = fg.ink
             )
+            // FIX 7 (Phase 7): تبديل نطاق الشريط — كامل الكتاب مقابل نافذة
+            // ±30 دقيقة حول الموضع (ZOOMED). الأيقونة تنعكس مع الحالة.
+            val zoomed = timelineState.level == TimelineLevel.ZOOMED
+            IconButton(
+                onClick = {
+                    onLevelChange(if (zoomed) TimelineLevel.OVERVIEW else TimelineLevel.ZOOMED)
+                },
+                modifier = Modifier.minTouchTarget()
+            ) {
+                Icon(
+                    imageVector = if (zoomed) Icons.Outlined.ZoomOut else Icons.Outlined.ZoomIn,
+                    contentDescription = stringResource(
+                        if (zoomed) R.string.player_timeline_overview else R.string.player_timeline_zoom
+                    ),
+                    tint = if (zoomed) fg.colors.accent else fg.soft,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            // FIX 3: النقر يُبدّل بين المتبقي والإجمالي (الافتراضي: الإجمالي).
+            val rightText = if (showTotalTime) {
+                stringResource(R.string.player_total, formatTime(durationMs.coerceAtLeast(0L)))
+            } else {
+                stringResource(R.string.player_remaining, formatTime((durationMs - displayMs).coerceAtLeast(0L)))
+            }
             Text(
-                stringResource(R.string.player_remaining, formatTime((durationMs - displayMs).coerceAtLeast(0L))),
+                rightText,
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
-                color = fg.soft
+                color = fg.soft,
+                modifier = Modifier.minTouchTarget()
+                    .clip(RoundedCornerShape(AppSpacing.xs))
+                    .clickable(onClick = onToggleTimeDisplay)
             )
         }
     }

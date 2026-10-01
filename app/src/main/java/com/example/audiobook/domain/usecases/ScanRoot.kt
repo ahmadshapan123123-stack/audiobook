@@ -199,6 +199,10 @@ class ScanRoot @Inject constructor(
                 }
                 // عند الإنجاز التام يُقطع checkpoint؛ أما عند الإيقاف فيبقى لاستئناف الفحص التالي.
                 if (!cancelled) checkpointDao.deleteForRoot(root.id)
+                // FIX 4 (Phase 7): التعبئة الرجعية لمرة واحدة — إن دخل فرعها
+                // هذا الفحص، تُستنفد هنا (الفحص المُجهض لا يرفعها فيُعاد
+                // المحاولة في اللاحق).
+                if (!cancelled && report.coverBackfillAttempted) appSettings.setCoverArtBackfillDone(true)
 
                 foundUris.clear()
             }
@@ -591,7 +595,9 @@ class ScanRoot @Inject constructor(
         attachFiles(root, unit, refreshed, report)
         maybeApplyEmbeddedCover(
             refreshed.bookId,
-            unit.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull()
+            unit.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull(),
+            unit.files,
+            report
         )
         return signals
     }
@@ -599,14 +605,45 @@ class ScanRoot @Inject constructor(
     /**
      * FIX C2: غلاف مضمّن → صف الكتاب — فقط إن لم يختر المستخدم غلافًا
      * ولا يوجد مسار أصلًا (لا كتابة فوق اختيار المستخدم أبدًا).
+     *
+     * FIX 4 (Phase 7) — تعبئة رجعية لمرة واحدة: الملفات غير المتغيّرة
+     * تُتخطى قراءتها في prepareFiles، فمكتبة ممسوحة قبل C2 لا تحصل على
+     * فن مضمّن أبدًا. إن غاب الفن الطازج وكان الكتاب بلا غلاف ولم
+     * تُستنفد التعبئة، يُقرأ أول ملف بلا قراءة طازجة فقط (تُتخطى
+     * الملفات المقروءة للتو — إعادة قراءتها تعطي نفس العدم).
+     * يُعلَّم report ليُرفع العلم في نهاية الفحص (بلا إعادة في اللاحق).
      */
-    private suspend fun maybeApplyEmbeddedCover(bookId: UUID, artPath: String?) {
-        if (artPath.isNullOrBlank()) return
+    private suspend fun maybeApplyEmbeddedCover(
+        bookId: UUID,
+        freshArt: String?,
+        files: List<PreparedFile>,
+        report: MutableScanReport
+    ) {
         val book = database.bookDao().getById(bookId) ?: return
         if (book.isCoverUserSelected || !book.coverImagePath.isNullOrBlank()) return
+        val art = if (!freshArt.isNullOrBlank()) {
+            freshArt
+        } else {
+            if (appSettings.coverArtBackfillDone) return
+            backfillFirstArt(files, report)
+        } ?: return
         database.bookDao().update(
-            book.copy(coverImagePath = artPath, coverSource = CoverSource.EMBEDDED)
+            book.copy(coverImagePath = art, coverSource = CoverSource.EMBEDDED)
         )
+    }
+
+    /**
+     * قراءة الفن المضمّن من أول ملف بلا قراءة طازجة فقط — للتعبئة الرجعية
+     * دون إعادة فحص. تُعلَّم المحاولة هنا (عند القراءة الفعلية فقط، لا
+     * عند الدخول) ليُرفع علم المرة الواحدة في نهاية الفحص.
+     */
+    private fun backfillFirstArt(files: List<PreparedFile>, report: MutableScanReport): String? {
+        val target = files.firstOrNull { it.freshMetadata == null } ?: return null
+        report.coverBackfillAttempted = true
+        return runCatching {
+            metadataReader.read(target.scanFile.uri, target.scanFile.fileName, target.scanFile.size)
+                .embeddedArtworkPath
+        }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     /** إرفاق ملفات الكتاب بوحدته — نفس منطق الملفات القديم، لكن بحصة الكتاب لا المجلد. */
@@ -840,7 +877,9 @@ class ScanRoot @Inject constructor(
                     // FIX C2: نفس قاعدة المسار الصارم — غلاف مضمّن دون مساس باختيار المستخدم.
                     maybeApplyEmbeddedCover(
                         edition.bookId,
-                        folder.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull()
+                        folder.files.mapNotNull { it.freshMetadata?.embeddedArtworkPath }.firstOrNull(),
+                        folder.files,
+                        report
                     )
                     result[folderPath] = signals
                     done++
@@ -1146,6 +1185,12 @@ class ScanRoot @Inject constructor(
         var editionsRefined = 0
         var editionsAutoMerged = 0
         var filesDeduped = 0
+        /**
+         * FIX 4 (Phase 7): سُجّل دخول فرع التعبئة الرجعية في هذا الفحص —
+         * يُرفع علم AppSettings لمرة واحدة في نهايته (بلا إعادة قراءة
+         * في الفحوص التالية). خارج التقرير النهائي عمدًا.
+         */
+        var coverBackfillAttempted = false
         fun toReport() = ScanReport(rootId, filesSeen, metadataReads, cacheHits, missingMarked, restored, importedChapters, editionsCreated, editionsRefined, editionsAutoMerged, filesDeduped)
     }
 

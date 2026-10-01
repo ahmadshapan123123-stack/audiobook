@@ -41,6 +41,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _keepScreenOn = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
+    /** بدء التشغيل تلقائيًا عند فتح المشغّل (افتراضي ON). */
+    private val _autoPlayOnOpen = MutableStateFlow(prefs.getBoolean(KEY_AUTO_PLAY_ON_OPEN, true))
+    val autoPlayOnOpen: StateFlow<Boolean> = _autoPlayOnOpen.asStateFlow()
+
+    /** عرض الوقت الإجمالي (بدل المتبقي) في المشغّل — التبديل بالنقر (افتراضي ON = الإجمالي). */
+    private val _showTotalTimeOnPlayer = MutableStateFlow(prefs.getBoolean(KEY_SHOW_TOTAL_TIME, true))
+    val showTotalTimeOnPlayer: StateFlow<Boolean> = _showTotalTimeOnPlayer.asStateFlow()
+
     /** PART 3: فواصل التخطي (ثوانٍ) — تقديم/تأخير، افتراضي 15. */
     private val _skipForwardSeconds = MutableStateFlow(prefs.getInt(KEY_SKIP_FORWARD, DEFAULT_SKIP_SECONDS))
     val skipForwardSeconds: StateFlow<Int> = _skipForwardSeconds.asStateFlow()
@@ -115,6 +123,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _scanMode = MutableStateFlow(loadScanMode())
     val scanMode: StateFlow<ScanMode> = _scanMode.asStateFlow()
 
+    /**
+     * FIX 4 (Phase 7): التعبئة الرجعية لأغلفة الكتب المضمّنة — لمرة واحدة.
+     * مكتبة ممسوحة قبل C2 لا تحمل فنًا؛ أول فحص لاحق يقرأ ملفًا واحدًا
+     * لكل كتاب بلا غلاف ثم يُستنفد العلم فلا تُعاد القراءة أبدًا.
+     */
+    private val _coverArtBackfillDone = MutableStateFlow(scanPrefs.getBoolean(KEY_COVER_BACKFILL_DONE, false))
+    val coverArtBackfillDone: Boolean get() = _coverArtBackfillDone.value
+
     // ── Onboarding / Demo ──
     private val _hasCompletedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false))
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
@@ -174,6 +190,16 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     fun setKeepScreenOn(value: Boolean) {
         _keepScreenOn.value = value
         prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
+    }
+
+    fun setAutoPlayOnOpen(value: Boolean) {
+        _autoPlayOnOpen.value = value
+        prefs.edit().putBoolean(KEY_AUTO_PLAY_ON_OPEN, value).apply()
+    }
+
+    fun setShowTotalTimeOnPlayer(value: Boolean) {
+        _showTotalTimeOnPlayer.value = value
+        prefs.edit().putBoolean(KEY_SHOW_TOTAL_TIME, value).apply()
     }
 
     fun setDefaultSleepMinutes(value: Int) {
@@ -288,6 +314,12 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         scanPrefs.edit().putString(KEY_SCAN_MODE, value.name).apply()
     }
 
+    fun setCoverArtBackfillDone(value: Boolean) {
+        if (_coverArtBackfillDone.value == value) return
+        _coverArtBackfillDone.value = value
+        scanPrefs.edit().putBoolean(KEY_COVER_BACKFILL_DONE, value).apply()
+    }
+
     private fun loadThemeMode(): AppThemeMode =
         appearancePrefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
             ?.let { runCatching { AppThemeMode.valueOf(it) }.getOrDefault(AppThemeMode.DARK) }
@@ -314,6 +346,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_AUTO_RESUME = "auto_resume"
         const val KEY_AUTO_NEXT_CHAPTER = "auto_next_chapter"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_AUTO_PLAY_ON_OPEN = "auto_play_on_open"
+        const val KEY_SHOW_TOTAL_TIME = "show_total_time_on_player"
         const val KEY_SKIP_FORWARD = "skip_forward_seconds"
         const val KEY_SKIP_BACKWARD = "skip_backward_seconds"
         const val KEY_PAUSE_ON_DISCONNECT = "pause_on_audio_disconnect"
@@ -333,6 +367,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_INTELLIGENCE_LEVEL = "intelligence_level"
         const val KEY_AUTO_SERIES = "auto_series_classification"
         const val KEY_SCAN_MODE = "scan_mode"
+        const val KEY_COVER_BACKFILL_DONE = "cover_art_backfill_done"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         const val KEY_HAS_SKIPPED_ONBOARDING = "has_skipped_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"

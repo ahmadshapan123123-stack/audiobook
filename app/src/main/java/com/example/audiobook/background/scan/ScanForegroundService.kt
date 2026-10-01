@@ -226,9 +226,14 @@ class ScanForegroundService : Service() {
         return getString(com.example.audiobook.R.string.notif_scan_eta, formatDuration(remainingMs))
     }
 
+    /** MINI-FIX: ساعة ذكية للوقت المتبقي في إشعار الفحص — أقل من ساعة "MM:SS"، وساعة فأكثر "H:MM:SS". */
     private fun formatDuration(ms: Long): String {
         val totalSeconds = (ms / 1000).coerceAtLeast(0)
-        return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+        val hours = totalSeconds / 3_600
+        val minutes = (totalSeconds % 3_600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
+        else "%02d:%02d".format(minutes, seconds)
     }
 
     private suspend fun runRequest(request: ScanRequest) {
