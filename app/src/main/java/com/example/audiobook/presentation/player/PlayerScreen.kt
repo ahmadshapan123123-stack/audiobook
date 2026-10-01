@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1346,10 +1347,13 @@ private fun PlayerTimelineSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val displayMs = scrubFraction?.let { mkWindowTime(latestWindow.value, it) } ?: positionMs
+            // FIX-ALIGN: نفس ارتفاع 48dp للعناصر الثلاثة مع توسيط المحتوى داخليًا —
+            // النص بلا ذلك يُرسم أعلى صندوقه فيبدو خارج خط الأساس.
             Text(
                 formatTime(displayMs),
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
-                color = fg.ink
+                color = fg.ink,
+                modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically)
             )
             // FIX 7 (Phase 7): تبديل نطاق الشريط — كامل الكتاب مقابل نافذة
             // ±30 دقيقة حول الموضع (ZOOMED). الأيقونة تنعكس مع الحالة.
@@ -1380,6 +1384,7 @@ private fun PlayerTimelineSection(
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = SpaceGroteskFamily),
                 color = fg.soft,
                 modifier = Modifier.minTouchTarget()
+                    .wrapContentHeight(Alignment.CenterVertically)
                     .clip(RoundedCornerShape(AppSpacing.xs))
                     .clickable(onClick = onToggleTimeDisplay)
             )

@@ -138,20 +138,14 @@ fun MiniPlayer(
         blurRadius = 30.dp
     )
 
+    // FIX-FRAME: الـgraphicsLayer هو الأبعد (قبل الظل/الخلفية/الحد) —
+    // الرسم في Compose خارج→داخل: graphicsLayer داخلي كان يحرّك المحتوى
+    // وحده بينما الظل والخلفية الزجاجية والحد تُرسم ثابتة في موضع التخطيط.
+    // الآن الإطار كله (ظل + زجاج + حد + محتوى) يتحرك معًا أثناء السحب.
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = AppSpacing.md)
-            .shadow(
-                elevation = 12.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.40f),
-                spotColor = Color.Black.copy(alpha = 0.40f)
-            )
-            .clip(shape)
-            .background(glass, shape)
-            .border(1.dp, fg.colors.popupOutline, shape)
-            .hazeChild(haze, miniGlassStyle)
             .graphicsLayer {
                 val slideInPx = (1f - appear.value) * 80.dp.toPx()
                 translationY = dismissOffsetPx + slideInPx
@@ -164,6 +158,16 @@ fun MiniPlayer(
                 scaleX = shrink
                 scaleY = shrink
             }
+            .shadow(
+                elevation = 12.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.40f),
+                spotColor = Color.Black.copy(alpha = 0.40f)
+            )
+            .clip(shape)
+            .background(glass, shape)
+            .border(1.dp, fg.colors.popupOutline, shape)
+            .hazeChild(haze, miniGlassStyle)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     // requireUnconsumed=false عمدًا: زر التشغيل/الإيقاف يستهلك

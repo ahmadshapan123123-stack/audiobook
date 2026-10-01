@@ -182,6 +182,9 @@ class ExoPlaybackController @Inject constructor(
         // الضبط ولا تقفز لموضع القاعدة؛ أبقِ موضع ExoPlayer الحي. الحالة
         // المعلنة محدّثة أصلًا، فلا شيء يُفعل هنا إطلاقًا.
         if (editionId == this.editionId && player.playbackState != Player.STATE_IDLE) {
+            // PART 0: نفس النسخة محمّلة — لا إعادة ضبط، لكن التشغيل التلقائي
+            // يُحترم (play() بلا أثر إن كان يعمل أصلًا ولا يمسّ الموضع).
+            if (appSettings.autoPlayOnOpen.value) play()
             return
         }
         this.editionId = editionId
@@ -258,9 +261,15 @@ class ExoPlaybackController @Inject constructor(
         val index = player.currentMediaItemIndex.coerceIn(0, items.lastIndex)
         val positionMs = player.currentPosition
         runCatching {
+            // PART 0 (سبب التشغيل التلقائي المكسور): كان `if (!isPlaying) pause()`
+            // يقرأ حالة التدفق اللحظية — أثناء التخزين المؤقت بعد فتح جديد
+            // (play() طُلب للتو وplayWhenReady=true) تكون isPlaying=false
+            // فيُقتل التشغيل التلقائي. نحفظ نية التشغيل ونستعيدها حرفيًا:
+            // متوقف يبقى متوقفًا، وطالب التشغيل يواصل.
+            val wasPlayRequested = player.playWhenReady
             player.setMediaItems(items, index, positionMs)
             player.prepare()
-            if (!player.isPlaying) player.pause()
+            player.playWhenReady = wasPlayRequested
         }
     }
 
