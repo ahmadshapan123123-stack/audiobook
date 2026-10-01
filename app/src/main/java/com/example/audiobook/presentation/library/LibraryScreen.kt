@@ -101,6 +101,7 @@ import com.example.audiobook.presentation.common.MoveBookTab
 import com.example.audiobook.presentation.common.cleanDisplayTitle
 import com.example.audiobook.presentation.theme.AppSpacing
 import com.example.audiobook.presentation.theme.AtherCoverBlock
+import com.example.audiobook.presentation.theme.bottomContentInset
 import com.example.audiobook.presentation.theme.bottomContentPadding
 import com.example.audiobook.presentation.theme.minTouchTarget
 import java.util.UUID
@@ -528,6 +529,9 @@ fun LibraryScreen(
                 }
             }
         }
+        // FIX-BAR-INSET: حشوة سفلية بعد شريط الإجراءات — كان آخر طفل بلا
+        // حشوة فيجلس خلف المصغّر وشريط التنقل المتراكبين. (نمط HomeScreen نفسه.)
+        Spacer(Modifier.height(bottomContentInset()))
         }
     }
     if (selectionMode) {
