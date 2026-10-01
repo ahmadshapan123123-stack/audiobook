@@ -37,9 +37,10 @@ object Cosmic {
     val Teal = Color(0xFF2DD4BF)
     val TealDeep = Color(0xFF0B6E63)
     val TealBright = Color(0xFF45E0CC)
-    val StardustViolet = Color(0xFF7C3AED)
-    val VioletDeep = Color(0xFF6D28D9)
-    val VioletSoft = Color(0xFFA78BFA)
+    // FIX-BLUE: الزرقة الهادئة هي لهجة أثير (طلب المستخدم).
+    val StardustViolet = Color(0xFF3B82F6)
+    val VioletDeep = Color(0xFF2563EB)
+    val VioletSoft = Color(0xFF93C5FD)
     val StardustMagenta = Color(0xFFD946EF)
     val StardustAmber = Color(0xFFF59E0B)
     val MoonIce = Color(0xFFEDF2FF)
@@ -71,18 +72,18 @@ val SpaceGroteskFamily = FontFamily(
 // ===== سديم (فاتح كوني) =====
 private fun nebulaScheme() = lightColorScheme(
     // FIX-VIOLET: عائلة البنفسجي بدل التركواز في الوضع الفاتح.
-    primary = Color(0xFF6D28D9),
+    primary = Color(0xFF2563EB),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE8DAFF),
-    onPrimaryContainer = Color(0xFF25075A),
+    primaryContainer = Color(0xFFDBEAFE),
+    onPrimaryContainer = Color(0xFF1E3A8A),
     secondary = Color(0xFF945E00),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFFFDEA5),
     onSecondaryContainer = Color(0xFF2F1B00),
-    tertiary = Color(0xFF6D28D9),
+    tertiary = Color(0xFF1D4ED8),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE8DAFF),
-    onTertiaryContainer = Color(0xFF25075A),
+    tertiaryContainer = Color(0xFFDBEAFE),
+    onTertiaryContainer = Color(0xFF1E3A8A),
     background = Cosmic.DawnTop,
     onBackground = Color(0xFF1D1B3B),
     surface = Color(0xFFFBFAFF),
@@ -103,16 +104,16 @@ private fun nightScheme(amoled: Boolean) = darkColorScheme(
     // FIX-VIOLET: البنفسجي الكوني أساسي الليل (تباين الأبيض عليه ≥4.5:1).
     primary = Cosmic.StardustViolet,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF3B1D7A),
-    onPrimaryContainer = Color(0xFFDCCBFF),
+    primaryContainer = Color(0xFF1E3A8A),
+    onPrimaryContainer = Color(0xFFBFDBFE),
     secondary = Color(0xFFF5B942),
     onSecondary = Color(0xFF3E2A00),
     secondaryContainer = Color(0xFF5C4300),
     onSecondaryContainer = Color(0xFFFFDEA5),
-    tertiary = Color(0xFFB98CFF),
-    onTertiary = Color(0xFF381566),
-    tertiaryContainer = Color(0xFF57318A),
-    onTertiaryContainer = Color(0xFFE9DBFF),
+    tertiary = Color(0xFF93C5FD),
+    onTertiary = Color(0xFF172554),
+    tertiaryContainer = Color(0xFF1E40AF),
+    onTertiaryContainer = Color(0xFFDBEAFE),
     background = if (amoled) Color.Black else Cosmic.InkBottom,
     onBackground = Cosmic.MoonIce,
     surface = if (amoled) Color(0xFF07070C) else Color(0xFF131A38),
@@ -156,8 +157,8 @@ data class AppAccent(val accent: Color, val onAccent: Color)
 fun appAccentFor(mode: AppThemeMode): AppAccent = when (mode) {
     // FIX-VIOLET: لهجة بنفسجية بتباين مضمون (أبيض على العميق، بنفسج داكن على الفاتح).
     AppThemeMode.LIGHT -> AppAccent(accent = Cosmic.VioletDeep, onAccent = Color(0xFFFFFFFF))
-    AppThemeMode.DARK -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF241245))
-    AppThemeMode.AMOLED -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF241245))
+    AppThemeMode.DARK -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF172554))
+    AppThemeMode.AMOLED -> AppAccent(accent = Cosmic.VioletSoft, onAccent = Color(0xFF172554))
 }
 
 val LocalAppAccent = staticCompositionLocalOf { AppAccent(Color.Unspecified, Color.Unspecified) }

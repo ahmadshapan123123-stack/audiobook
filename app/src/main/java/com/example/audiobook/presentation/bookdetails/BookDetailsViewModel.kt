@@ -51,7 +51,7 @@ data class BookDetailsUiState(
     val chapters: List<ChapterEntity> = emptyList(),
     val bookmarks: List<BookmarkEntity> = emptyList(),
     val progress: ListeningProgressEntity? = null,
-    val coverColor: Long = 0xFF6D28D9,
+    val coverColor: Long = 0xFF2563EB,
     val allAuthors: List<AuthorEntity> = emptyList(),
     val allSeries: List<SeriesEntity> = emptyList()
 )
@@ -129,7 +129,7 @@ class BookDetailsViewModel @Inject constructor(
             coverColor = parseColor(
                 series.firstOrNull { it.id == book?.seriesId }?.colorTheme
                     ?: authors.firstOrNull { it.id == book?.authorId }?.colorTheme,
-                0xFF6D28D9
+                0xFF2563EB
             ),
             allAuthors = authors,
             allSeries = series

@@ -58,7 +58,7 @@ internal fun buildEntityBookRows(
             editionId = edition?.id,
             coverColor = parseColor(
                 seriesById[book.seriesId]?.colorTheme ?: book.authorId?.let { authorById[it]?.colorTheme },
-                0xFF6D28D9
+                0xFF2563EB
             ),
             coverImagePath = book.coverImagePath,
             progressFraction = fraction,

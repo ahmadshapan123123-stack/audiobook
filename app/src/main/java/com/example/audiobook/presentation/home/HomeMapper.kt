@@ -44,7 +44,7 @@ internal object HomeMapper {
                 coverColor = parseColor(
                     book.seriesId?.let { seriesById[it]?.colorTheme }
                         ?: book.authorId?.let { authorById[it]?.colorTheme },
-                    0xFF6D28D9
+                    0xFF2563EB
                 ),
                 coverImagePath = book.coverImagePath,
                 genre = book.genre,

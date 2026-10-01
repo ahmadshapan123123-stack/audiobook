@@ -130,7 +130,7 @@ class SavedViewModel @Inject constructor(
         fun coverColor(book: BookEntity): Long {
             val theme = book.seriesId?.let { seriesById[it]?.colorTheme }
                 ?: book.authorId?.let { authorById[it]?.colorTheme }
-            return parseColor(theme, 0xFF6D28D9)
+            return parseColor(theme, 0xFF2563EB)
         }
 
         /** الفصل المنطبق على موضع (أقرب فصل يبدأ قبل الموضع). */

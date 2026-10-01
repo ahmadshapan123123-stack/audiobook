@@ -201,6 +201,9 @@
     <string name="bd_edition_default_yes">الافتراضي</string>
     <string name="bd_edition_delete">حذف</string>
     <string name="bd_edition_split">إنشاء نسخة</string>
+    <string name="bd_edition_merge">دمج في نسخة واحدة</string>
+    <string name="bd_edition_merge_title">ادمج النسخ في نسخة واحدة</string>
+    <string name="bd_edition_merge_desc">تُنقل ملفات النسخة المختارة وتقدّمها وعلاماتها إلى هذه النسخة ثم تُحذف المختارة.</string>
     <string name="bd_edition_file_format">%1$s · %2$s</string>
     <string name="bd_duration_warning">المدة تبدو غير منطقية (أكثر من 24 ساعة)</string>
     <string name="bd_duration_warning_desc">تحذير مدة غير منطقية</string>

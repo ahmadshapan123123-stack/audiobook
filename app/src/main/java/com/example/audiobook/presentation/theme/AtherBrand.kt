@@ -14,10 +14,10 @@ object AtherCosmic {
     const val Teal: Int = 0xFF2DD4BF.toInt()
     const val TealDeep: Int = 0xFF0B6E63.toInt()
     const val TealBright: Int = 0xFF45E0CC.toInt()
-    const val StardustViolet: Int = 0xFF7C3AED.toInt()
-    // FIX-VIOLET: ثنائي اللهجة البنفسجية (عميق/فاتح) — يطابق Cosmic.
-    const val VioletDeep: Int = 0xFF6D28D9.toInt()
-    const val VioletSoft: Int = 0xFFA78BFA.toInt()
+    // FIX-BLUE: ثنائي اللهجة الزرقاء (عميق/فاتح) — يطابق Cosmic.
+    const val StardustViolet: Int = 0xFF3B82F6.toInt()
+    const val VioletDeep: Int = 0xFF2563EB.toInt()
+    const val VioletSoft: Int = 0xFF93C5FD.toInt()
     const val StardustMagenta: Int = 0xFFD946EF.toInt()
     const val StardustAmber: Int = 0xFFF59E0B.toInt()
     const val MoonIce: Int = 0xFFEDF2FF.toInt()
@@ -39,11 +39,11 @@ object AtherCosmic {
  */
 object AtherAccent {
     /** بدء تدرج "هادئ" أفقي موازٍ لـ PlayerGradientResolver.defaultGradient بدون تعتيم الفاتح. */
-    // FIX-VIOLET: الافتراضيات الداكنة بنفسجية الصبغة (كانت تركوازية).
+    // FIX-BLUE: الافتراضيات الداكنة زرقاء الصبغة.
     private fun defaultStart(mode: AppThemeMode): Int = when (mode) {
         AppThemeMode.LIGHT -> 0xFFE4D7C6.toInt()
-        AppThemeMode.DARK -> 0xFF2B2350.toInt()
-        AppThemeMode.AMOLED -> 0xFF191233.toInt()
+        AppThemeMode.DARK -> 0xFF1E2A4A.toInt()
+        AppThemeMode.AMOLED -> 0xFF101A30.toInt()
     }
 
     /** أول لون متاح ضمن التدرج (سلسلة ← مؤلف ← غلاف) أو افتراضي الوضع. */

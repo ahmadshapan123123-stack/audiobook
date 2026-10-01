@@ -423,7 +423,7 @@ private fun HistorySection(rows: List<ListeningHistoryRow>, onShowHistory: () ->
 
 private fun coverColorOf(colorTheme: String?): Color {
     val parsed = runCatching { android.graphics.Color.parseColor(colorTheme) }.getOrNull()
-    return if (parsed != null) Color(parsed.toLong() or 0xFF000000) else Color(0xFF6D28D9)
+    return if (parsed != null) Color(parsed.toLong() or 0xFF000000) else Color(0xFF2563EB)
 }
 
 @Composable

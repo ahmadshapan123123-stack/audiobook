@@ -273,6 +273,14 @@ class BookManagerViewModel @Inject constructor(
 
     fun addAudioFile(opts: BookOptionsContext, editionId: UUID, uri: Uri) {
         viewModelScope.launch {
+            // FIX-URI: إذن دائم للقراءة — بدونه يموت الـURI بعد إعادة التشغيل
+            // فيصبح الملف المضاف غير قابل للتشغيل. try/catch لبعض الموفرين.
+            runCatching {
+                appContext.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             val edition = editionDao.getById(editionId)
             if (edition == null || edition.bookId != opts.bookId) {
                 _messages.value = OpMessage(R.string.add_file_no_edition, undolable = false)

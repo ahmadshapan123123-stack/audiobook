@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 data class CollectionDetailsUiState(
     val collection: CollectionEntity? = null,
     val books: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF6D28D9,
+    val coverColor: Long = 0xFF2563EB,
     val allBooks: List<BookEntity> = emptyList(),
     val candidateBooks: List<EntityBookRow> = emptyList()
 )
@@ -113,7 +113,7 @@ class CollectionDetailsViewModel @Inject constructor(
         CollectionDetailsUiState(
             collection = collection,
             books = rows,
-            coverColor = parseColor(null, 0xFF6D28D9),
+            coverColor = parseColor(null, 0xFF2563EB),
             allBooks = books,
             candidateBooks = candidates
         )

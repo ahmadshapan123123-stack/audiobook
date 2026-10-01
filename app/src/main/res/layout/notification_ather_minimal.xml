@@ -16,7 +16,7 @@
         android:layout_width="match_parent"
         android:layout_height="3dp"
         android:orientation="vertical"
-        android:background="#7C3AED" />
+        android:background="#3B82F6" />
 
     <TextView
         android:id="@+id/ather_minimal_title"

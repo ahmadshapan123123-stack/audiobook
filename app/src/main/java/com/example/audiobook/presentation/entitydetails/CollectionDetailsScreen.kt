@@ -12,10 +12,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -96,17 +98,19 @@ fun CollectionDetailsScreen(
                 coverColor = Color(state.coverColor.toInt())
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                OutlinedButton(onClick = { showEditDialog = true }) {
-                    Text(stringResource(R.string.collection_menu_edit))
+            // FIX-COLL-BTN: هرمية واضحة — إضافة (رئيسي) + تعديل (ثانوي) + حذف (مدمّر ثالثي)، كلها 48dp.
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                Button(onClick = { showAddBook = true }, modifier = Modifier.minTouchTarget()) {
+                    Text(stringResource(R.string.series_add_book))
                 }
-                OutlinedButton(onClick = { showDeleteDialog = true }) {
-                    Text(stringResource(R.string.collection_menu_delete), color = MaterialTheme.colorScheme.error)
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                    OutlinedButton(onClick = { showEditDialog = true }, modifier = Modifier.minTouchTarget()) {
+                        Text(stringResource(R.string.collection_menu_edit))
+                    }
+                    TextButton(onClick = { showDeleteDialog = true }, modifier = Modifier.minTouchTarget()) {
+                        Text(stringResource(R.string.collection_menu_delete), color = MaterialTheme.colorScheme.error)
+                    }
                 }
-            }
-
-            OutlinedButton(onClick = { showAddBook = true }) {
-                Text(stringResource(R.string.series_add_book))
             }
 
             if (showEditDialog) {

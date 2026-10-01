@@ -56,7 +56,7 @@ data class AuthorDetailsUiState(
     val continueRow: EntityBookRow? = null,
     val firstEditionId: UUID? = null,
     val candidateBooks: List<EntityBookRow> = emptyList(),
-    val coverColor: Long = 0xFF6D28D9,
+    val coverColor: Long = 0xFF2563EB,
     val allAuthors: List<AuthorEntity> = emptyList()
 )
 
@@ -158,7 +158,7 @@ class AuthorDetailsViewModel @Inject constructor(
             continueRow = rows.filter { it.hasProgress }.maxByOrNull { it.progressFraction },
             firstEditionId = rows.firstNotNullOfOrNull { it.editionId },
             candidateBooks = candidateRows,
-            coverColor = parseColor(author?.colorTheme, 0xFF6D28D9),
+            coverColor = parseColor(author?.colorTheme, 0xFF2563EB),
             allAuthors = authors.filter { it.id != authorId }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuthorDetailsUiState())

@@ -48,6 +48,10 @@ class EditionMerge @Inject constructor(private val database: AppDatabase) {
 
         persistDecision(subject, candidate)
         if (userInitiated) database.editionDao().update(subject.copy(isUserConfirmed = true))
+        // FIX-COVER: وراثة الغلاف — الغلاف على مستوى الكتاب، وحذف المرشح
+        // (وكتابه اليتيم) كان يفقده. الأولوية: مختار-المستخدم > مضمّن > لا شيء.
+        // يُنسخ غلاف المرشح إلى كتاب المحتفَظ به فقط إن كان بلا غلاف أصلًا.
+        inheritCoverIfMissing(subject.bookId, candidate.bookId)
         database.editionDao().delete(candidate)
         cleanupOrphanBook(candidate)
         return subject.id
@@ -72,6 +76,26 @@ class EditionMerge @Inject constructor(private val database: AppDatabase) {
                 signalsSnapshot = EditionSignalsCodec.toJson(subjectSignals, candidateSignals),
                 userDecision = UserDecision.SAME_EDITION,
                 createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    /**
+     * FIX-COVER: نسخ غلاف كتاب المرشح إلى كتاب المحتفَظ به عند الحاجة —
+     * لا شيء يُكتب فوق اختيار المستخدم أبدًا (كتاب المحتفَظ به إما فارغ
+     * الغلاف فيُملأ، أو له غلاف فيُحترم).
+     */
+    private suspend fun inheritCoverIfMissing(subjectBookId: UUID, candidateBookId: UUID) {
+        if (subjectBookId == candidateBookId) return
+        val subjectBook = database.bookDao().getById(subjectBookId) ?: return
+        if (!subjectBook.coverImagePath.isNullOrBlank() || subjectBook.isCoverUserSelected) return
+        val candidateBook = database.bookDao().getById(candidateBookId) ?: return
+        if (candidateBook.coverImagePath.isNullOrBlank()) return
+        database.bookDao().update(
+            subjectBook.copy(
+                coverImagePath = candidateBook.coverImagePath,
+                coverSource = candidateBook.coverSource,
+                isCoverUserSelected = candidateBook.isCoverUserSelected
             )
         )
     }
