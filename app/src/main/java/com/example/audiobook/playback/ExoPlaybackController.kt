@@ -6,9 +6,11 @@ import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -62,8 +64,21 @@ class ExoPlaybackController @Inject constructor(
     private val bookCompletionNotifier: BookCompletionNotifier
 ) : PlaybackController {
     private val appContext: Context = context.applicationContext
-    /** كائن ExoPlayer الفعلي؛ يُكشَف فقط لبناء MediaSession في PlaybackService. */
-    internal val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
+    /**
+     * FIX 1.2 — ضبط تخزين مؤقت للملفات الكبيرة/المدمجة: 30ث أدنى، 120ث أقصى،
+     * 2.5ث قبل بدء التشغيل، 5ث بعد إعادة التخزين. الافتراضي كان أصغر فيسبب
+     * توقفًا ظاهريًا ("الزر لا يعمل") على الملفات الطويلة.
+     */
+    internal val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext)
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(30_000, 120_000, 2_500, 5_000)
+                .build()
+        )
+        .build()
+    /** FIX 1.2 — آخر خطأ تشغيل يُعرض في الواجهة عبر Snackbar. */
+    private val mutablePlaybackError = MutableStateFlow<String?>(null)
+    val playbackError: StateFlow<String?> = mutablePlaybackError.asStateFlow()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
     private val mutableState = MutableStateFlow(PlaybackState())
     override val state: StateFlow<PlaybackState> = mutableState.asStateFlow()
@@ -163,7 +178,10 @@ class ExoPlaybackController @Inject constructor(
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                // يُطبَّق سلوك التوقف عند الملفات المفقودة عبر onMediaItemTransition و stopAtMissingBoundaryIfNeeded
+                // FIX 1.2 — كان صامتًا فيُظن أن "الزر لا يعمل". الآن: سجل + رسالة للمستخدم.
+                Log.e("ExoPlayback", "Playback failed: ${error.errorCode} ${error.message}", error)
+                mutablePlaybackError.value = "تعذّر التشغيل. تحقق من الملف."
+                mutableState.value = mutableState.value.copy(isPlaying = false, missingFileMessage = "تعذّر التشغيل. تحقق من الملف.")
             }
 
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -191,7 +209,12 @@ class ExoPlaybackController @Inject constructor(
         lastChapterCheckPositionMs = -1L
         PlaybackStateHolder.update(editionId)
         files = database.audioFileDao().getByParent(editionId)
-        playableFiles = files.filter { it.fileStatus == FileStatus.AVAILABLE }
+        // FIX 1.2 — تحقق من صلاحية كل ملف قبل البناء: uri غير فارغ + متاح + مدة موجبة.
+        // الملفات المدمجة القديمة قد تحمل مدة صفرية فتُسكت المشغّل.
+        val invalidCount = files.count { it.fileUri.isBlank() || it.fileStatus != FileStatus.AVAILABLE || it.durationMs <= 0L }
+        if (invalidCount > 0) Log.w("ExoPlayback", "openEdition $editionId: skipping $invalidCount invalid files of ${files.size}")
+        playableFiles = files.filter { it.fileUri.isNotBlank() && it.fileStatus == FileStatus.AVAILABLE && it.durationMs > 0L }
+        mutablePlaybackError.value = null
         timeline = EditionTimeline(files.map { TimelineItem(it.fileUri, it.durationMs, it.fileStatus == FileStatus.AVAILABLE) })
         val progress = database.progressDao().getByParent(editionId)
         if (progress?.status == ProgressStatus.FINISHED) finishedMarkMs = timeline.durationMs

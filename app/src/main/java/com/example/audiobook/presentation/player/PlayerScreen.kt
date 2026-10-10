@@ -1061,7 +1061,10 @@ internal fun Color.playerAccent(onLightBackground: Boolean): Color =
 
 private fun visibleWindowMs(state: PlayerTimelineState, positionMs: Long): LongRange {
     if (state.level != TimelineLevel.ZOOMED || state.durationMs <= 0L) return 0L..state.durationMs.coerceAtLeast(1L)
-    val half = 30 * 60_000L
+    // FIX 2.2 — نافذة تكيفية: الإجمالي = الأصغر بين 50د والأكبر بين 5د و(المدة/4).
+    // ملف 20د → 5د إجمالي؛ 10 ساعات → 50د إجمالي. half = الإجمالي/2 لكل جهة.
+    val totalWindow = minOf(50 * 60_000L, maxOf(5 * 60_000L, state.durationMs / 4L))
+    val half = totalWindow / 2L
     val start = (positionMs - half).coerceIn(0L, state.durationMs)
     val end = (positionMs + half).coerceIn(start, state.durationMs)
     return start..end

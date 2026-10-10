@@ -217,6 +217,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         lifecycleScope.launch { recoverInterruptedSession() }
         lifecycleScope.launch { scanScheduler.scheduleStartupScans() }
+        // PART 3 — تعبئة حدود الدمج لمرة واحدة (دمج قديم بلا فصول): رخيصة
+        // وتتخطى ما له فصول، فلا تمس بيانات المستخدم.
+        lifecycleScope.launch {
+            if (!appSettings.mergeBoundaryBackfillDone) {
+                runCatching { libraryManagement.backfillMergeBoundaries() }
+                appSettings.setMergeBoundaryBackfillDone(true)
+            }
+        }
         reminderScheduler.syncWithSettings()
         // حقن بيانات التجربة على إصدارات التصحيح فقط (مرجعها ثابت الكذب في الإنتاج فتُشذَّب).
         // وفي إصدار الإنتاج تُنظَّف أي بقايا كتب تجريبية قادمة من ترقية بعد استخدام نسخة تصحيح.

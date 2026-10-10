@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Image
@@ -256,8 +257,10 @@ fun BookDetailsScreen(
                     )
                 }
             }
-            "editions" -> EditionManagement(uiState.editions, uiState.defaultEditionId, viewModel)
+            "editions" -> EditionManagement(uiState.editions, uiState.defaultEditionId, viewModel, onPlay)
             "content" -> {
+                // FIX 3.2 — تبويب المحتوى يعرض الفصول مرتبة بـ startPositionMs (لا شريط
+                // تقدم لكل فصل — التقدم مخزّن لكل إصدار في ListeningProgressEntity).
                 Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     SectionTitle(stringResource(R.string.bd_content_chapters_header, uiState.chapters.size))
                     Text(stringResource(R.string.bd_jump_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -335,7 +338,7 @@ private fun ChapterRow(number: Int, title: String, positionMs: Long, onClick: ()
 }
 
 @Composable
-private fun EditionManagement(editions: List<EditionEntity>, defaultId: UUID?, viewModel: BookDetailsViewModel) {
+private fun EditionManagement(editions: List<EditionEntity>, defaultId: UUID?, viewModel: BookDetailsViewModel, onPlay: (UUID) -> Unit) {
     SectionTitle(stringResource(R.string.bd_editions_header))
     if (editions.isEmpty()) {
         Text(stringResource(R.string.bd_content_none), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -380,54 +383,62 @@ private fun EditionManagement(editions: List<EditionEntity>, defaultId: UUID?, v
                 }
                 OutlinedTextField(label, { label = it }, label = { Text(edition.label) }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(narrator, { narrator = it }, label = { Text(stringResource(R.string.bd_edition_narrator_change)) }, modifier = Modifier.fillMaxWidth())
-                // FIX-ED-BTN: هرمية واضحة — حفظ (رئيسي) + تعيين-افتراضي (ثانوي محيط)
-                // + حذف (مدمّر أحمر) + إنشاء-نسخة (ثالثي). (بلا FlowRow: غير معتمد في المشروع.)
+                // FIX-1.1+3.1: هرمية واضحة — تشغيل كل نسخة + حفظ (رئيسي) +
+                // تعيين-افتراضي وإنشاء-نسخة (ثانوي محيط) + دمج وحذف (ثالثي/مدمّر).
+                // (بلا FlowRow: غير معتمد في المشروع.)
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    Button(onClick = { onPlay(edition.id) }, modifier = Modifier.minTouchTarget()) {
+                        Icon(imageVector = Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(AppSpacing.xxs))
+                        Text(stringResource(R.string.bd_play_default))
+                    }
                     FilledTonalButton(onClick = {
                         viewModel.renameEdition(edition, label)
                         viewModel.changeNarrator(edition, narrator.ifBlank { null })
                     }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_save)) }
-                    OutlinedButton(onClick = { viewModel.setDefaultEdition(edition.id) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_set_default)) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                    TextButton(onClick = { viewModel.deleteEdition(edition) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_delete), color = MaterialTheme.colorScheme.error) }
-                    TextButton(onClick = { viewModel.splitEdition(edition) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_split)) }
+                    OutlinedButton(onClick = { viewModel.setDefaultEdition(edition.id) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_set_default)) }
+                    OutlinedButton(onClick = { viewModel.splitEdition(edition) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_split)) }
                 }
-                // FIX-MERGE-UI: زر دمج النسخ (كان mergeEditions موجودًا بلا واجهة) —
-                // يختلف عن "دمج مع كتاب آخر" (نقل النسخ بين كتابين).
-                if (editions.size > 1) {
-                    var mergeOpen by remember(edition.id) { mutableStateOf(false) }
-                    TextButton(onClick = { mergeOpen = true }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_merge)) }
-                    if (mergeOpen) {
-                        AlertDialog(
-                            onDismissRequest = { mergeOpen = false },
-                            title = { Text(stringResource(R.string.bd_edition_merge_title)) },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                                    Text(
-                                        stringResource(R.string.bd_edition_merge_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    editions.filter { it.id != edition.id }.forEach { other ->
-                                        TextButton(
-                                            onClick = {
-                                                viewModel.mergeEditions(edition.id, other.id)
-                                                mergeOpen = false
-                                            },
-                                            modifier = Modifier.minTouchTarget()
-                                        ) { Text(other.label) }
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    // FIX-MERGE-UI: زر دمج النسخ (كان mergeEditions موجودًا بلا واجهة) —
+                    // يختلف عن "دمج مع كتاب آخر" (نقل النسخ بين كتابين).
+                    if (editions.size > 1) {
+                        var mergeOpen by remember(edition.id) { mutableStateOf(false) }
+                        TextButton(onClick = { mergeOpen = true }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_merge)) }
+                        if (mergeOpen) {
+                            AlertDialog(
+                                onDismissRequest = { mergeOpen = false },
+                                title = { Text(stringResource(R.string.bd_edition_merge_title)) },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                                        Text(
+                                            stringResource(R.string.bd_edition_merge_desc),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        editions.filter { it.id != edition.id }.forEach { other ->
+                                            TextButton(
+                                                onClick = {
+                                                    viewModel.mergeEditions(edition.id, other.id)
+                                                    mergeOpen = false
+                                                },
+                                                modifier = Modifier.minTouchTarget()
+                                            ) { Text(other.label) }
+                                        }
+                                    }
+                                },
+                                confirmButton = {},
+                                dismissButton = {
+                                    TextButton(onClick = { mergeOpen = false }, modifier = Modifier.minTouchTarget()) {
+                                        Text(stringResource(R.string.btn_cancel))
                                     }
                                 }
-                            },
-                            confirmButton = {},
-                            dismissButton = {
-                                TextButton(onClick = { mergeOpen = false }, modifier = Modifier.minTouchTarget()) {
-                                    Text(stringResource(R.string.btn_cancel))
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
+                    TextButton(onClick = { viewModel.deleteEdition(edition) }, modifier = Modifier.minTouchTarget()) { Text(stringResource(R.string.bd_edition_delete), color = MaterialTheme.colorScheme.error) }
                 }
             }
         }

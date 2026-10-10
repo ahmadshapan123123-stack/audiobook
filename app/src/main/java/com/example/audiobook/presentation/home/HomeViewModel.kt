@@ -87,6 +87,8 @@ data class HomeUiState(
     /** PART 3: حتى 3 كتب قيد الاستماع (الأحدث أولًا) — بطاقة مميزة للواحد، صف للاثنين فأكثر. */
     val continueList: List<HomeContinue> = emptyList(),
     val nextUp: List<HomeBook> = emptyList(),
+    /** FIX 2.3 — قسم "اكتشف": كتب بلا تقدم أو بتقدم < 10%، بتدوير يومي. */
+    val discover: List<HomeBook> = emptyList(),
     val recentlyListened: List<HomeBook> = emptyList(),
     val series: List<HomeSeries> = emptyList(),
     val authors: List<HomeAuthor> = emptyList(),
@@ -244,10 +246,29 @@ class HomeViewModel @Inject constructor(
             .mapNotNull { favorite -> homeById[favorite.bookId] }
             .take(6)
 
+        // FIX 2.3 — "اكتشف": غير مستمعة أو تقدم < 10%، تُستبعد المعروضة في
+        // الأقسام الأخرى، وتُرتّب بالأقدم استماعًا/إضافة مع إزاحة يومية (seed =
+        // أيام اليوم) فيتغير الاختيار كل يوم بدل نفس top-N الثابت.
+        val shownIds = (nextUp.map { it.bookId } + continueList.map { it.book.bookId } +
+            recentlyListened.map { it.bookId }).toHashSet()
+        val daySeed = (System.currentTimeMillis() / 86_400_000L).toInt()
+        val discoverSection = homeBooks
+            .filter { it.editionId != null && it.bookId !in shownIds && (!it.hasProgress || it.progressFraction < 0.10f) }
+            .sortedWith(compareBy<HomeBook> { it.lastPlayedAt }.thenBy { it.addedOrder })
+            .let { pool ->
+                if (pool.isEmpty()) pool
+                else {
+                    val rotate = (daySeed % pool.size + pool.size) % pool.size
+                    (pool.drop(rotate) + pool.take(rotate))
+                }
+            }
+            .take(6)
+
         HomeUiState(
             continueListening = continueUnit,
             continueList = continueList,
             nextUp = nextUp,
+            discover = discoverSection,
             recentlyListened = recentlyListened,
             series = seriesSection,
             authors = authorsSection,

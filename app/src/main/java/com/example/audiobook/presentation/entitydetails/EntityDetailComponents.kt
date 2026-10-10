@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -139,6 +143,15 @@ internal fun EntityBookRowItem(
                 Text(
                     stringResource(R.string.entity_progress_remaining, formatDurationShort(row.remainingMs)),
                     style = MaterialTheme.typography.bodySmall
+                )
+            }
+            // FIX 2.1 — زر ⋯ مرئي يفتح نفس خيارات الضغط المطوّل (كان مخفيًا).
+            IconButton(onClick = onBookOptions, modifier = Modifier.minTouchTarget()) {
+                Icon(
+                    imageVector = Icons.Outlined.MoreVert,
+                    contentDescription = stringResource(R.string.book_options_title),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
             trailing?.invoke()

@@ -100,6 +100,7 @@
     <string name="home_tile_favorites">مفضلة</string>
     <string name="home_continue_title">أكمل استماعك</string>
     <string name="home_next_title">ماذا بعد؟</string>
+    <string name="home_discover_title">اكتشف</string>
     <string name="home_recent_title">استمعت إليها مؤخرًا</string>
 <string name="home_series_title">السلاسل</string>
     <string name="home_authors_title">المؤلفون</string>
@@ -365,6 +366,7 @@
     <string name="book_picker_search">ابحث عن كتاب</string>
     <string name="series_reorder_done">تم</string>
     <string name="series_remove_book_cd">إزالة من السلسلة</string>
+    <string name="series_no_order">بدون ترتيب</string>
     <string name="move_to_author_pick">اختر المؤلف الذي سينتقل إليه الكتاب</string>
     <string name="series_book_moved">تم نقل الكتاب إلى السلسلة</string>
     <string name="author_book_moved">تم نقل الكتاب إلى المؤلف</string>
@@ -870,6 +872,11 @@
     <string name="book_options_merge_desc">نقل كل نسخ هذا الكتاب إلى كتاب آخر وحذفه</string>
     <string name="book_options_merge_editions">دمج الإصدارات في نسخة واحدة</string>
     <string name="book_options_merge_editions_desc">دمج ملفات النسخ في نسخة واحدة تُشغَّل متواصلة</string>
+    <string name="book_options_unmerge">فك الدمج</string>
+    <string name="book_options_unmerge_desc">إعادة تقسيم الكتاب المدمج إلى كتب منفصلة</string>
+    <string name="unmerge_preview_title">فك الدمج</string>
+    <string name="unmerge_preview_message">سيتم فك الدمج إلى %1$d كتب:</string>
+    <string name="unmerge_done">تم فك الدمج إلى %1$d كتب</string>
     <string name="merge_editions_pick">اختر النسخة التي تُحذف وتُنقل ملفاتها</string>
     <string name="merge_editions_confirm_title">دمج الإصدارين في نسخة واحدة؟</string>
     <string name="merge_editions_confirm">ستُنقل ملفات \"%2$s\" وتقدّمها وعلاماتها إلى \"%1$s\"، ثم تُحذف \"%2$s\". لن تُفقد: التقدّم، العلامات، الفصول.</string>

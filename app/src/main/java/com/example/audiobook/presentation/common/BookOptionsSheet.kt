@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CallSplit
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileMove
@@ -76,6 +77,7 @@ fun BookOptionsSheet(
 ) {
     val ctx by viewModel.context.collectAsStateWithLifecycle()
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
+    val unmergePreview by viewModel.unmergePreview.collectAsStateWithLifecycle()
     val context = ctx ?: return
 
     var moveDialog by remember(context.bookId) { mutableStateOf(false) }
@@ -213,6 +215,16 @@ fun BookOptionsSheet(
                     tint = MaterialTheme.colorScheme.primary
                 )
                 // FIX-MERGE-UX: دمج الإصدارات هنا أيضًا (لا في تبويب الإصدارات فقط).
+                // PART 2 — فك الدمج: يظهر فقط للكتب المدمجة كفصول (ملفات من مجلدين فأكثر).
+                if (context.canUnmerge) {
+                    BookOptionRow(
+                        icon = Icons.Outlined.CallSplit,
+                        title = stringResource(R.string.book_options_unmerge),
+                        description = stringResource(R.string.book_options_unmerge_desc),
+                        onClick = { viewModel.loadUnmergePreview(context.bookId) },
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 if (context.editions.size > 1) {
                     BookOptionRow(
                         icon = Icons.Outlined.MergeType,
@@ -341,6 +353,42 @@ fun BookOptionsSheet(
                 confirmedMergeEditions = null
             },
             onDismiss = { confirmedMergeEditions = null }
+        )
+    }
+
+    // PART 2 — معاينة فك الدمج: عدد الكتب الناتجة وحدودها، ثم تأكيد.
+    val preview = unmergePreview
+    if (preview != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearUnmergePreview() },
+            title = { Text(stringResource(R.string.unmerge_preview_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    Text(
+                        stringResource(R.string.unmerge_preview_message, preview.size),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    preview.forEachIndexed { index, segment ->
+                        Text(
+                            "${index + 1}. ${segment.title}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.unmergeBook(context.bookId) }) {
+                    Text(stringResource(R.string.btn_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearUnmergePreview() }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
         )
     }
 

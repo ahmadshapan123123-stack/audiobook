@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -272,9 +273,9 @@ fun SeriesDetailsScreen(
                     Text(stringResource(R.string.series_add_book))
                 }
             } else {
-                state.books.forEachIndexed { index, row ->
+                state.books.forEach { row ->
                     SeriesBookRow(
-                        number = row.orderInSeries ?: (index + 1),
+                        number = row.orderInSeries,
                         row = row,
                         durationMs = state.durationsMs[row.bookId] ?: 0L,
                         authorName = state.authorName,
@@ -300,11 +301,12 @@ fun SeriesDetailsScreen(
 
 /**
  * صف كتاب سلسلة مرقّم: شارة الترتيب + غلاف + عنوان/مؤلف + مدة +
- * تقدّم + شيفرون + إزالة. الترتيب من orderInSeries لا الفهرس.
+ * تقدّم + شيفرون + إزالة. الترتيب من orderInSeries فقط — null تعني
+ * "بدون ترتيب" (لا fallback للفهرس: كان يكرر "ترتيب 1" لعدة كتب).
  */
 @Composable
 private fun SeriesBookRow(
-    number: Int,
+    number: Int?,
     row: EntityBookRow,
     durationMs: Long,
     authorName: String,
@@ -328,19 +330,37 @@ private fun SeriesBookRow(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = number.toString(),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "ترتيب",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
+                if (number != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // FIX 2.1 — تسمية الترتيب: الرقم = orderInSeries (لا عدد الإصدارات).
+                        Text(
+                            text = number.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.series_no_order),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
             AtherCoverBlock(
                 title = row.title,
@@ -388,6 +408,15 @@ private fun SeriesBookRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
+            // FIX 2.1 — زر ⋯ كان يُمرر (onBookOptions) ولا يُستخدم أبدًا. الآن مرئي.
+            IconButton(onClick = onBookOptions, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Outlined.MoreVert,
+                    contentDescription = stringResource(R.string.book_options_title),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             IconButton(onClick = onRemove, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.Outlined.Remove,

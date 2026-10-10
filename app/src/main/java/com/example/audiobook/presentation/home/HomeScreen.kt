@@ -209,6 +209,19 @@ fun HomeScreen(
                     }
                 }
 
+                // FIX 2.3 — قسم "اكتشف" أسفل "ماذا بعد؟": تدوير يومي لكتب لم تُستمع.
+                if (state.discover.isNotEmpty()) {
+                    HomeSectionTitle(stringResource(R.string.home_discover_title))
+                    LazyRow(
+                        contentPadding = PaddingValues(end = AppSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)
+                    ) {
+                        items(state.discover, key = { it.bookId }) { item ->
+                            HomeBookCard(item, Modifier.width(132.dp), onClick = { bookClick(item) }, onBookOptions = { bookLongPress(item) })
+                        }
+                    }
+                }
+
                 HomeListenNowCard(
                     onClick = onOpenListenNow,
                     modifier = Modifier.padding(top = AppSpacing.md)

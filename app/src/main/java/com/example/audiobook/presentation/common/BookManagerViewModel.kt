@@ -18,6 +18,7 @@ import com.example.audiobook.data.room.dao.CollectionDao
 import com.example.audiobook.data.room.dao.EditionDao
 import com.example.audiobook.data.room.dao.SeriesDao
 import com.example.audiobook.data.room.entity.AuthorEntity
+import com.example.audiobook.data.room.entity.AudioFileEntity
 import com.example.audiobook.data.room.entity.BookEntity
 import com.example.audiobook.data.room.entity.CollectionBookCrossRef
 import com.example.audiobook.data.room.entity.CollectionEntity
@@ -61,7 +62,9 @@ data class BookOptionsContext(
     val seriesId: UUID?,
     val seriesName: String?,
     val editions: List<EditionEntity>,
-    val defaultEditionId: UUID?
+    val defaultEditionId: UUID?,
+    /** PART 2 — نتيجة دمج كفصول قابلة للفك (ملفات من مجلدين فأكثر). */
+    val canUnmerge: Boolean = false
 )
 
 /** رسالة سناكبار تعرض في المضيف مع زر تراجع اختياري. */
@@ -125,8 +128,23 @@ class BookManagerViewModel @Inject constructor(
         if (id == null) {
             flowOf(null)
         } else {
-            combine(bookDao.observeById(id), editionDao.observeByParent(id), catalogFlow) { book, editions, cat ->
+            combine(
+                bookDao.observeById(id),
+                editionDao.observeByParent(id),
+                audioFileDao.observeAll(),
+                catalogFlow
+            ) { values ->
+                @Suppress("UNCHECKED_CAST")
+                val book = values[0] as BookEntity?
+                val editions = values[1] as List<EditionEntity>
+                val allFiles = values[2] as List<AudioFileEntity>
+                val cat = values[3] as BookManagerCatalog
                 if (book == null) return@combine null
+                // PART 2 — كشف نتيجة الدمج: نسخة الهدف بملفات من مجلدين فأكثر.
+                val target = book.defaultEditionId?.let { eid -> editions.firstOrNull { it.id == eid } }
+                    ?: editions.firstOrNull()
+                val canUnmerge = target != null &&
+                    management.folderGroups(allFiles.filter { it.editionId == target.id }).size >= 2
                 BookOptionsContext(
                     bookId = book.id,
                     title = book.title,
@@ -135,7 +153,8 @@ class BookManagerViewModel @Inject constructor(
                     seriesId = book.seriesId,
                     seriesName = book.seriesId?.let { sid -> cat.series.firstOrNull { it.id == sid }?.name },
                     editions = editions,
-                    defaultEditionId = book.defaultEditionId
+                    defaultEditionId = book.defaultEditionId,
+                    canUnmerge = canUnmerge
                 )
             }
         }
@@ -279,6 +298,34 @@ class BookManagerViewModel @Inject constructor(
             runCatching { editionMerge.merge(subjectId, comparedId, userInitiated = true) }
             selectedBookId.value = null
             _messages.value = OpMessage(R.string.merge_editions_done, undolable = false)
+        }
+    }
+
+    /** PART 2 — معاينة فك الدمج (تُملأ عند طلب المستخدم من الورقة). */
+    private val _unmergePreview = MutableStateFlow<List<LibraryManagement.UnmergeSegment>?>(null)
+    val unmergePreview: StateFlow<List<LibraryManagement.UnmergeSegment>?> = _unmergePreview
+
+    fun loadUnmergePreview(bookId: UUID) {
+        viewModelScope.launch {
+            _unmergePreview.value = runCatching { management.unmergeSegments(bookId) }.getOrNull()
+        }
+    }
+
+    fun clearUnmergePreview() {
+        _unmergePreview.value = null
+    }
+
+    /** PART 2 — تنفيذ فك الدمج بعد التأكيد. */
+    fun unmergeBook(bookId: UUID) {
+        viewModelScope.launch {
+            val result = runCatching { management.unmergeBook(bookId) }.getOrNull()
+            _unmergePreview.value = null
+            selectedBookId.value = null
+            _messages.value = if (result != null && result.newBookIds.isNotEmpty()) {
+                OpMessage(R.string.unmerge_done, listOf(result.segmentCount), undolable = false)
+            } else {
+                OpMessage(R.string.bulk_action_merge_failed, undolable = false)
+            }
         }
     }
 

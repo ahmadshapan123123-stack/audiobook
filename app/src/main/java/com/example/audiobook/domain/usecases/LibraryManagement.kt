@@ -174,7 +174,14 @@ class LibraryManagement @Inject constructor(
 
     suspend fun moveBookToSeries(bookId: UUID, seriesId: UUID?) {
         val book = bookDao.getById(bookId) ?: return
-        bookDao.update(book.copy(seriesId = seriesId))
+        // إصلاح الترتيب: نقل كتاب بلا orderInSeries إلى سلسلة يمنحه max+1
+        // (كانت الكتب الممسوحة/المنقولة تبقى null فتتكرر شارة "ترتيب 1").
+        if (seriesId != null && book.seriesId != seriesId && book.orderInSeries == null) {
+            val max = bookDao.getBySeries(seriesId).maxOfOrNull { it.orderInSeries ?: 0 } ?: 0
+            bookDao.update(book.copy(seriesId = seriesId, orderInSeries = max + 1))
+        } else {
+            bookDao.update(book.copy(seriesId = seriesId))
+        }
     }
 
     suspend fun reorderBooksInSeries(seriesId: UUID, bookIds: List<UUID>) {
@@ -467,11 +474,26 @@ class LibraryManagement @Inject constructor(
                 val source = bookDao.getById(sourceId) ?: continue
                 for (edition in editionDao.getByParent(sourceId).sortedBy { it.label }) {
                     val editionBase = runningOffsetMs
+                    val sourceChapters = chapterDao.getByParent(edition.id).sortedBy { it.startPositionMs }
                     for (file in audioFileDao.getByParent(edition.id).sortedBy { it.orderIndex }) {
                         audioFileDao.update(file.copy(editionId = target.id, orderIndex = nextOrder++))
                         runningOffsetMs += file.durationMs
                     }
-                    for (chapter in chapterDao.getByParent(edition.id).sortedBy { it.startPositionMs }) {
+                    // FIX 1.3 — فصل حدّي: المصدر بلا فصول كان يندمج صامتًا بلا علامة.
+                    // نُنشئ علامة واحدة بعنوان الكتاب عند بداية مقطعه ليراها التايم‌لاين.
+                    if (sourceChapters.isEmpty() && audioFileDao.getByParent(target.id).isNotEmpty()) {
+                        chapterDao.insert(
+                            ChapterEntity(
+                                id = UUID.randomUUID(),
+                                editionId = target.id,
+                                title = source.title,
+                                startPositionMs = editionBase.coerceAtLeast(0L),
+                                orderIndex = nextChapterOrder++,
+                                createdFrom = ChapterCreatedFrom.IMPORTED
+                            )
+                        )
+                    }
+                    for (chapter in sourceChapters) {
                         chapterDao.insert(
                             chapter.copy(
                                 id = UUID.randomUUID(),
@@ -514,6 +536,230 @@ class LibraryManagement @Inject constructor(
             editionDao.getById(target.id)?.let { editionDao.update(it.copy(totalDurationMs = finalDuration)) }
             MergeResult(merged, affected, warnings)
         }
+
+    /**
+     * PART 3 — تعبئة رجعية لمرة واحدة: كل نسخة بلا أي فصل وملفاتها من مجلدين
+     * فأكثر (أثر دمج قديم قبل إصلاح الفصول الحدّية) تُمنح علامة IMPORTED عند
+     * بداية كل مجموعة. النسخ ذات الفصول (ولو فصل مستخدم واحد) لا تُمس أبدًا.
+     * العملية idempotent: إعادة التشغيل تتخطى ما صار له فصول.
+     */
+    data class BoundaryBackfillResult(val chaptersCreated: Int, val editionsTouched: Int)
+
+    suspend fun backfillMergeBoundaries(): BoundaryBackfillResult =
+        database.withTransaction {
+            var created = 0
+            var touched = 0
+            for (book in bookDao.getAll()) {
+                for (edition in editionDao.getByParent(book.id)) {
+                    if (chapterDao.getByParent(edition.id).isNotEmpty()) continue
+                    val files = audioFileDao.getByParent(edition.id).sortedBy { it.orderIndex }
+                    if (files.size < 2) continue
+                    val groups = folderGroups(files)
+                    if (groups.size < 2) continue
+                    var order = 0
+                    var editionTouched = false
+                    groups.forEachIndexed { index, group ->
+                        if (group.startOffsetMs <= 0L) return@forEachIndexed
+                        chapterDao.insert(
+                            ChapterEntity(
+                                id = UUID.randomUUID(),
+                                editionId = edition.id,
+                                title = group.title.ifBlank { "الجزء ${index + 1}" },
+                                startPositionMs = group.startOffsetMs,
+                                orderIndex = order++,
+                                createdFrom = ChapterCreatedFrom.IMPORTED
+                            )
+                        )
+                        created++
+                        editionTouched = true
+                    }
+                    if (editionTouched) touched++
+                }
+            }
+            BoundaryBackfillResult(created, touched)
+        }
+
+    /**
+     * PART 2 — تجميع ملفات نسخة حسب مجلد المصدر (أب المسار النسبي، ثم أب الـURI
+     * عند غيابه)، مرتبة ببداية الإزاحة التراكمية. النسخة الممسوحة عادة من مجلد
+     * واحد (مجموعة واحدة)؛ نسخة الدمج من مجلدات متعددة.
+     */
+    data class FolderGroup(
+        val key: String,
+        val title: String,
+        val startOffsetMs: Long,
+        val files: List<AudioFileEntity>
+    )
+
+    fun folderGroups(files: List<AudioFileEntity>): List<FolderGroup> {
+        val sorted = files.sortedBy { it.orderIndex }
+        var offset = 0L
+        val starts = LinkedHashMap<String, Long>()
+        val members = LinkedHashMap<String, MutableList<AudioFileEntity>>()
+        for (file in sorted) {
+            val key = parentFolderOf(file)
+            starts.putIfAbsent(key, offset)
+            members.getOrPut(key) { mutableListOf() } += file
+            offset += file.durationMs.coerceAtLeast(0L)
+        }
+        // ترتيب المجموعات ببداية ظهورها (إزاحة البداية).
+        return starts.entries.sortedBy { it.value }.mapIndexed { index, entry ->
+            val key = entry.key
+            val folderName = key.substringAfterLast('/').substringAfterLast('\\')
+            FolderGroup(
+                key = key,
+                title = folderName.ifBlank { "الجزء ${index + 1}" },
+                startOffsetMs = entry.value,
+                files = members.getValue(key)
+            )
+        }
+    }
+
+    private fun parentFolderOf(file: AudioFileEntity): String {
+        val rel = file.relativePath.substringBeforeLast('/', missingDelimiterValue = "")
+        if (rel.isNotBlank()) return rel
+        val uri = file.fileUri.substringBeforeLast('/', missingDelimiterValue = "")
+        return uri
+    }
+
+    /**
+     * PART 2 — معاينة فك الدمج: مقاطع النسخة الهدف (الافتراضية/الأولى) حسب
+     * مجموعات المجلدات، وعنوان كل مقطع من فصل IMPORTED المحاذي لبدايته تمامًا
+     * (حدّ دمج) وإلا اسم المجلد. فارغة = الكتاب ليس نتيجة دمج قابل للفك.
+     */
+    data class UnmergeSegment(
+        val title: String,
+        val startPositionMs: Long,
+        val endPositionMs: Long,
+        val fileCount: Int
+    )
+
+    data class UnmergeResult(val newBookIds: List<UUID>, val segmentCount: Int)
+
+    suspend fun unmergeSegments(bookId: UUID): List<UnmergeSegment> {
+        val book = bookDao.getById(bookId) ?: return emptyList()
+        val editions = editionDao.getByParent(bookId)
+        if (editions.isEmpty()) return emptyList()
+        val target = book.defaultEditionId?.let { id -> editions.firstOrNull { it.id == id } }
+            ?: editions.first()
+        val files = audioFileDao.getByParent(target.id).sortedBy { it.orderIndex }
+        if (files.size < 2) return emptyList()
+        val groups = folderGroups(files)
+        if (groups.size < 2) return emptyList()
+        val total = files.sumOf { it.durationMs.coerceAtLeast(0L) }
+        val boundaries = chapterDao.getByParent(target.id)
+            .filter { it.createdFrom == ChapterCreatedFrom.IMPORTED }
+            .associateBy { it.startPositionMs }
+        return groups.mapIndexed { index, group ->
+            val end = groups.getOrNull(index + 1)?.startOffsetMs ?: total
+            UnmergeSegment(
+                title = boundaries[group.startOffsetMs]?.title?.takeIf { !it.isNullOrBlank() }
+                    ?: group.title.ifBlank { "الجزء ${index + 1}" },
+                startPositionMs = group.startOffsetMs,
+                endPositionMs = end,
+                fileCount = group.files.size
+            )
+        }
+    }
+
+    /**
+     * PART 2 — فك الدمج: المقطع الأول يبقى في الكتاب الأصلي، وكل مقطع لاحق
+     * يصير كتابًا جديدًا (نفس المؤلف، بلا سلسلة لتفادي تصادم الترتيب) بنسخة
+     * جديدة تحمل ملفاته وفصوله وعلاماته المزاحة. التقدّم يبقى على الأصلي،
+     * وإشارات الاكتمال تتبع فصولها. عكس mergeBooksAsChapters (الذي حذف المصادر).
+     */
+    suspend fun unmergeBook(bookId: UUID): UnmergeResult =
+        database.withTransaction {
+            val book = bookDao.getById(bookId) ?: return@withTransaction UnmergeResult(emptyList(), 0)
+            val editions = editionDao.getByParent(bookId)
+            if (editions.isEmpty()) return@withTransaction UnmergeResult(emptyList(), 0)
+            val target = book.defaultEditionId?.let { id -> editions.firstOrNull { it.id == id } }
+                ?: editions.first()
+            val segments = unmergeSegments(bookId)
+            if (segments.size < 2) return@withTransaction UnmergeResult(emptyList(), 0)
+            val files = audioFileDao.getByParent(target.id).sortedBy { it.orderIndex }
+            val chapters = chapterDao.getByParent(target.id).sortedBy { it.startPositionMs }
+            val bookmarks = bookmarkDao.getByParent(target.id)
+            val newBookIds = mutableListOf<UUID>()
+            // المقاطع اللاحقة تخرج إلى كتب جديدة؛ الأول يبقى.
+            for (index in 1 until segments.size) {
+                val seg = segments[index]
+                val newBookId = UUID.randomUUID()
+                val newEditionId = UUID.randomUUID()
+                bookDao.insert(
+                    book.copy(
+                        id = newBookId,
+                        title = seg.title,
+                        seriesId = null,
+                        orderInSeries = null,
+                        isTitleUserConfirmed = false,
+                        defaultEditionId = newEditionId,
+                        remoteId = null,
+                        syncStatus = SyncStatus.LOCAL_ONLY
+                    )
+                )
+                val segDuration = (seg.endPositionMs - seg.startPositionMs).coerceAtLeast(0L)
+                editionDao.insert(
+                    target.copy(
+                        id = newEditionId,
+                        bookId = newBookId,
+                        label = seg.title,
+                        totalDurationMs = segDuration,
+                        bookTitle = seg.title,
+                        seriesId = null,
+                        remoteId = null,
+                        syncStatus = SyncStatus.LOCAL_ONLY,
+                        isUserConfirmed = true
+                    )
+                )
+                val segFiles = files.filter { f ->
+                    val start = fileStartOffset(files, f)
+                    start >= seg.startPositionMs && start < seg.endPositionMs
+                }
+                segFiles.forEachIndexed { fileIndex, file ->
+                    audioFileDao.update(file.copy(editionId = newEditionId, orderIndex = fileIndex))
+                }
+                val segChapters = chapters.filter { it.startPositionMs >= seg.startPositionMs && it.startPositionMs < seg.endPositionMs }
+                segChapters.forEachIndexed { chapterIndex, chapter ->
+                    chapterDao.update(
+                        chapter.copy(
+                            editionId = newEditionId,
+                            startPositionMs = (chapter.startPositionMs - seg.startPositionMs).coerceAtLeast(0L),
+                            orderIndex = chapterIndex
+                        )
+                    )
+                }
+                if (segChapters.isNotEmpty()) {
+                    chapterCompletionDao.moveToEdition(segChapters.map { it.id }, newEditionId)
+                }
+                bookmarks.filter { it.positionMs >= seg.startPositionMs && it.positionMs < seg.endPositionMs }
+                    .forEach { mark ->
+                        bookmarkDao.update(
+                            mark.copy(
+                                editionId = newEditionId,
+                                positionMs = (mark.positionMs - seg.startPositionMs).coerceAtLeast(0L),
+                                remoteId = null,
+                                syncStatus = SyncStatus.LOCAL_ONLY
+                            )
+                        )
+                    }
+                newBookIds += newBookId
+            }
+            // تحديث مدة النسخة الأصلية (المقطع المتبقي فقط).
+            val headDuration = (segments[1].startPositionMs).coerceAtLeast(0L)
+            editionDao.getById(target.id)?.let { editionDao.update(it.copy(totalDurationMs = headDuration)) }
+            UnmergeResult(newBookIds, segments.size)
+        }
+
+    /** إزاحة البداية التراكمية لملف داخل قائمة مرتبة بـ orderIndex. */
+    private fun fileStartOffset(sorted: List<AudioFileEntity>, file: AudioFileEntity): Long {
+        var offset = 0L
+        for (f in sorted) {
+            if (f.id == file.id) return offset
+            offset += f.durationMs.coerceAtLeast(0L)
+        }
+        return offset
+    }
 
     /** وراثة الغلاف بالأولوية (مختار-المستخدم > أي غلاف > لا شيء) — لا كتابة فوق اختيار المستخدم. */
     private suspend fun inheritCoverForBook(primaryId: UUID, source: BookEntity) {

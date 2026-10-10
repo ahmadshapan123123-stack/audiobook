@@ -431,6 +431,8 @@ interface ChapterCompletionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(entity: ChapterCompletionEntity)
     @Query("DELETE FROM chapter_completions WHERE editionId = :editionId") suspend fun deleteForEdition(editionId: UUID)
     @Query("SELECT * FROM chapter_completions WHERE editionId = :editionId") suspend fun getByEdition(editionId: UUID): List<ChapterCompletionEntity>
+    /** فك الدمج: إشارات اكتمال الفصول المنقولة تتبع نسختها الجديدة (لا تُحذف). */
+    @Query("UPDATE chapter_completions SET editionId = :newEditionId WHERE chapterId IN (:chapterIds)") suspend fun moveToEdition(chapterIds: List<UUID>, newEditionId: UUID)
 }
 
 @Dao
