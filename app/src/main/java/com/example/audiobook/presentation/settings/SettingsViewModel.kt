@@ -205,6 +205,31 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** FIX-BACKFILL-V2 — حصيلة آخر فحص يدوي لحدود الدمج (تُستهلك مرة واحدة لعرض Snackbar). */
+    private val _backfillResult = MutableStateFlow<LibraryManagement.BoundaryBackfillResult?>(null)
+    val backfillResult: StateFlow<LibraryManagement.BoundaryBackfillResult?> = _backfillResult.asStateFlow()
+
+    /**
+     * زر "إعادة فحص حدود الدمج": يصفّر علم V2 ثم يشغّل التعبئة ويعرض
+     * الحصيلة. آمنة الإعادة: النسخ ذات الفصول تُتخطى دائمًا.
+     */
+    fun runBoundaryBackfill() {
+        viewModelScope.launch {
+            appSettings.setMergeBoundaryBackfillDoneV2(false)
+            val result = runCatching { libraryManagement.backfillMergeBoundaries() }.getOrNull()
+            if (result != null) {
+                appSettings.setMergeBoundaryBackfillDoneV2(true)
+                _backfillResult.value = result
+            } else {
+                Log.w(TAG, "boundary backfill failed")
+            }
+        }
+    }
+
+    fun consumeBackfillResult() {
+        _backfillResult.value = null
+    }
+
     fun consumeDemoCleanupResult() {
         _demoCleanupResult.value = null
     }

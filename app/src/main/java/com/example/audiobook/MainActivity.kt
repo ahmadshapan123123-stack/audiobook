@@ -219,10 +219,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { scanScheduler.scheduleStartupScans() }
         // PART 3 — تعبئة حدود الدمج لمرة واحدة (دمج قديم بلا فصول): رخيصة
         // وتتخطى ما له فصول، فلا تمس بيانات المستخدم.
+        // FIX-BACKFILL-V2 — الجيل الثاني يغطي أحادي المجلد؛ يُضبط عند النجاح
+        // فقط، وعند الفشل يُسجَّل الخطأ ويُعاد في الإقلاع التالي.
         lifecycleScope.launch {
-            if (!appSettings.mergeBoundaryBackfillDone) {
+            if (!appSettings.mergeBoundaryBackfillDoneV2) {
                 runCatching { libraryManagement.backfillMergeBoundaries() }
-                appSettings.setMergeBoundaryBackfillDone(true)
+                    .onSuccess { appSettings.setMergeBoundaryBackfillDoneV2(true) }
+                    .onFailure { error -> Log.e("AtherBackfill", "backfill failed: ${error.message}", error) }
             }
         }
         reminderScheduler.syncWithSettings()

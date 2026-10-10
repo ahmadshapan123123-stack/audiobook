@@ -762,6 +762,9 @@
     <!-- ===== ISSUE 1: Demo Data Management ===== -->
     <string name="settings_remove_demo">إزالة بيانات التجربة</string>
     <string name="settings_remove_demo_desc">حذف جميع الكتب التجريبية من المكتبة</string>
+    <string name="settings_backfill_boundaries">إعادة فحص حدود الدمج</string>
+    <string name="settings_backfill_boundaries_desc">إضافة علامات الفصول للكتب المدمجة قديمًا بلا فصول</string>
+    <string name="settings_backfill_result">تم فحص %1$d كتاب</string>
     <string name="settings_remove_demo_confirm">هل تريد حذف جميع بيانات التجربة؟ لا يمكن التراجع عن هذا الإجراء.</string>
     <string name="settings_demo_removed">تم حذف %1$d كتابًا تجريبيًا</string>
     <string name="settings_demo_not_found">لم يُعثر على بيانات تجريبية</string>

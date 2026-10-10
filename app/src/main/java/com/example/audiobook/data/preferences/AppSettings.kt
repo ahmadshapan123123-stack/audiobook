@@ -139,6 +139,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val _mergeBoundaryBackfillDone = MutableStateFlow(scanPrefs.getBoolean(KEY_MERGE_BACKFILL_DONE, false))
     val mergeBoundaryBackfillDone: Boolean get() = _mergeBoundaryBackfillDone.value
 
+    /**
+     * FIX-BACKFILL-V2 — الجيل الثاني (يغطي الدمج القديم أحادي المجلد بمرتكز
+     * عند 0 وكشف best-effort من الأسماء). يفحص V2 لا V1: من أنهى V1 بنجاح
+     * يُعاد فحصه مرة واحدة بهذا العلم.
+     */
+    private val _mergeBoundaryBackfillDoneV2 = MutableStateFlow(scanPrefs.getBoolean(KEY_MERGE_BACKFILL_DONE_V2, false))
+    val mergeBoundaryBackfillDoneV2: Boolean get() = _mergeBoundaryBackfillDoneV2.value
+
     // ── Onboarding / Demo ──
     private val _hasCompletedOnboarding = MutableStateFlow(prefs.getBoolean(KEY_HAS_COMPLETED_ONBOARDING, false))
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
@@ -334,6 +342,12 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         scanPrefs.edit().putBoolean(KEY_MERGE_BACKFILL_DONE, value).apply()
     }
 
+    fun setMergeBoundaryBackfillDoneV2(value: Boolean) {
+        if (_mergeBoundaryBackfillDoneV2.value == value) return
+        _mergeBoundaryBackfillDoneV2.value = value
+        scanPrefs.edit().putBoolean(KEY_MERGE_BACKFILL_DONE_V2, value).apply()
+    }
+
     private fun loadThemeMode(): AppThemeMode =
         appearancePrefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
             ?.let { runCatching { AppThemeMode.valueOf(it) }.getOrDefault(AppThemeMode.DARK) }
@@ -383,6 +397,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_SCAN_MODE = "scan_mode"
         const val KEY_COVER_BACKFILL_DONE = "cover_art_backfill_done"
         const val KEY_MERGE_BACKFILL_DONE = "merge_boundary_backfill_done"
+        const val KEY_MERGE_BACKFILL_DONE_V2 = "merge_boundary_backfill_done_v2"
         const val KEY_HAS_COMPLETED_ONBOARDING = "has_completed_onboarding"
         const val KEY_HAS_SKIPPED_ONBOARDING = "has_skipped_onboarding"
         const val KEY_HAS_SEEDED_DEMO = "has_seeded_demo"

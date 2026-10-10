@@ -173,6 +173,7 @@ fun SettingsScreen(
     val scanMode by viewModel.scanMode.collectAsStateWithLifecycle()
     var scanModeDialog by remember { mutableStateOf(false) }
     val demoCleanupResult by viewModel.demoCleanupResult.collectAsStateWithLifecycle()
+    val backfillResult by viewModel.backfillResult.collectAsStateWithLifecycle()
     val isReclassifying by viewModel.isReclassifying.collectAsStateWithLifecycle()
     val reclassifyPreview by viewModel.reclassifyPreview.collectAsStateWithLifecycle()
     val reclassifyTree by viewModel.reclassifyTree.collectAsStateWithLifecycle()
@@ -223,6 +224,7 @@ fun SettingsScreen(
     val rebuildFailedReasonTemplate = stringResource(R.string.settings_rebuild_failed_reason)
     val mergeDoneTemplate = stringResource(R.string.settings_merge_roots_done)
     val mergeFailedMessage = stringResource(R.string.settings_merge_roots_failed)
+    val backfillDoneTemplate = stringResource(R.string.settings_backfill_result)
     LaunchedEffect(rebuildResult) {
         rebuildResult?.let { result ->
             snackbarHostState.showSnackbar(
@@ -303,6 +305,13 @@ fun SettingsScreen(
         if (mergeFailed) {
             snackbarHostState.showSnackbar(mergeFailedMessage)
             viewModel.consumeMergeFailed()
+        }
+    }
+    // FIX-BACKFILL-V2 — حصيلة الفحص اليدوي لحدود الدمج.
+    LaunchedEffect(backfillResult) {
+        backfillResult?.let { result ->
+            snackbarHostState.showSnackbar(String.format(Locale.US, backfillDoneTemplate, result.booksTouched))
+            viewModel.consumeBackfillResult()
         }
     }
 
@@ -808,6 +817,13 @@ fun SettingsScreen(
                         onClick = { showRemoveDemoDialog = true }
                     )
                 }
+                // FIX-BACKFILL-V2 — فحص يدوي لحدود الدمج (للدمج القديم بلا فصول).
+                SettingsDivider()
+                SettingsActionRow(
+                    title = stringResource(R.string.settings_backfill_boundaries),
+                    subtitle = stringResource(R.string.settings_backfill_boundaries_desc),
+                    onClick = { viewModel.runBoundaryBackfill() }
+                )
             }
 
             // ── 7. عن أثير ──

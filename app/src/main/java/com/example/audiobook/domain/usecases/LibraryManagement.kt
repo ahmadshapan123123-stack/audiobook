@@ -13,6 +13,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 
 private const val TAG = "LibraryManagement"
+/** FIX-BACKFILL-V2 — وسم سجلات التعبئة الرجعية لحدود الدمج (يُراقب في Logcat). */
+private const val TAG_BACKFILL = "AtherBackfill"
 
 /** حصيلة تنظيف بيانات التجربة: عدد الكتب المحذوفة + وجود بقايا تجريبية يُعرض للمستخدم. */
 data class ClearDemoDataResult(
@@ -542,42 +544,129 @@ class LibraryManagement @Inject constructor(
      * فأكثر (أثر دمج قديم قبل إصلاح الفصول الحدّية) تُمنح علامة IMPORTED عند
      * بداية كل مجموعة. النسخ ذات الفصول (ولو فصل مستخدم واحد) لا تُمس أبدًا.
      * العملية idempotent: إعادة التشغيل تتخطى ما صار له فصول.
+     *
+     * FIX-BACKFILL-V2 — احتياطي للدمج القديم أحادي المجلد (CASE 2): إن تعذّر
+     * استعادة التقسيم من المجلدات، تُكتشف الحدود best-effort من أسماء الملفات
+     * (عودة الترقيم إلى 1)، وإلا علامة ارتكاز واحدة عند 0 بعنوان الكتاب.
      */
-    data class BoundaryBackfillResult(val chaptersCreated: Int, val editionsTouched: Int)
+    data class BoundaryBackfillResult(val chaptersCreated: Int, val editionsTouched: Int, val booksTouched: Int = 0)
 
     suspend fun backfillMergeBoundaries(): BoundaryBackfillResult =
         database.withTransaction {
+            val books = bookDao.getAll()
+            Log.i(TAG_BACKFILL, "Starting, books: ${books.size}")
             var created = 0
             var touched = 0
-            for (book in bookDao.getAll()) {
+            val touchedBooks = HashSet<java.util.UUID>()
+            for (book in books) {
                 for (edition in editionDao.getByParent(book.id)) {
-                    if (chapterDao.getByParent(edition.id).isNotEmpty()) continue
-                    val files = audioFileDao.getByParent(edition.id).sortedBy { it.orderIndex }
-                    if (files.size < 2) continue
-                    val groups = folderGroups(files)
-                    if (groups.size < 2) continue
-                    var order = 0
-                    var editionTouched = false
-                    groups.forEachIndexed { index, group ->
-                        if (group.startOffsetMs <= 0L) return@forEachIndexed
-                        chapterDao.insert(
-                            ChapterEntity(
-                                id = UUID.randomUUID(),
-                                editionId = edition.id,
-                                title = group.title.ifBlank { "الجزء ${index + 1}" },
-                                startPositionMs = group.startOffsetMs,
-                                orderIndex = order++,
-                                createdFrom = ChapterCreatedFrom.IMPORTED
-                            )
-                        )
-                        created++
-                        editionTouched = true
+                    val existing = chapterDao.getByParent(edition.id)
+                    if (existing.isNotEmpty()) {
+                        Log.w(TAG_BACKFILL, "Skip ${book.title}: has chapters (${existing.size})")
+                        continue
                     }
-                    if (editionTouched) touched++
+                    val files = audioFileDao.getByParent(edition.id).sortedBy { it.orderIndex }
+                    if (files.size < 2) {
+                        Log.w(TAG_BACKFILL, "Skip ${book.title}: single file")
+                        continue
+                    }
+                    val groups = folderGroups(files)
+                    if (groups.size >= 2) {
+                        // CASE 1 — حدود المجلدات (كما قبل، بعناوين المجلدات).
+                        Log.i(TAG_BACKFILL, "Backfill ${book.title}: ${groups.size} folder groups")
+                        var order = 0
+                        var editionTouched = false
+                        groups.forEachIndexed { index, group ->
+                            if (group.startOffsetMs <= 0L) return@forEachIndexed
+                            chapterDao.insert(
+                                ChapterEntity(
+                                    id = UUID.randomUUID(),
+                                    editionId = edition.id,
+                                    title = group.title.ifBlank { "الجزء ${index + 1}" },
+                                    startPositionMs = group.startOffsetMs,
+                                    orderIndex = order++,
+                                    createdFrom = ChapterCreatedFrom.IMPORTED
+                                )
+                            )
+                            created++
+                            editionTouched = true
+                        }
+                        if (editionTouched) {
+                            touched++
+                            touchedBooks += book.id
+                        }
+                    } else {
+                        // CASE 2 — مجموعة واحدة: دمج قديم بلا أثر مجلدات.
+                        Log.w(TAG_BACKFILL, "Single folder group in ${book.title}: trying filename splits")
+                        val splits = detectFilenameSplits(files)
+                        if (splits.isNotEmpty()) {
+                            Log.i(TAG_BACKFILL, "Splits in ${book.title}: $splits")
+                            splits.forEachIndexed { splitIndex, offset ->
+                                chapterDao.insert(
+                                    ChapterEntity(
+                                        id = UUID.randomUUID(),
+                                        editionId = edition.id,
+                                        title = "الجزء ${splitIndex + 2}",
+                                        startPositionMs = offset,
+                                        orderIndex = splitIndex,
+                                        createdFrom = ChapterCreatedFrom.IMPORTED
+                                    )
+                                )
+                                created++
+                            }
+                            touched++
+                            touchedBooks += book.id
+                        } else {
+                            // مرتكز واحد عند البداية بعنوان الكتاب.
+                            chapterDao.insert(
+                                ChapterEntity(
+                                    id = UUID.randomUUID(),
+                                    editionId = edition.id,
+                                    title = book.title.ifBlank { "البداية" },
+                                    startPositionMs = 0L,
+                                    orderIndex = 0,
+                                    createdFrom = ChapterCreatedFrom.IMPORTED
+                                )
+                            )
+                            created++
+                            touched++
+                            touchedBooks += book.id
+                            Log.i(TAG_BACKFILL, "Anchor at 0 for ${book.title}")
+                        }
+                    }
                 }
             }
-            BoundaryBackfillResult(created, touched)
+            Log.i(TAG_BACKFILL, "Done, chapters: $created, editions: $touched, books: ${touchedBooks.size}")
+            BoundaryBackfillResult(created, touched, touchedBooks.size)
         }
+
+    /**
+     * كشف حدود المقاطع best-effort من أسماء الملفات: حدّ عند كل ملف يبدأ
+     * ترقيمه من 1 (01/001/1...) بعد ملف لا يبدأ من 1 — نمط شائع لبداية كتاب
+     * ثانٍ مدمج. تُرجع الإزاحات التراكمية لنقاط التقسيم.
+     */
+    fun detectFilenameSplits(files: List<AudioFileEntity>): List<Long> {
+        val sorted = files.sortedBy { it.orderIndex }
+        var offset = 0L
+        val offsets = sorted.map { file ->
+            val start = offset
+            offset += file.durationMs.coerceAtLeast(0L)
+            start
+        }
+        val splits = mutableListOf<Long>()
+        for (i in 1 until sorted.size) {
+            val prev = leadingFileNumber(sorted[i - 1].fileName)
+            val curr = leadingFileNumber(sorted[i].fileName)
+            if (curr == 1 && prev != 1) splits += offsets[i]
+        }
+        return splits
+    }
+
+    private fun leadingFileNumber(fileName: String): Int? {
+        val stem = fileName.substringBeforeLast('.').trim()
+        val match = Regex("^(\\d+)").find(stem) ?: return null
+        return match.groupValues[1].toIntOrNull()
+    }
 
     /**
      * PART 2 — تجميع ملفات نسخة حسب مجلد المصدر (أب المسار النسبي، ثم أب الـURI

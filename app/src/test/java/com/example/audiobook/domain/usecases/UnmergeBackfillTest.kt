@@ -147,4 +147,80 @@ class UnmergeBackfillTest {
         assertTrue(management.unmergeSegments(book.id).isEmpty())
         assertEquals(0, management.unmergeBook(book.id).segmentCount)
     }
+
+    /** كتاب أحادي المجلد بأسماء بلا ترقيم (محاكاة دمج قديم ضائع الأثر). */
+    private suspend fun seedSingleFolderBook(names: List<Pair<String, Long>>): Pair<BookEntity, EditionEntity> {
+        val book = BookEntity(
+            title = "OldMerged", authorId = null, seriesId = null, orderInSeries = null, genre = null,
+            coverImagePath = null, coverSource = CoverSource.PLACEHOLDER, isCoverUserSelected = false,
+            defaultEditionId = null, remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY
+        )
+        database.bookDao().insert(book)
+        val edition = EditionEntity(
+            bookId = book.id, narratorName = null, label = "E",
+            totalDurationMs = names.sumOf { it.second }, fileFormat = "MP3",
+            libraryRootId = root.id, sourceFolderPath = "/OldMerged",
+            confidenceScore = 1f, isUserConfirmed = false,
+            remoteId = null, syncStatus = SyncStatus.LOCAL_ONLY
+        )
+        database.editionDao().insert(edition)
+        names.forEachIndexed { index, (name, duration) ->
+            database.audioFileDao().insert(
+                AudioFileEntity(
+                    editionId = edition.id, fileUri = "content://library/OldMerged/$name",
+                    relativePath = "OldMerged/$name", fileName = name, orderIndex = index,
+                    durationMs = duration, fileSizeBytes = 100L, lastModified = 1L,
+                    contentFingerprint = "fp-$name",
+                    mimeType = "audio/mpeg", fileStatus = FileStatus.AVAILABLE
+                )
+            )
+        }
+        database.bookDao().update(book.copy(defaultEditionId = edition.id))
+        return database.bookDao().getById(book.id)!! to edition
+    }
+
+    @Test
+    fun backfillSingleGroupNoSplits_createsAnchorAtZero() = runBlocking {
+        val (book, edition) = seedSingleFolderBook(
+            listOf("intro.mp3" to 1000L, "outro.mp3" to 1000L, "bonus.mp3" to 1000L)
+        )
+        val result = management.backfillMergeBoundaries()
+        assertEquals(1, result.chaptersCreated)
+        assertEquals(1, result.booksTouched)
+        val chapters = database.chapterDao().getByParent(edition.id)
+        assertEquals(1, chapters.size)
+        assertEquals(0L, chapters.first().startPositionMs)
+        assertEquals("OldMerged", chapters.first().title)
+        assertEquals(ChapterCreatedFrom.IMPORTED, chapters.first().createdFrom)
+    }
+
+    @Test
+    fun backfillFilenameSplit_createsPartBoundary() = runBlocking {
+        // ترقيم يعيد البدء من 01 (نمط الكتاب الثاني المدمج). الأسماء فريدة
+        // لأن fileUri فريد في القاعدة (إدخال مكرر يستبدل سابقه).
+        val (_, edition) = seedSingleFolderBook(
+            listOf("02a.mp3" to 1000L, "03.mp3" to 1000L, "01.mp3" to 2000L, "02b.mp3" to 2000L)
+        )
+        val result = management.backfillMergeBoundaries()
+        assertEquals(1, result.chaptersCreated)
+        val chapters = database.chapterDao().getByParent(edition.id)
+        assertEquals(1, chapters.size)
+        assertEquals(2000L, chapters.first().startPositionMs)
+        assertEquals("الجزء 2", chapters.first().title)
+    }
+
+    @Test
+    fun backfillSkipsSingleFile() = runBlocking {
+        seedSingleFolderBook(listOf("only.mp3" to 1000L))
+        assertEquals(0, management.backfillMergeBoundaries().chaptersCreated)
+    }
+
+    @Test
+    fun backfillV2Flag_defaultsFalseAndSets() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = com.example.audiobook.data.preferences.AppSettings(context)
+        assertEquals(false, settings.mergeBoundaryBackfillDoneV2)
+        settings.setMergeBoundaryBackfillDoneV2(true)
+        assertEquals(true, settings.mergeBoundaryBackfillDoneV2)
+    }
 }
